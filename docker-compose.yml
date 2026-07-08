@@ -1,0 +1,46 @@
+# HealthTrack — self-hosted, single container, all state in ./data
+#
+#   docker compose up -d
+#   open http://localhost:3000  (first registered user becomes admin)
+services:
+  healthtrack:
+    # Use the published image, or build locally with `docker compose build`.
+    image: ghcr.io/ezekielthemad/healthtrack:latest
+    build: .
+    container_name: healthtrack
+    ports:
+      - "3000:3000"
+    volumes:
+      # SQLite db, uploads, and auto-generated keys all live here. Back up
+      # this directory to back up everything.
+      - ./data:/data
+    environment:
+      # Absolute URL of this instance — required for auth callbacks.
+      APP_URL: http://localhost:3000
+
+      ## Registration (default: open). Set to "false" after creating your
+      ## account to close signups.
+      # SIGNUPS_ENABLED: "true"
+
+      ## Secrets — auto-generated into /data/keys on first boot; set these
+      ## only if you want to manage them yourself.
+      # AUTH_SECRET: change-me-64-hex-chars
+      # ENCRYPTION_KEY: change-me-64-hex-chars
+
+      ## Optional: AI features (health summaries, natural-language queries,
+      ## PDF parsing, interaction checks). Hidden in the UI when unset.
+      # ANTHROPIC_API_KEY: sk-ant-...
+
+      ## Optional: "Sign in with Google".
+      # GOOGLE_CLIENT_ID: xxxxxxxx.apps.googleusercontent.com
+      # GOOGLE_CLIENT_SECRET: ...
+
+      ## Optional: Oura Ring sync.
+      # OURA_CLIENT_ID: ...
+      # OURA_CLIENT_SECRET: ...
+
+      ## File ownership inside ./data (Unraid defaults: 99/100).
+      # PUID: "99"
+      # PGID: "100"
+      # TZ: Etc/UTC
+    restart: unless-stopped

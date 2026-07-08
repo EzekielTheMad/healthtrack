@@ -1,0 +1,29 @@
+# Dependencies / build output (rebuilt inside the image)
+node_modules
+.next
+out
+coverage
+build
+tsconfig.tsbuildinfo
+
+# VCS / tooling
+.git
+.claude
+.vercel
+.github
+
+# Local state — never ship into an image
+data
+tmpdata
+.env*
+
+# Docs and reference material not needed at build or runtime
+docs
+supabase
+*.md
+!README.md
+
+# Docker files themselves (context noise only)
+Dockerfile
+docker-compose.yml
+.dockerignore

@@ -1,0 +1,80 @@
+# Installing HealthTrack on Unraid
+
+HealthTrack runs as a single Docker container. All state (SQLite database,
+uploaded PDFs, auto-generated secrets) lives in one volume — back up
+`/mnt/user/appdata/healthtrack` and you have backed up everything.
+
+## Option 1 — Community Applications (once listed)
+
+1. Open the **Apps** tab in the Unraid web UI.
+2. Search for **HealthTrack** and click **Install**.
+3. Set **APP_URL** to the address you will browse to, e.g.
+   `http://192.168.1.50:3000` (or your reverse-proxy HTTPS URL).
+4. Apply. Open the WebUI and register — the **first account becomes the
+   instance admin**. Set `SIGNUPS_ENABLED` to `false` afterwards if you don't
+   want anyone else registering.
+
+## Option 2 — Manual template URL (before/without CA listing)
+
+1. Go to the **Docker** tab and scroll to **Template Repositories**.
+2. Add the repository URL and click **Save**:
+
+   ```
+   https://github.com/EzekielTheMad/healthtrack
+   ```
+
+3. Click **Add Container** and pick **healthtrack** from the *Select a
+   template* dropdown (under *User templates*).
+4. Fill in **APP_URL** as above and apply.
+
+Alternatively, download the raw template and drop it into
+`/boot/config/plugins/dockerMan/templates-user/` on your flash drive:
+
+```
+https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/unraid/healthtrack.xml
+```
+
+## Option 3 — docker compose / docker run
+
+```bash
+docker run -d \
+  --name healthtrack \
+  -p 3000:3000 \
+  -v /mnt/user/appdata/healthtrack:/data \
+  -e APP_URL=http://YOUR_SERVER_IP:3000 \
+  -e PUID=99 -e PGID=100 \
+  ghcr.io/ezekielthemad/healthtrack:latest
+```
+
+Or use the [`docker-compose.yml`](../docker-compose.yml) in the repository
+root, which documents every optional environment variable.
+
+## Optional integrations
+
+Each feature activates only when its variables are set; the UI hides it
+otherwise.
+
+| Feature | Variables | Notes |
+|---|---|---|
+| AI summaries, queries, PDF parsing | `ANTHROPIC_API_KEY` | Anthropic API key |
+| Sign in with Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Authorized redirect URI: `APP_URL/api/auth/callback/google` |
+| Oura Ring sync | `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET` | Redirect URI: `APP_URL/api/oura/callback` |
+
+`AUTH_SECRET` and `ENCRYPTION_KEY` are auto-generated into `/data/keys` on
+first boot; only set them if you want to manage secrets yourself.
+
+## Submitting the template to Community Applications (repo owner)
+
+CA listing is a one-time action by the repository owner:
+
+1. Ensure the template XML is publicly reachable (this repo's
+   `unraid/healthtrack.xml` on the default branch is fine, or keep templates
+   in a dedicated `unraid-templates` repository).
+2. Review the CA application policies, then request that your template
+   repository be added to Community Applications via the official Unraid
+   forums (Community Applications board):
+   <https://forums.unraid.net/forum/94-community-applications/> — see the
+   pinned topics on application policies and adding template repositories.
+3. Once the repository is accepted into the CA feed, the app appears in the
+   Apps tab within a day or so; subsequent template updates are picked up
+   automatically from the repository.

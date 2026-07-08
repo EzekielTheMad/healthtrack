@@ -1,0 +1,121 @@
+# CI: lint + unit tests + build, then a full container smoke test that
+# mirrors the manual verification done on the target host (healthcheck,
+# signup, medication round-trip, AI-unconfigured 501).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  docker-smoke:
+    name: Docker build + container smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build image
+        run: docker build -t healthtrack:ci .
+
+      - name: Start container
+        run: |
+          mkdir -p "$RUNNER_TEMP/htdata"
+          docker run -d --name healthtrack \
+            -p 3000:3000 \
+            -e APP_URL=http://localhost:3000 \
+            -v "$RUNNER_TEMP/htdata:/data" \
+            healthtrack:ci
+
+      - name: Wait for healthy
+        run: |
+          # HEALTHCHECK: interval 30s, start-period 20s — allow up to ~2 min.
+          for i in $(seq 1 60); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' healthtrack)"
+            echo "health status: $status (attempt $i)"
+            if [ "$status" = "healthy" ]; then
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              echo "::error::container reported unhealthy"
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "::error::timed out waiting for container to become healthy"
+          exit 1
+
+      - name: Smoke test HTTP surface
+        run: |
+          set -euo pipefail
+          base=http://localhost:3000
+
+          fail() { echo "::error::$1"; exit 1; }
+
+          echo "--- GET /api/health"
+          curl -fsS "$base/api/health" | tee health.json | jq -e '.status == "ok"' >/dev/null \
+            || fail "/api/health did not return {\"status\":\"ok\"}: $(cat health.json)"
+
+          echo "--- GET /api/capabilities"
+          curl -fsS "$base/api/capabilities" | tee caps.json | jq -e '.signupsEnabled == true' >/dev/null \
+            || fail "/api/capabilities signupsEnabled is not true: $(cat caps.json)"
+
+          echo "--- POST /api/auth/sign-up/email"
+          code="$(curl -sS -o signup.json -w '%{http_code}' -c cookies.txt \
+            -H 'content-type: application/json' \
+            -d '{"name":"CI Smoke","email":"ci-smoke@example.com","password":"ci-smoke-password-1"}' \
+            "$base/api/auth/sign-up/email")"
+          [ "$code" = "200" ] || fail "sign-up returned $code (want 200): $(cat signup.json)"
+          grep -q 'better-auth' cookies.txt || fail "sign-up did not set a session cookie"
+
+          echo "--- POST /api/medications (authed)"
+          code="$(curl -sS -o med.json -w '%{http_code}' -b cookies.txt \
+            -H 'content-type: application/json' \
+            -d '{"name":"Lisinopril","dosage":"10 mg"}' \
+            "$base/api/medications")"
+          [ "$code" = "201" ] || fail "POST /api/medications returned $code (want 201): $(cat med.json)"
+          jq -e '.id and .name == "Lisinopril"' med.json >/dev/null \
+            || fail "created medication payload malformed: $(cat med.json)"
+
+          echo "--- GET /api/medications (authed)"
+          code="$(curl -sS -o meds.json -w '%{http_code}' -b cookies.txt "$base/api/medications")"
+          [ "$code" = "200" ] || fail "GET /api/medications returned $code (want 200): $(cat meds.json)"
+          jq -e 'any(.[]; .name == "Lisinopril")' meds.json >/dev/null \
+            || fail "created medication missing from listing: $(cat meds.json)"
+
+          echo "--- GET /api/health-summary (AI unconfigured -> 501)"
+          code="$(curl -sS -o summary.json -w '%{http_code}' -b cookies.txt "$base/api/health-summary")"
+          [ "$code" = "501" ] || fail "GET /api/health-summary returned $code (want 501): $(cat summary.json)"
+
+          echo "smoke test passed"
+
+      - name: Container logs (on failure)
+        if: failure()
+        run: docker logs healthtrack || true
