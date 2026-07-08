@@ -44,10 +44,7 @@ export function ensureDataDirs(): string {
   return dataDir;
 }
 
-// Eagerly create the directory tree on first import at runtime.
-ensureDataDirs();
-
-export const DATA_DIR = getDataDir();
-export const DB_PATH = getDbPath();
-export const UPLOADS_DIR = getUploadsDir();
-export const KEYS_DIR = getKeysDir();
+// No import-time side effects here: `next build` evaluates route modules
+// during page-data collection, and an eager mkdir of /data fails on hosts
+// where the build user cannot create it (e.g. CI runners). Directories are
+// created lazily by getDb(), getOrCreateSecret(), and saveUpload().
