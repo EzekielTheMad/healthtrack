@@ -198,9 +198,12 @@ export async function acceptShare(
 ): Promise<HealthShareRow> {
   const share = await loadShare(id);
   if (!isRecipient(share, actorId, actorEmail)) throw new NotFoundError();
+  // Never re-link an already-linked share: if the recipient's email is later
+  // released and re-registered by someone else, an email-matched re-accept
+  // must not repoint sharedWithId at the new account (mirrors delegates.ts).
   const [updated] = await db
     .update(healthShares)
-    .set({ accepted: true, sharedWithId: actorId })
+    .set({ accepted: true, sharedWithId: share.sharedWithId ?? actorId })
     .where(eq(healthShares.id, id))
     .returning();
   return updated;

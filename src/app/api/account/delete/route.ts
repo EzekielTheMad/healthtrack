@@ -1,10 +1,15 @@
 /**
  * POST /api/account/delete — permanently deletes the signed-in user's
  * account (replaces the legacy `delete_own_account()` RPC (migration 009)).
+ *
+ * Requires recent authentication (same 5-minute window as data export): the
+ * client should have the user re-enter their password immediately before
+ * calling this, minting a fresh session.
  */
 import { NextResponse } from 'next/server';
-import { requireUser, UnauthorizedError } from '@/lib/auth/session';
+import { getSessionInfo, UnauthorizedError } from '@/lib/auth/session';
 import { deleteAccount } from '@/lib/auth/delete-account';
+import { isRecentlyAuthenticated } from '@/lib/require-recent-auth';
 
 const SESSION_COOKIES = [
   'better-auth.session_token',
@@ -13,8 +18,21 @@ const SESSION_COOKIES = [
 
 export async function POST() {
   try {
-    const user = await requireUser();
-    await deleteAccount(user.id);
+    const info = await getSessionInfo();
+    if (!info) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    if (!isRecentlyAuthenticated(info.session)) {
+      const message =
+        'Please sign in again before deleting your account.';
+      return NextResponse.json(
+        { error: message, message, code: 'reauth_required', status: 403 },
+        { status: 403 },
+      );
+    }
+
+    await deleteAccount(info.user.id);
 
     // Sessions are already gone (FK cascade); expire the cookie so the
     // proxy's presence check stops admitting this browser.

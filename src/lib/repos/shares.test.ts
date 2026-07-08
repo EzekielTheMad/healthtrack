@@ -80,6 +80,23 @@ describe('shares repo — row management', () => {
     expect(accepted.sharedWithId).toBe(VIEWER); // bootstrap link on accept
   });
 
+  it('re-accept by a later owner of the same email never re-links the share', async () => {
+    const share = await repo.createShare(OWNER, input);
+    await repo.acceptShare(VIEWER, VIEWER_EMAIL, share.id);
+
+    // VIEWER later changes their account email, freeing the address; an
+    // attacker registers it and re-accepts. The share must stay linked to
+    // the original recipient.
+    ctx.sqlite
+      .prepare('update user set email = ? where id = ?')
+      .run('viewer-new@example.com', VIEWER);
+    const attacker = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
+    insertUser(ctx.sqlite, attacker, VIEWER_EMAIL);
+
+    const reaccepted = await repo.acceptShare(attacker, VIEWER_EMAIL, share.id);
+    expect(reaccepted.sharedWithId).toBe(VIEWER); // NOT the attacker
+  });
+
   it('update + delete are owner-only; recipient revoke is a silent no-op', async () => {
     const share = await repo.createShare(OWNER, input);
     await repo.acceptShare(VIEWER, VIEWER_EMAIL, share.id);

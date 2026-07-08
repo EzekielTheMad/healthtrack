@@ -47,3 +47,6 @@ docs/audit-*.md
 # local runtime data (SQLite db, uploads, generated keys)
 /data
 tmpdata
+
+# Local Claude Code config (contains machine/infra specifics)
+.claude/

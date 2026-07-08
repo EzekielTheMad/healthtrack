@@ -129,6 +129,20 @@ describe('medications repo', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
+  it("expired delegate is denied the unfiltered 'all' listing", async () => {
+    await repo.createMedication(OWNER, ownScope, { name: 'Med' });
+    insertDelegate(ctx.sqlite, {
+      ownerId: OWNER,
+      delegateUserId: VIEWER,
+      permissionLevel: 'read_only',
+      expiresAt: PAST,
+    });
+
+    await expect(
+      repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: 'all' }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
   it('read_write delegate writes into the owner scope; delete needs admin', async () => {
     insertDelegate(ctx.sqlite, {
       ownerId: OWNER,
