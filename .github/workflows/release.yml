@@ -16,9 +16,6 @@ permissions:
   contents: read
   packages: write
 
-env:
-  IMAGE: ghcr.io/${{ github.repository }}
-
 jobs:
   build:
     name: Build (${{ matrix.platform }})
@@ -35,8 +32,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Prepare platform slug
-        run: echo "PLATFORM_SLUG=${MATRIX_PLATFORM//\//-}" >> "$GITHUB_ENV"
+      - name: Prepare env (lowercase image ref, platform slug)
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "PLATFORM_SLUG=${MATRIX_PLATFORM//\//-}" >> "$GITHUB_ENV"
         env:
           MATRIX_PLATFORM: ${{ matrix.platform }}
 
@@ -86,6 +85,9 @@ jobs:
     timeout-minutes: 15
     needs: build
     steps:
+      - name: Prepare env (lowercase image ref)
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
