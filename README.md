@@ -34,6 +34,10 @@ docker run -d \
 
 Open http://localhost:3000 and register — **the first user becomes the instance admin**. Set `SIGNUPS_ENABLED=false` afterwards if you want to close registration.
 
+> **Port 3000 already in use?** Map a different host port and point `APP_URL` at
+> it, e.g. `-p 3005:3000` with `-e APP_URL=http://localhost:3005`. The container
+> always listens on 3000 internally; only the host side changes.
+
 ### Docker Compose
 
 See [`docker-compose.yml`](docker-compose.yml):
@@ -65,6 +69,24 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 ### Reverse proxy / HTTPS
 
 HealthTrack serves plain HTTP on port 3000; put your reverse proxy of choice (Nginx Proxy Manager, Caddy, Traefik, Cloudflare Tunnel, …) in front of it for HTTPS. **`APP_URL` must exactly match the URL users browse to** (scheme, host, port) or login callbacks will fail.
+
+### Authentication & OAuth
+
+Built-in **email/password** sign-in works anywhere, including a bare LAN IP — nothing extra to configure. The optional social logins have provider-specific requirements:
+
+- **Sign in with Google** requires a **public HTTPS URL on a real hostname**. Google's OAuth rejects `http://` and raw IP-address redirect URIs (only `http://localhost` is exempt), so it will **not** work against something like `http://192.168.1.50:3000` — you must front the app with HTTPS (reverse proxy or tunnel) and set `APP_URL` to that address. Then, in the **Google Cloud Console** OAuth client, add this Authorized redirect URI:
+
+  ```
+  APP_URL/api/auth/callback/google
+  ```
+
+- **Oura Ring** is more permissive (a LAN IP is fine). Register its redirect URI in the **Oura developer portal** — *not* the Google console; they are separate providers with separate credentials:
+
+  ```
+  APP_URL/api/oura/callback
+  ```
+
+In every case `APP_URL` must exactly match the URL your browser uses (scheme, host **and** port), or the OAuth round-trip fails. Restart the container after changing `APP_URL`. The first user to sign in — by any method — becomes the admin.
 
 ### Backup
 

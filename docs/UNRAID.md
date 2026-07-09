@@ -49,6 +49,12 @@ docker run -d \
 Or use the [`docker-compose.yml`](../docker-compose.yml) in the repository
 root, which documents every optional environment variable.
 
+> **Port conflict?** The template maps host port **3000** by default. If another
+> container already uses it (Mealie, Grafana and many others default to 3000),
+> change the **host** side of the port mapping to a free port and set `APP_URL`
+> to match — e.g. host port `3005` with `APP_URL=http://YOUR_SERVER_IP:3005`.
+> The container always listens on 3000 internally.
+
 ## Optional integrations
 
 Each feature activates only when its variables are set; the UI hides it
@@ -57,11 +63,39 @@ otherwise.
 | Feature | Variables | Notes |
 |---|---|---|
 | AI summaries, queries, PDF parsing | `ANTHROPIC_API_KEY` | Anthropic API key |
-| Sign in with Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Authorized redirect URI: `APP_URL/api/auth/callback/google` |
-| Oura Ring sync | `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET` | Redirect URI: `APP_URL/api/oura/callback` |
+| Sign in with Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | **Needs a public HTTPS URL** — see below |
+| Oura Ring sync | `OURA_CLIENT_ID`, `OURA_CLIENT_SECRET` | Redirect URI in the **Oura developer portal** |
 
 `AUTH_SECRET` and `ENCRYPTION_KEY` are auto-generated into `/data/keys` on
 first boot; only set them if you want to manage secrets yourself.
+
+### Google sign-in needs HTTPS on a real hostname
+
+Email/password login works on a plain LAN IP, but **Google OAuth does not**.
+Google rejects `http://` and raw IP-address redirect URIs (only
+`http://localhost` is exempt), so `http://192.168.x.x:3000` fails with
+`redirect_uri_mismatch`. To use Google sign-in, serve HealthTrack over HTTPS on
+a real hostname — a reverse proxy (Nginx Proxy Manager, Swag) or a Cloudflare
+Tunnel — set `APP_URL` to that `https://…` address, and add this Authorized
+redirect URI in the **Google Cloud Console** OAuth client:
+
+```
+APP_URL/api/auth/callback/google
+```
+
+### Google vs Oura — different consoles
+
+Google and Oura are separate providers. The Google redirect URI goes in the
+**Google Cloud Console**; the Oura redirect URI goes in the **Oura developer
+portal**. Putting one in the other's console does nothing. Oura's redirect URI
+(a LAN IP is acceptable here) is:
+
+```
+APP_URL/api/oura/callback
+```
+
+Whatever `APP_URL` you choose, it must exactly match the address you browse to
+(scheme, host and port). Restart the container after changing it.
 
 ## Submitting the template to Community Applications (repo owner)
 
