@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { ANTHROPIC_MODEL } from './model';
 
 export interface ParsedVaccineRecord {
   name: string;
@@ -50,7 +51,8 @@ export async function parseVaccinePdf(
   const base64Content = pdfBuffer.toString('base64');
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: ANTHROPIC_MODEL,
+    thinking: { type: 'disabled' },
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [

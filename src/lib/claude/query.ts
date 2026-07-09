@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { ANTHROPIC_MODEL } from './model';
 
 export interface HealthContext {
   profile_data: string;
@@ -63,7 +64,8 @@ export async function queryHealthData(
   const systemPrompt = buildSystemPrompt(context);
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: ANTHROPIC_MODEL,
+    thinking: { type: 'disabled' },
     max_tokens: 4096,
     system: systemPrompt,
     messages: [{ role: 'user', content: question }],

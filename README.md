@@ -61,6 +61,7 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 | `ENCRYPTION_KEY` | no | auto-generated to `/data/keys` | Encrypts stored OAuth tokens |
 | `SIGNUPS_ENABLED` | no | `true` | Allow new registrations |
 | `ANTHROPIC_API_KEY` | no | — | Enables AI features (summaries, queries, PDF parsing, interaction checks) |
+| `ANTHROPIC_MODEL` | no | current Sonnet | Override the Claude model used for AI features (e.g. if one is deprecated) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | — | Enables "Sign in with Google" |
 | `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET` | no | — | Enables Oura Ring sync |
 | `PUID` / `PGID` | no | `99` / `100` | Ownership of files under `/data` (Unraid conventions) |
