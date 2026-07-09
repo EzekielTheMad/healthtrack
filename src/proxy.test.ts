@@ -17,7 +17,7 @@ function redirectTarget(res: Response): string | null {
 }
 
 describe('proxy auth gate', () => {
-  it.each(['/', '/login', '/signup', '/privacy', '/terms', '/shared/some-token'])(
+  it.each(['/', '/login', '/signup', '/privacy', '/terms', '/docs/api', '/shared/some-token'])(
     'allows anonymous access to public page %s',
     (path) => {
       const res = proxy(request(path));

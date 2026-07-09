@@ -1,10 +1,18 @@
 import { NextRequest } from 'next/server';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
-import { listVitals } from '@/lib/repos/vitals';
+import { db } from '@/db';
+import { bodyToCamel } from '@/lib/api/snake';
+import {
+  findOwnVital,
+  listVitals,
+  upsertOwnVital,
+  validateVitalWrite,
+  VitalWriteError,
+} from '@/lib/repos/vitals';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
 };
 
@@ -21,7 +29,10 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const metric = searchParams.get('metric');
   const days = parseInt(searchParams.get('days') ?? '0', 10) || null;
-  const limit = Math.min(parseInt(searchParams.get('limit') ?? '100', 10) || 100, 1000);
+  // Clamp to [1, 1000] — negative/zero values must not become "unlimited"
+  // (SQLite treats LIMIT -1 as no limit).
+  const rawLimit = parseInt(searchParams.get('limit') ?? '', 10);
+  const limit = Math.min(Math.max(1, Number.isNaN(rawLimit) ? 100 : rawLimit), 1000);
 
   let startDate: string | undefined;
   if (days && days > 0) {
@@ -53,7 +64,60 @@ export async function GET(request: NextRequest) {
       { headers: corsHeaders },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal error';
-    return Response.json({ error: message }, { status: 500, headers: corsHeaders });
+    // Never reflect internal error details to API clients (respond.ts policy).
+    console.error('v1 vitals GET error:', error);
+    return Response.json({ error: 'internal_error' }, { status: 500, headers: corsHeaders });
+  }
+}
+
+/**
+ * POST /api/v1/vitals — single-record registry-validated upsert, keyed on
+ * (user, metric_key, recorded_at, source). Self-scope only: rows are always
+ * written for the token's owner (dependent_id NULL).
+ *
+ * Body: { metric_key, value?, value_label?, unit?, recorded_at, source, metadata? }
+ * 201:  { result: 'inserted' | 'updated', vital: {...} }
+ */
+export async function POST(request: NextRequest) {
+  const ctx = await validateApiKey(request.headers.get('Authorization'));
+  if (!ctx) return unauthorized();
+  if (!hasScope(ctx, 'write:vitals')) return forbidden('write:vitals');
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json(
+      { error: 'Request body must be valid JSON' },
+      { status: 400, headers: corsHeaders },
+    );
+  }
+
+  try {
+    const record = validateVitalWrite(bodyToCamel(body));
+    const result = upsertOwnVital(db, ctx.userId, record);
+    const row = findOwnVital(db, ctx.userId, record);
+    return Response.json(
+      {
+        result,
+        vital: row && {
+          id: row.id,
+          metric_key: row.metricKey,
+          value: row.value,
+          unit: row.unit,
+          source: row.source,
+          recorded_at: row.recordedAt,
+          metadata: row.metadata,
+        },
+      },
+      { status: 201, headers: corsHeaders },
+    );
+  } catch (error) {
+    if (error instanceof VitalWriteError) {
+      return Response.json({ error: error.message }, { status: 400, headers: corsHeaders });
+    }
+    // Never reflect internal error details to API clients (respond.ts policy).
+    console.error('v1 vitals POST error:', error);
+    return Response.json({ error: 'internal_error' }, { status: 500, headers: corsHeaders });
   }
 }

@@ -1,0 +1,165 @@
+// @vitest-environment node
+/**
+ * GET /api/health-summary — pins the clinical-correctness fix (review I1):
+ * the VITALS fetch is owner-scoped (dependent_id NULL) so per-metric
+ * aggregates never blend a dependent's readings into the owner's trends.
+ * Other domains (conditions, meds, ...) keep the legacy unfiltered scope.
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import crypto from 'crypto';
+import {
+  setupRepoDb,
+  insertUser,
+  insertDependent,
+  OWNER,
+  type RepoTestDb,
+} from '@/lib/repos/repo-test-harness';
+import type { HealthSummaryInput } from '@/lib/claude/health-summary';
+
+const { authState, captured } = vi.hoisted(() => ({
+  authState: { userId: null as string | null },
+  captured: { input: null as HealthSummaryInput | null },
+}));
+
+vi.mock('@/lib/auth/session', () => {
+  class UnauthorizedError extends Error {
+    readonly status = 401;
+  }
+  return {
+    UnauthorizedError,
+    requireUser: async () => {
+      if (!authState.userId) throw new UnauthorizedError();
+      return { id: authState.userId, email: `${authState.userId}@example.com` };
+    },
+    getUser: async () => (authState.userId ? { id: authState.userId } : null),
+  };
+});
+
+// Keep buildHealthSnapshot real; capture the input the route hands the model.
+vi.mock('@/lib/claude/health-summary', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/claude/health-summary')>();
+  return {
+    ...actual,
+    generateHealthSummary: async (input: HealthSummaryInput) => {
+      captured.input = input;
+      return { summary: 'ok', highlights: [] };
+    },
+  };
+});
+
+type RouteModule = typeof import('./route');
+type SummaryModule = typeof import('@/lib/claude/health-summary');
+
+let ctx: RepoTestDb;
+let route: RouteModule;
+let summary: SummaryModule;
+let savedApiKey: string | undefined;
+
+beforeEach(async () => {
+  savedApiKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test-key';
+  ctx = await setupRepoDb('healthtrack-health-summary-');
+  route = await import('./route');
+  summary = await import('@/lib/claude/health-summary');
+  insertUser(ctx.sqlite, OWNER);
+  authState.userId = OWNER;
+  captured.input = null;
+});
+
+afterEach(() => {
+  if (savedApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+  else process.env.ANTHROPIC_API_KEY = savedApiKey;
+  authState.userId = null;
+  ctx.restore();
+});
+
+function insertVital(opts: {
+  userId: string;
+  dependentId: string | null;
+  metricKey: string;
+  value: number;
+  unit: string | null;
+  recordedAt: string;
+}) {
+  ctx.sqlite
+    .prepare(
+      `insert into vitals (id, user_id, metric_key, value, unit, source, recorded_at, metadata, dependent_id, created_at)
+       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`,
+    )
+    .run(
+      crypto.randomUUID(),
+      opts.userId,
+      opts.metricKey,
+      opts.value,
+      opts.unit,
+      opts.recordedAt,
+      opts.dependentId,
+      new Date().toISOString(),
+    );
+}
+
+function dayISO(daysAgo: number): string {
+  const d = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+  return `${d.toISOString().slice(0, 10)}T00:00:00Z`;
+}
+
+describe('GET /api/health-summary — vitals scope (I1)', () => {
+  it("aggregates only the owner's vitals; a dependent's same-metric rows never blend in", async () => {
+    const depId = crypto.randomUUID();
+    insertDependent(ctx.sqlite, depId, OWNER);
+
+    // Owner weighs 180 lbs; the dependent (a child) weighs 62 lbs the same day.
+    insertVital({
+      userId: OWNER,
+      dependentId: null,
+      metricKey: 'weight',
+      value: 180,
+      unit: 'lbs',
+      recordedAt: dayISO(2),
+    });
+    insertVital({
+      userId: OWNER,
+      dependentId: depId,
+      metricKey: 'weight',
+      value: 62,
+      unit: 'lbs',
+      recordedAt: dayISO(2),
+    });
+
+    const res = await route.GET();
+    expect(res.status).toBe(200);
+    expect(captured.input).not.toBeNull();
+
+    // Only the owner's row reaches the prompt input...
+    expect(captured.input!.vitals).toHaveLength(1);
+    expect(captured.input!.vitals[0].value).toBe(180);
+
+    // ...and the built prompt reflects the owner's value, not the blended
+    // (180 + 62) / 2 = 121 average or the dependent's 62.
+    const snapshot = summary.buildHealthSnapshot(captured.input!);
+    expect(snapshot).toContain('180');
+    expect(snapshot).not.toContain('121');
+    expect(snapshot).not.toContain('62');
+  });
+
+  it('other domains keep the unfiltered scope (dependent conditions still included)', async () => {
+    const depId = crypto.randomUUID();
+    insertDependent(ctx.sqlite, depId, OWNER);
+    ctx.sqlite
+      .prepare(
+        `insert into conditions (id, user_id, name, status, dependent_id, created_at, updated_at)
+         values (?, ?, 'Asthma', 'active', ?, ?, ?)`,
+      )
+      .run(crypto.randomUUID(), OWNER, depId, new Date().toISOString(), new Date().toISOString());
+
+    const res = await route.GET();
+    expect(res.status).toBe(200);
+    expect(captured.input!.conditions.map((c) => c.name)).toContain('Asthma');
+  });
+
+  it('401 without a session', async () => {
+    authState.userId = null;
+    const res = await route.GET();
+    expect(res.status).toBe(401);
+  });
+});

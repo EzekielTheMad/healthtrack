@@ -5,6 +5,11 @@ import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
 import { safeError } from '@/lib/safe-log';
 import { queryHealthData } from '@/lib/claude/query';
 import type { HealthContext } from '@/lib/claude/query';
+import {
+  aggregateVitals,
+  formatAggregatesForPrompt,
+  formatIntradayReadings,
+} from '@/lib/metrics/aggregate';
 import { getProfile } from '@/lib/repos/profiles';
 import { listMedications } from '@/lib/repos/medications';
 import { listLabVisitsWithResults } from '@/lib/repos/labs';
@@ -97,6 +102,10 @@ export async function POST(request: Request) {
     // user_id only (no dependent filter) — scope 'all' preserves that.
     // ------------------------------------------------------------------
     const scope = { ownerId: userId, dependentId: 'all' as const };
+    // VITALS are the exception: aggregates present per-metric stats as ONE
+    // person's trends, so blending a dependent's readings into the owner's
+    // averages would be clinically wrong. Owner rows only (dependent IS NULL).
+    const ownVitalsScope = { ownerId: userId, dependentId: null };
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -119,7 +128,7 @@ export async function POST(request: Request) {
       // Visits are ordered visit_date desc; the last 2 are sliced below
       listLabVisitsWithResults(userId, scope),
       // Recent vitals (last 30 days), recorded_at desc
-      listVitals(userId, scope, { startDate: thirtyDaysAgoISO }),
+      listVitals(userId, ownVitalsScope, { startDate: thirtyDaysAgoISO }),
       listConditions(userId, scope),
       listNotes(userId, scope),
       listAppointments(userId, scope),
@@ -183,13 +192,15 @@ export async function POST(request: Request) {
       })
       .join('\n\n');
 
-    // Vitals
-    const vitalsStr = vitals
-      .map(
-        (v) =>
-          `- ${v.metricKey}: ${v.value} ${v.unit ?? ''} (${v.recordedAt.slice(0, 10)}, source: ${v.source})`
-      )
-      .join('\n');
+    // Vitals: per-metric 30-day aggregates grouped by category, plus the last
+    // few raw readings for intraday metrics (glucose/BP) whose spikes the
+    // aggregates would hide.
+    const vitalsStr = [
+      formatAggregatesForPrompt(aggregateVitals(vitals)),
+      formatIntradayReadings(vitals),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
 
     // Flagged values: out-of-range labs + any abnormal vitals
     const flaggedLabs = labResultsData.filter((r) => r.flag && r.flag !== 'normal');

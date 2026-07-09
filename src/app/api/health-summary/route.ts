@@ -32,8 +32,18 @@ export async function GET() {
     cutoff.setFullYear(cutoff.getFullYear() - 1);
     const cutoffISO = cutoff.toISOString();
 
+    // Vitals use a 30-day window with a high row cap so the per-metric
+    // aggregates (7d/30d averages, trends) are computed over real data.
+    const vitalsCutoff = new Date();
+    vitalsCutoff.setDate(vitalsCutoff.getDate() - 30);
+    const vitalsCutoffISO = vitalsCutoff.toISOString();
+
     // The legacy queries filtered on user_id only — scope 'all' preserves that.
     const scope = { ownerId: userId, dependentId: 'all' as const };
+    // VITALS are the exception: aggregates present per-metric stats as ONE
+    // person's trends, so blending a dependent's readings into the owner's
+    // averages would be clinically wrong. Owner rows only (dependent IS NULL).
+    const ownVitalsScope = { ownerId: userId, dependentId: null };
 
     const [meds, conditions, allLabResults, vitals, alerts] = await Promise.all([
       listMedications(userId, scope, { active: true }),
@@ -41,7 +51,7 @@ export async function GET() {
       // flagged results in the last year, created_at desc, limit 10 —
       // filtered below (repo returns created_at desc already)
       listLabResults(userId, scope),
-      listVitals(userId, scope, { startDate: cutoffISO, limit: 30 }),
+      listVitals(userId, ownVitalsScope, { startDate: vitalsCutoffISO, limit: 2000 }),
       listActiveInteractionAlerts(userId, scope),
     ]);
 
@@ -74,6 +84,7 @@ export async function GET() {
         value: v.value,
         unit: v.unit ?? '',
         recorded_at: v.recordedAt,
+        metadata: v.metadata,
       })),
       interactionAlerts: alerts.map((a) => ({
         alert_text: a.alertText,

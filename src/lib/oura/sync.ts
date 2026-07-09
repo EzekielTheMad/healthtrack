@@ -6,10 +6,9 @@
 // of going through the authz'd vitals repo — actor and owner are the same by
 // construction.
 
-import { and, eq, isNull } from 'drizzle-orm';
 import { OuraClient } from './client';
 import { db } from '@/db';
-import { vitals } from '@/db/schema';
+import { upsertOwnVital } from '@/lib/repos/vitals';
 import { touchLastSync } from '@/lib/repos/connected-sources';
 
 interface SyncSummary {
@@ -38,29 +37,13 @@ function delay(ms: number): Promise<void> {
 
 /**
  * Upsert daily metrics keyed on (user_id, metric_key, recorded_at, source)
- * for the user's own (dependent_id IS NULL) rows. 001 never declared that
- * unique constraint, so the legacy PostgREST onConflict upsert is emulated
- * as per-row update-or-insert (synchronous and cheap with better-sqlite3).
+ * for the user's own (dependent_id IS NULL) rows — delegated to the shared
+ * registry-validated repo upsert (promoted from this module).
  * Returns the number of rows written.
  */
 async function upsertVitals(rows: VitalUpsert[]): Promise<number> {
   for (const row of rows) {
-    const updated = await db
-      .update(vitals)
-      .set({ value: row.value, unit: row.unit, metadata: row.metadata })
-      .where(
-        and(
-          eq(vitals.userId, row.userId),
-          eq(vitals.metricKey, row.metricKey),
-          eq(vitals.recordedAt, row.recordedAt),
-          eq(vitals.source, row.source),
-          isNull(vitals.dependentId),
-        ),
-      )
-      .returning({ id: vitals.id });
-    if (updated.length === 0) {
-      await db.insert(vitals).values(row);
-    }
+    upsertOwnVital(db, row.userId, row);
   }
   return rows.length;
 }

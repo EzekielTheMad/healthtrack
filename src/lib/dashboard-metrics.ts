@@ -1,6 +1,9 @@
 // ---------------------------------------------------------------------------
-// Central catalog of all available vital metrics for dashboard stat cards.
+// Catalog of vital metrics for dashboard stat cards — derived from the
+// metric registry (src/lib/metrics/registry.ts), the single source of truth.
 // ---------------------------------------------------------------------------
+
+import { METRICS, CATEGORY_LABELS, type MetricDef } from '@/lib/metrics/registry';
 
 export interface MetricDefinition {
   metricKey: string;
@@ -12,71 +15,60 @@ export interface MetricDefinition {
   formatValue: (v: number) => string;
 }
 
-export const METRIC_CATALOG: MetricDefinition[] = [
-  {
-    metricKey: 'sleep_duration',
-    label: 'Sleep Score',
-    displayUnit: 'hrs',
-    category: 'Sleep',
-    description: 'Total sleep duration',
-    requiresDevice: true,
-    formatValue: (v) => v.toFixed(1),
-  },
-  {
-    metricKey: 'ahi',
-    label: 'APAP / AHI',
-    displayUnit: 'events/hr',
-    category: 'Sleep',
-    description: 'Apnea-Hypopnea Index (CPAP users)',
-    requiresDevice: true,
-    formatValue: (v) => v.toFixed(1),
-  },
-  {
-    metricKey: 'resting_hr',
-    label: 'Resting HR',
-    displayUnit: 'bpm',
-    category: 'Heart',
-    description: 'Resting heart rate',
-    requiresDevice: false,
-    formatValue: (v) => Math.round(v).toString(),
-  },
-  {
-    metricKey: 'hrv_rmssd',
-    label: 'HRV',
-    displayUnit: 'ms',
-    category: 'Heart',
-    description: 'Heart rate variability (RMSSD)',
-    requiresDevice: true,
-    formatValue: (v) => Math.round(v).toString(),
-  },
-  {
-    metricKey: 'spo2',
-    label: 'SpO2',
-    displayUnit: '%',
-    category: 'Respiratory',
-    description: 'Blood oxygen saturation',
-    requiresDevice: false,
-    formatValue: (v) => Math.round(v).toString(),
-  },
-  {
-    metricKey: 'bp_systolic',
-    label: 'BP (Systolic)',
-    displayUnit: 'mmHg',
-    category: 'Blood Pressure',
-    description: 'Systolic blood pressure',
-    requiresDevice: false,
-    formatValue: (v) => Math.round(v).toString(),
-  },
-  {
-    metricKey: 'bp_diastolic',
-    label: 'BP (Diastolic)',
-    displayUnit: 'mmHg',
-    category: 'Blood Pressure',
-    description: 'Diastolic blood pressure',
-    requiresDevice: false,
-    formatValue: (v) => Math.round(v).toString(),
-  },
-];
+/** Compact display forms for stored canonical units. */
+const DISPLAY_UNIT_OVERRIDES: Record<string, string> = {
+  hours: 'hrs',
+};
+
+/** Descriptions carried over from the original hand-written catalog. */
+const DESCRIPTIONS: Record<string, string> = {
+  sleep_duration: 'Total sleep duration',
+  ahi: 'Apnea-Hypopnea Index (CPAP users)',
+  resting_hr: 'Resting heart rate',
+  hrv_rmssd: 'Heart rate variability (RMSSD)',
+  spo2: 'Blood oxygen saturation',
+  bp_systolic: 'Systolic blood pressure',
+  bp_diastolic: 'Diastolic blood pressure',
+};
+
+/**
+ * Metrics that only arrive via a connected device/bridge (composite or
+ * device-computed values). Everything else can be read off a home device or
+ * self-assessed and entered manually.
+ */
+const DEVICE_ONLY_KEYS = new Set([
+  // sleep (wearable-computed)
+  'sleep_score', 'sleep_duration', 'sleep_efficiency', 'sleep_latency',
+  'deep_sleep', 'light_sleep', 'rem_sleep', 'awake_time', 'time_in_bed',
+  'restless_periods', 'avg_sleep_hr', 'body_temp_deviation',
+  // respiratory / CPAP machine
+  'ahi', 'cpap_usage', 'mask_leak', 'myair_score', 'bdi',
+  // recovery (wearable-computed)
+  'readiness_score', 'hrv_rmssd', 'resilience', 'stress_high', 'recovery_high',
+  // activity (device-estimated)
+  'active_calories', 'total_calories', 'activity_score', 'vo2_max',
+  // smart-scale composition estimates
+  'bmi', 'body_fat_pct', 'body_water_pct', 'muscle_mass_pct', 'bone_mass_pct',
+  'protein_pct', 'subcutaneous_fat_pct', 'visceral_fat', 'fat_free_mass',
+  'bmr', 'body_age',
+]);
+
+function toDefinition(m: MetricDef): MetricDefinition {
+  const decimals = m.decimals ?? 0;
+  return {
+    metricKey: m.key,
+    label: m.label,
+    displayUnit: m.unit ? (DISPLAY_UNIT_OVERRIDES[m.unit] ?? m.unit) : '',
+    category: CATEGORY_LABELS[m.category],
+    description: DESCRIPTIONS[m.key] ?? '',
+    requiresDevice: DEVICE_ONLY_KEYS.has(m.key),
+    formatValue: (v) => v.toFixed(decimals),
+  };
+}
+
+export const METRIC_CATALOG: MetricDefinition[] = METRICS.filter(
+  (m) => m.dashboardEligible !== false,
+).map(toDefinition);
 
 /** Default vital metrics for users who connected a wearable device. */
 export const DEVICE_DEFAULTS = ['sleep_duration', 'resting_hr', 'hrv_rmssd', 'spo2'];

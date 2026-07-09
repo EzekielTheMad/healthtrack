@@ -1,9 +1,12 @@
 /**
  * Seed vital_reference_ranges with published clinical reference data.
- * Translated from legacy migration 002_seed_reference_ranges.sql (51 rows).
+ * Original 51 rows translated from legacy migration 002_seed_reference_ranges.sql;
+ * device-metric ranges (glucose, CPAP, VO2 max, peak flow) added with the
+ * metric registry.
  *
- * Idempotent: skips entirely when the table already has rows (seed data is
- * static reference data with generated ids, so a count check is the guard).
+ * Idempotent per metric: rows are inserted only for metric_keys that have no
+ * existing rows, so newly added ranges reach databases seeded by older builds
+ * without duplicating anything.
  */
 import type { DB } from './index';
 import { vitalReferenceRanges } from './schema';
@@ -103,11 +106,51 @@ export const REFERENCE_RANGE_SEED: SeedRow[] = [
   row('respiratory_rate', 'Low', 'breaths/min', null, 11, 18, null, null, 'Clinical consensus – adult respiratory rate'),
   row('respiratory_rate', 'Normal', 'breaths/min', 12, 20, 18, null, null, 'Clinical consensus – adult respiratory rate'),
   row('respiratory_rate', 'High', 'breaths/min', 21, null, 18, null, null, 'Clinical consensus – adult respiratory rate'),
+
+  // ── BLOOD GLUCOSE, FASTING (mg/dL) — American Diabetes Association ───────
+  row('blood_glucose', 'Normal (fasting)', 'mg/dL', 70, 99, 18, null, null, 'ADA – Standards of Care in Diabetes, fasting plasma glucose'),
+  row('blood_glucose', 'Prediabetes (fasting)', 'mg/dL', 100, 125, 18, null, null, 'ADA – Standards of Care in Diabetes, fasting plasma glucose'),
+  row('blood_glucose', 'Diabetes (fasting)', 'mg/dL', 126, null, 18, null, null, 'ADA – Standards of Care in Diabetes, fasting plasma glucose'),
+
+  // ── CPAP USAGE (hours/night) — CMS adherence criteria ────────────────────
+  row('cpap_usage', 'Below adherence threshold', 'hours', null, 3.9, 18, null, null, 'CMS – PAP adherence: ≥4 hr/night on 70% of nights'),
+  row('cpap_usage', 'Adherent', 'hours', 4, null, 18, null, null, 'CMS – PAP adherence: ≥4 hr/night on 70% of nights'),
+
+  // ── CPAP MASK LEAK (L/min) — ResMed large-leak threshold ─────────────────
+  row('mask_leak', 'Normal', 'L/min', null, 23.9, 18, null, null, 'ResMed – large leak threshold (24 L/min)'),
+  row('mask_leak', 'High leak', 'L/min', 24, null, 18, null, null, 'ResMed – large leak threshold (24 L/min)'),
+
+  // ── VO2 MAX (mL/kg/min) — ACSM cardiorespiratory fitness norms ───────────
+  // 'Normal' = roughly the fair-to-good band per age/sex bucket.
+  row('vo2_max', 'Normal', 'mL/kg/min', 42, 52, 20, 29, 'male', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 39, 48, 30, 39, 'male', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 36, 44, 40, 49, 'male', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 32, 41, 50, 59, 'male', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 28, 37, 60, null, 'male', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 35, 44, 20, 29, 'female', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 33, 42, 30, 39, 'female', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 30, 38, 40, 49, 'female', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 27, 35, 50, 59, 'female', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+  row('vo2_max', 'Normal', 'mL/kg/min', 24, 31, 60, null, 'female', 'ACSM Guidelines for Exercise Testing and Prescription – CRF classifications'),
+
+  // ── PEAK EXPIRATORY FLOW (L/min) — standard adult nomograms ──────────────
+  row('peak_flow', 'Typical adult range', 'L/min', 550, 700, 18, null, 'male', 'Standard peak-flow nomograms (Nunn & Gregg; Leiner et al.) – typical adult values'),
+  row('peak_flow', 'Typical adult range', 'L/min', 380, 500, 18, null, 'female', 'Standard peak-flow nomograms (Nunn & Gregg; Leiner et al.) – typical adult values'),
 ];
 
-/** Insert seed rows once. No-op when the table already contains data. */
+/**
+ * Insert seed rows for any metric_key that has no rows yet.
+ * Per-metric guard: existing databases gain ranges for newly registered
+ * metrics on upgrade, while already-seeded metrics are left untouched.
+ */
 export function seedReferenceRanges(db: DB): void {
-  const existing = db.select({ id: vitalReferenceRanges.id }).from(vitalReferenceRanges).limit(1).all();
-  if (existing.length > 0) return;
-  db.insert(vitalReferenceRanges).values(REFERENCE_RANGE_SEED).run();
+  const existing = new Set(
+    db
+      .select({ k: vitalReferenceRanges.metricKey })
+      .from(vitalReferenceRanges)
+      .all()
+      .map((r) => r.k),
+  );
+  const rows = REFERENCE_RANGE_SEED.filter((r) => !existing.has(r.metricKey));
+  if (rows.length) db.insert(vitalReferenceRanges).values(rows).run();
 }

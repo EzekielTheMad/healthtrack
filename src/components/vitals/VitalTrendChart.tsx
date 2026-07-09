@@ -32,6 +32,8 @@ interface VitalTrendChartProps {
   refLow?: number;
   refHigh?: number;
   unit?: string;
+  /** Ordinal metrics: plot 1..N with Y-axis ticks showing the label text. */
+  ordinalLabels?: readonly string[];
 }
 
 /**
@@ -77,7 +79,10 @@ export default function VitalTrendChart({
   refLow,
   refHigh,
   unit,
+  ordinalLabels,
 }: VitalTrendChartProps) {
+  const labels = useMemo(() => ordinalLabels ?? [], [ordinalLabels]);
+  const isOrdinal = labels.length > 0;
   const sorted = useMemo(
     () =>
       [...data].sort(
@@ -108,6 +113,7 @@ export default function VitalTrendChart({
 
   // Compute Y domain with padding around data + reference range
   const yDomain = useMemo(() => {
+    if (isOrdinal) return [1, labels.length] as [number, number];
     if (chartData.length === 0) return [0, 100] as [number, number];
     const values = chartData.map((d) => d.value);
     let lo = Math.min(...values);
@@ -116,7 +122,7 @@ export default function VitalTrendChart({
     if (refHigh !== undefined && refHigh > hi) hi = refHigh;
     const padding = (hi - lo) * 0.15 || 5;
     return [Math.max(0, lo - padding), hi + padding] as [number, number];
-  }, [chartData, refLow, refHigh]);
+  }, [chartData, refLow, refHigh, isOrdinal, labels]);
 
   if (sorted.length === 0) {
     return (
@@ -171,11 +177,16 @@ export default function VitalTrendChart({
 
           <YAxis
             domain={yDomain}
+            ticks={isOrdinal ? labels.map((_, i) => i + 1) : undefined}
             tick={{ fill: CHART_COLORS.muted, fontSize: 10 }}
             axisLine={false}
             tickLine={false}
-            width={36}
-            tickFormatter={(v: number) => String(Math.round(v))}
+            width={isOrdinal ? 72 : 36}
+            tickFormatter={
+              isOrdinal
+                ? (v: number) => labels[Math.round(v) - 1] ?? ''
+                : (v: number) => String(Math.round(v))
+            }
           />
 
           <Tooltip

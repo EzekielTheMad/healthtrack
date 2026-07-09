@@ -76,7 +76,21 @@ const RANGES: Record<string, RangeEntry[]> = {
     { label: "Hypertension Stage 2", low: 90, high: 119, unit: "mmHg", ageMin: 18, ageMax: null, sex: null },
     { label: "Hypertensive Crisis", low: 120, high: null, unit: "mmHg", ageMin: 18, ageMax: null, sex: null },
   ],
+  body_temp: [
+    { label: "Hypothermia", low: null, high: 95.9, unit: "°F", ageMin: null, ageMax: null, sex: null },
+    { label: "Normal", low: 96.0, high: 99.0, unit: "°F", ageMin: null, ageMax: null, sex: null },
+    { label: "Low-grade fever", low: 99.1, high: 100.3, unit: "°F", ageMin: null, ageMax: null, sex: null },
+    { label: "Fever", low: 100.4, high: null, unit: "°F", ageMin: null, ageMax: null, sex: null },
+  ],
+  respiratory_rate: [
+    { label: "Low", low: null, high: 11, unit: "breaths/min", ageMin: 18, ageMax: null, sex: null },
+    { label: "Normal", low: 12, high: 20, unit: "breaths/min", ageMin: 18, ageMax: null, sex: null },
+    { label: "High", low: 21, high: null, unit: "breaths/min", ageMin: 18, ageMax: null, sex: null },
+  ],
 };
+
+/** Metric keys covered by the hardcoded fallback table (asserted ⊆ registry in tests). */
+export const FALLBACK_RANGE_KEYS: readonly string[] = Object.keys(RANGES);
 
 function matchesAge(entry: RangeEntry, age: number): boolean {
   if (entry.ageMin !== null && age < entry.ageMin) return false;

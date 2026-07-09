@@ -9,16 +9,19 @@
  * Public surface:
  *   /            (marketing)
  *   /privacy, /terms
+ *   /docs/api    (API cookbook — deliberately outside account auth so LLMs
+ *                 and bridge authors can read it; API shape only, no user data)
  *   /login, /signup
  *   /shared/*    (tokenized public health-share views)
  *   /api/*       (routes self-authenticate and return 401 JSON; this includes
- *                 the better-auth handler at /api/auth/*)
+ *                 the better-auth handler at /api/auth/* and the public
+ *                 discovery endpoints /api/v1/metrics + /api/v1/openapi.json)
  * Everything else — the (app) group — requires a session cookie.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
 
-const PUBLIC_EXACT = new Set(['/', '/privacy', '/terms', '/login', '/signup']);
+const PUBLIC_EXACT = new Set(['/', '/privacy', '/terms', '/docs/api', '/login', '/signup']);
 const PUBLIC_PREFIXES = ['/shared/', '/api/'];
 
 function isPublicPath(pathname: string): boolean {

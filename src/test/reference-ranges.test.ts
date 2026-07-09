@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { getVitalRange } from '@/lib/reference-ranges';
+import { getVitalRange, FALLBACK_RANGE_KEYS } from '@/lib/reference-ranges';
+import { getMetric } from '@/lib/metrics/registry';
 
 describe('getVitalRange', () => {
   it('returns RHR range for adult male', () => {
@@ -48,5 +49,27 @@ describe('getVitalRange', () => {
     const range = getVitalRange('hrv_rmssd', 25, 'male');
     expect(range).not.toBeNull();
     expect(range!.unit).toBe('ms');
+  });
+
+  it('returns body temperature range', () => {
+    const range = getVitalRange('body_temp', 30, 'male');
+    expect(range).not.toBeNull();
+    expect(range!.low).toBe(96.0);
+    expect(range!.high).toBe(99.0);
+    expect(range!.unit).toBe('°F');
+  });
+
+  it('returns respiratory rate range', () => {
+    const range = getVitalRange('respiratory_rate', 30, 'female');
+    expect(range).not.toBeNull();
+    expect(range!.low).toBe(12);
+    expect(range!.high).toBe(20);
+    expect(range!.unit).toBe('breaths/min');
+  });
+
+  it('every fallback range key exists in the metric registry', () => {
+    for (const key of FALLBACK_RANGE_KEYS) {
+      expect(getMetric(key), `fallback range key ${key} missing from registry`).toBeDefined();
+    }
   });
 });

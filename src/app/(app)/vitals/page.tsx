@@ -5,8 +5,16 @@ import { useVitals } from '@/hooks/useVitals';
 import { useProfile } from '@/hooks/useProfile';
 import { useDateRangeContext } from '@/components/shared/DateRangeContext';
 import { getVitalRange } from '@/lib/reference-ranges';
+import {
+  METRICS,
+  getMetric,
+  CATEGORY_LABELS,
+  CATEGORY_ORDER,
+  type MetricCategory,
+} from '@/lib/metrics/registry';
 import type { Vital } from '@/lib/types';
 import ManualVitalEntry from '@/components/vitals/ManualVitalEntry';
+import CategorySection from '@/components/vitals/CategorySection';
 import CompactStatCard from '@/components/vitals/CompactStatCard';
 import BarChart from '@/components/vitals/BarChart';
 import VitalTrendChart from '@/components/vitals/VitalTrendChart';
@@ -17,36 +25,41 @@ import Skeleton from '@/components/shared/Skeleton';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
 
 // ---------------------------------------------------------------------------
-// Constants
+// Registry-derived structure (labels, categories and chart buckets come from
+// src/lib/metrics/registry.ts — the single source of truth).
 // ---------------------------------------------------------------------------
 
-const METRIC_LABELS: Record<string, string> = {
-  resting_hr: 'Resting HR',
-  hrv_rmssd: 'HRV',
-  spo2: 'SpO2',
-  bp_systolic: 'BP Systolic',
-  bp_diastolic: 'BP Diastolic',
-  weight: 'Weight',
-  sleep_duration: 'Sleep Duration',
-  steps: 'Steps',
-  ahi: 'AHI',
-  sleep_score: 'Sleep Score',
-};
+function metricLabel(key: string): string {
+  return getMetric(key)?.label ?? key;
+}
 
-const BAR_CHART_METRICS = new Set([
-  'sleep_score',
-  'sleep_duration',
-  'steps',
-  'ahi',
-]);
+interface SectionData {
+  category: MetricCategory;
+  /** Metrics with data in this category. */
+  metricCount: number;
+  bars: Array<{ key: string; data: Vital[] }>;
+  stats: Array<{
+    key: string;
+    latest: Vital;
+    sparkline: Array<{ value: number; date: string }>;
+    /** Ordinal metrics show their label text instead of the number. */
+    displayValue?: string;
+  }>;
+  trends: Array<{
+    key: string;
+    data: Array<{ value: number; recorded_at: string }>;
+    unit: string;
+    ordinalLabels?: readonly string[];
+  }>;
+}
 
-const COMPACT_STAT_METRICS = new Set([
-  'resting_hr',
-  'hrv_rmssd',
-  'spo2',
-  'bp_systolic',
-  'bp_diastolic',
-]);
+/** Latest label text for an ordinal reading: metadata.label, falling back to
+    the registry label for the numeric value. */
+function ordinalDisplayValue(latest: Vital, labels: readonly string[]): string {
+  const raw = latest.metadata?.label;
+  if (typeof raw === 'string' && raw.length > 0) return raw;
+  return labels[latest.value - 1] ?? String(latest.value);
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -130,75 +143,68 @@ export default function VitalsPage() {
     return Array.from(set).sort();
   }, [vitals]);
 
-  // Bar chart metrics present in data
-  const barChartEntries = useMemo(() => {
-    const entries: Array<{ key: string; data: Vital[] }> = [];
-    for (const key of BAR_CHART_METRICS) {
-      const data = grouped.get(key);
-      if (data && data.length > 0) {
-        entries.push({ key, data });
-      }
+  // One section per registry category with data, in fixed order. Within a
+  // section, metrics follow registry order; keys unknown to the registry are
+  // appended (fallback category: cardiovascular) and rendered as stat cards.
+  const sections = useMemo<SectionData[]>(() => {
+    const registryKeysWithData = METRICS.filter((m) => grouped.has(m.key)).map((m) => m.key);
+    const unknownKeys = [...grouped.keys()].filter((k) => !getMetric(k));
+
+    const byCategory = new Map<MetricCategory, string[]>();
+    for (const key of [...registryKeysWithData, ...unknownKeys]) {
+      const cat = getMetric(key)?.category ?? 'cardiovascular';
+      const arr = byCategory.get(cat);
+      if (arr) arr.push(key);
+      else byCategory.set(cat, [key]);
     }
-    return entries;
+
+    return CATEGORY_ORDER.filter((cat) => byCategory.has(cat)).map((category) => {
+      const keys = byCategory.get(category)!;
+      const section: SectionData = {
+        category,
+        metricCount: keys.length,
+        bars: [],
+        stats: [],
+        trends: [],
+      };
+      for (const key of keys) {
+        const data = grouped.get(key)!;
+        const metric = getMetric(key);
+        const latest = data[0]; // data is ordered recorded_at desc
+
+        if (metric?.chart === 'bar') {
+          section.bars.push({ key, data });
+        } else {
+          // 'stat' bucket + registry-unknown keys
+          section.stats.push({
+            key,
+            latest,
+            sparkline: data
+              .slice(0, 7)
+              .map((v) => ({ value: v.value, date: v.recorded_at }))
+              .reverse(),
+            displayValue:
+              metric?.valueType === 'ordinal'
+                ? ordinalDisplayValue(latest, metric.ordinalLabels ?? [])
+                : undefined,
+          });
+        }
+
+        if (data.length > 1) {
+          section.trends.push({
+            key,
+            data: data.map((v) => ({ value: v.value, recorded_at: v.recorded_at })),
+            unit: data[0]?.unit ?? '',
+            ordinalLabels:
+              metric?.valueType === 'ordinal' ? metric.ordinalLabels : undefined,
+          });
+        }
+      }
+      return section;
+    });
   }, [grouped]);
 
-  // Compact stat metrics present in data
-  const compactStatEntries = useMemo(() => {
-    const entries: Array<{
-      key: string;
-      latest: Vital;
-      sparkline: Array<{ value: number; date: string }>;
-    }> = [];
-    for (const key of COMPACT_STAT_METRICS) {
-      const data = grouped.get(key);
-      if (data && data.length > 0) {
-        // data is ordered desc, latest is first
-        const latest = data[0];
-        // Last 7 data points for sparkline
-        const sparkline = data
-          .slice(0, 7)
-          .map((v) => ({ value: v.value, date: v.recorded_at }))
-          .reverse();
-        entries.push({ key, latest, sparkline });
-      }
-    }
-    return entries;
-  }, [grouped]);
-
-  // Any metrics that are neither bar chart nor compact stat (e.g., weight)
-  const otherEntries = useMemo(() => {
-    const entries: Array<{ key: string; latest: Vital }> = [];
-    for (const [key, data] of grouped) {
-      if (!BAR_CHART_METRICS.has(key) && !COMPACT_STAT_METRICS.has(key) && data.length > 0) {
-        entries.push({ key, latest: data[0] });
-      }
-    }
-    return entries;
-  }, [grouped]);
-
-  // Trend chart entries: all metrics with >1 data point
-  const trendChartEntries = useMemo(() => {
-    const entries: Array<{
-      key: string;
-      data: Array<{ value: number; recorded_at: string }>;
-      unit: string;
-    }> = [];
-    for (const [key, data] of grouped) {
-      if (data.length > 1) {
-        entries.push({
-          key,
-          data: data.map((v) => ({ value: v.value, recorded_at: v.recorded_at })),
-          unit: data[0]?.unit ?? '',
-        });
-      }
-    }
-    return entries;
-  }, [grouped]);
-
-  const hasAnyData =
-    barChartEntries.length > 0 ||
-    compactStatEntries.length > 0 ||
-    otherEntries.length > 0;
+  const hasAnyData = sections.length > 0;
 
   async function handleAddVital(
     vital: Omit<Vital, 'id' | 'user_id' | 'created_at'>,
@@ -315,25 +321,23 @@ export default function VitalsPage() {
           />
         </div>
       ) : (
-        <>
-          {/* Bar Chart Section */}
-          {barChartEntries.length > 0 && (
-            <section>
-              <h2
-                className="text-lg font-semibold mb-3"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                Trends
-              </h2>
+        /* One collapsible section per registry category with data */
+        sections.map((section) => (
+          <CategorySection
+            key={section.category}
+            title={CATEGORY_LABELS[section.category]}
+            count={section.metricCount}
+          >
+            {/* Bar charts */}
+            {section.bars.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {barChartEntries.map(({ key, data }) => {
+                {section.bars.map(({ key, data }) => {
                   const range = getVitalRange(key, userAge, userSex);
-                  const chartData = data
-                    .map((v) => ({
-                      value: v.value,
-                      date: v.recorded_at,
-                      label: METRIC_LABELS[key],
-                    }));
+                  const chartData = data.map((v) => ({
+                    value: v.value,
+                    date: v.recorded_at,
+                    label: metricLabel(key),
+                  }));
 
                   // Find primary source for this metric
                   const primarySource = data[0]?.source ?? '';
@@ -352,7 +356,7 @@ export default function VitalsPage() {
                           className="text-sm font-medium"
                           style={{ color: 'var(--color-text-primary)' }}
                         >
-                          {METRIC_LABELS[key] ?? key}
+                          {metricLabel(key)}
                         </span>
                         <SourceBadge source={primarySource} />
                       </div>
@@ -366,78 +370,37 @@ export default function VitalsPage() {
                   );
                 })}
               </div>
-            </section>
-          )}
+            )}
 
-          {/* Compact Stat Cards Section */}
-          {compactStatEntries.length > 0 && (
-            <section>
-              <h2
-                className="text-lg font-semibold mb-3"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                Current Readings
-              </h2>
+            {/* Compact stat cards (ordinals show their label text) */}
+            {section.stats.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {compactStatEntries.map(({ key, latest, sparkline }) => {
+                {section.stats.map(({ key, latest, sparkline, displayValue }) => {
                   const range = getVitalRange(key, userAge, userSex);
 
                   return (
                     <CompactStatCard
                       key={key}
-                      label={METRIC_LABELS[key] ?? key}
+                      label={metricLabel(key)}
                       value={latest.value}
+                      displayValue={displayValue}
                       unit={latest.unit ?? ''}
                       source={latest.source}
                       timestamp={latest.recorded_at}
                       sparklineData={sparkline}
                       rangeInfo={
-                        range
-                          ? { low: range.low, high: range.high }
-                          : undefined
+                        range ? { low: range.low, high: range.high } : undefined
                       }
                     />
                   );
                 })}
               </div>
-            </section>
-          )}
+            )}
 
-          {/* Other metrics as compact stat cards (no range/sparkline) */}
-          {otherEntries.length > 0 && (
-            <section>
-              <h2
-                className="text-lg font-semibold mb-3"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                Other Metrics
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {otherEntries.map(({ key, latest }) => (
-                  <CompactStatCard
-                    key={key}
-                    label={METRIC_LABELS[key] ?? key}
-                    value={latest.value}
-                    unit={latest.unit ?? ''}
-                    source={latest.source}
-                    timestamp={latest.recorded_at}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Trend Charts — one per metric with >1 data point */}
-          {trendChartEntries.length > 0 && (
-            <section>
-              <h2
-                className="text-lg font-semibold mb-3"
-                style={{ color: 'var(--color-text-primary)' }}
-              >
-                Trend Charts
-              </h2>
+            {/* Trend charts — one per metric with >1 data point */}
+            {section.trends.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {trendChartEntries.map(({ key, data, unit }) => {
+                {section.trends.map(({ key, data, unit, ordinalLabels }) => {
                   const range = getVitalRange(key, userAge, userSex);
                   return (
                     <div
@@ -451,18 +414,19 @@ export default function VitalsPage() {
                       <VitalTrendChart
                         data={data}
                         metricKey={key}
-                        label={METRIC_LABELS[key] ?? key}
+                        label={metricLabel(key)}
                         refLow={range?.low}
                         refHigh={range?.high}
                         unit={unit}
+                        ordinalLabels={ordinalLabels}
                       />
                     </div>
                   );
                 })}
               </div>
-            </section>
-          )}
-        </>
+            )}
+          </CategorySection>
+        ))
       )}
     </div>
   );

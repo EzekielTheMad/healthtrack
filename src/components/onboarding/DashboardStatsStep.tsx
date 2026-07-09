@@ -10,7 +10,8 @@ interface DashboardStatsStepProps {
   onBack: () => void;
 }
 
-const CATEGORIES = ['Heart', 'Sleep', 'Respiratory', 'Blood Pressure'] as const;
+// Category display names in registry order, derived from the catalog.
+const CATEGORIES = Array.from(new Set(METRIC_CATALOG.map((m) => m.category)));
 
 export function DashboardStatsStep({ onNext, onBack }: DashboardStatsStepProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());

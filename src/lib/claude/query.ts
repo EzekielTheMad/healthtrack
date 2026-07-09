@@ -24,7 +24,7 @@ CURRENT MEDICATIONS:
 RECENT LAB RESULTS:
 {lab_results_data}
 
-RECENT VITALS (last 30 days):
+DEVICE & VITAL METRICS (30-day aggregates):
 {vitals_data}
 
 FLAGGED VALUES:
@@ -39,7 +39,8 @@ RECENT NOTES/SYMPTOMS:
 APPOINTMENTS:
 {appointments_data}`;
 
-function buildSystemPrompt(context: HealthContext): string {
+/** Exported for tests — fills the template, substituting placeholders for empty sections. */
+export function buildSystemPrompt(context: HealthContext): string {
   let prompt = SYSTEM_PROMPT_TEMPLATE;
   prompt = prompt.replace('{profile_data}', context.profile_data || 'No profile data available.');
   prompt = prompt.replace('{medications_data}', context.medications_data || 'No medication data available.');

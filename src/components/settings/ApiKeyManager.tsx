@@ -521,6 +521,8 @@ function HowToUseSection() {
     { path: '/api/v1/conditions', scope: 'read:conditions or read:all', method: 'GET' },
     { path: '/api/v1/allergies', scope: 'read:allergies or read:all', method: 'GET' },
     { path: '/api/v1/vitals', scope: 'read:vitals or read:all', method: 'GET' },
+    { path: '/api/v1/vitals', scope: 'write:vitals or write:all', method: 'POST' },
+    { path: '/api/v1/vitals/batch', scope: 'write:vitals or write:all', method: 'POST' },
     { path: '/api/v1/labs', scope: 'read:labs or read:all', method: 'GET' },
     { path: '/api/v1/procedures', scope: 'read:procedures or read:all', method: 'GET' },
     { path: '/api/v1/vaccines', scope: 'read:vaccines or read:all', method: 'GET' },

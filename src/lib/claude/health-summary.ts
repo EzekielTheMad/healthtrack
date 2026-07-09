@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { reasoningModel } from './model';
 import { createMessage } from './call';
+import { aggregateVitals, formatAggregatesForPrompt } from '@/lib/metrics/aggregate';
 
 export interface HealthSummaryInput {
   medications: Array<{ name: string; dosage: string | null; frequency: string | null }>;
@@ -13,11 +14,14 @@ export interface HealthSummaryInput {
     reference_range_low: number | null;
     reference_range_high: number | null;
   }>;
+  /** 30-day window of rows — aggregated into per-metric trend lines. */
   vitals: Array<{
     metric_key: string;
     value: number;
     unit: string;
     recorded_at: string;
+    /** Ordinal rows carry { label } — used for prompt display. */
+    metadata?: Record<string, unknown> | null;
   }>;
   interactionAlerts: Array<{
     alert_text: string;
@@ -56,17 +60,12 @@ Rules:
 - If there is very little data, say so and encourage them to add more.
 - Do NOT include markdown or commentary. Return ONLY the JSON object.`;
 
-export async function generateHealthSummary(
-  input: HealthSummaryInput,
-): Promise<HealthSummary> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
-  }
-
-  const client = new Anthropic({ apiKey });
-
-  // Build a concise snapshot — keep token usage low
+/**
+ * Build the concise plain-text snapshot sent to the model — keep token usage
+ * low. Exported for tests; `now` anchors the vitals aggregation windows and
+ * defaults to the current time.
+ */
+export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): string {
   const parts: string[] = [];
 
   if (input.medications.length > 0) {
@@ -96,20 +95,21 @@ export async function generateHealthSummary(
   }
 
   if (input.vitals.length > 0) {
-    // Just send the most recent value per metric
-    const latestByMetric = new Map<string, (typeof input.vitals)[number]>();
-    for (const v of input.vitals) {
-      const existing = latestByMetric.get(v.metric_key);
-      if (!existing || new Date(v.recorded_at) > new Date(existing.recorded_at)) {
-        latestByMetric.set(v.metric_key, v);
-      }
-    }
-    parts.push(
-      'Latest vitals:\n' +
-        [...latestByMetric.values()]
-          .map((v) => `- ${v.metric_key}: ${v.value} ${v.unit}`)
-          .join('\n'),
+    // Per-metric aggregates (latest + 7d/30d averages + trend) instead of a
+    // latest-per-metric dump — the model sees trajectory, not a snapshot.
+    const aggregates = aggregateVitals(
+      input.vitals.map((v) => ({
+        metricKey: v.metric_key,
+        value: v.value,
+        recordedAt: v.recorded_at,
+        metadata: v.metadata,
+      })),
+      now,
     );
+    const block = formatAggregatesForPrompt(aggregates);
+    if (block) {
+      parts.push(`Device & vital metrics (30-day aggregates):\n${block}`);
+    }
   }
 
   if (input.interactionAlerts.length > 0) {
@@ -119,7 +119,20 @@ export async function generateHealthSummary(
     );
   }
 
-  const userMessage = parts.join('\n\n');
+  return parts.join('\n\n');
+}
+
+export async function generateHealthSummary(
+  input: HealthSummaryInput,
+): Promise<HealthSummary> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY is not configured');
+  }
+
+  const client = new Anthropic({ apiKey });
+
+  const userMessage = buildHealthSnapshot(input);
 
   const message = await createMessage(client, {
     model: reasoningModel(),

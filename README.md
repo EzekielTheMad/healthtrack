@@ -14,7 +14,8 @@
 - **Family & dependents** — track children or family members under your account, with a transition flow when they grow up
 - **Sharing** — share selected sections of your (or a dependent's) health record with another user, with expiry
 - **Delegates** — grant another user read-only or read-write access to manage a record
-- **API access** — personal access tokens with scoped permissions for a read-only REST API (`/api/v1/...`)
+- **API access** — personal access tokens with scoped permissions for the REST API (`/api/v1/...`), including read endpoints for every domain
+- **Device integrations / bring your own bridge** — push metrics from any device (CPAP, smart scale, watch, CGM, …) via `POST /api/v1/vitals` and `/api/v1/vitals/batch` with idempotent upserts; see [docs/API.md](docs/API.md). Every instance self-documents at `/docs/api` (human cookbook) and `/api/v1/openapi.json` (OpenAPI 3.1) — both public, API-shape only
 - **AI health assistant*** — natural-language questions about your data, health summaries
 - **Oura Ring sync*** — sleep, heart rate and activity data
 - **Sign in with Google*** — alongside built-in email/password auth

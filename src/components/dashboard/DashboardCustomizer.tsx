@@ -199,31 +199,45 @@ export default function DashboardCustomizer({
         </div>
       )}
 
-      {/* Available vitals */}
+      {/* Available vitals, grouped by registry category (the catalog is ~60
+          metrics — a flat pill list is unusable) */}
       {availableVitals.length > 0 && (
-        <div className="space-y-1">
+        <div className="space-y-3">
           <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
             Available Vitals
           </p>
-          <div className="flex flex-wrap gap-2">
-            {availableVitals.map((metric) => (
-              <button
-                key={metric.metricKey}
-                type="button"
-                onClick={() => onAddStat('vital', metric.metricKey)}
-                className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors cursor-pointer"
-                style={{
-                  borderColor: 'var(--border-card)',
-                  color: 'var(--color-text-primary)',
-                  backgroundColor: 'transparent',
-                }}
-              >
-                <span style={{ color: 'var(--color-sage)' }}>+</span>
-                {metric.label}
-                <span style={{ color: 'var(--color-text-muted)' }}>({metric.displayUnit})</span>
-              </button>
-            ))}
-          </div>
+          {Array.from(new Set(availableVitals.map((m) => m.category))).map((category) => (
+            <div key={category} className="space-y-1">
+              <p className="text-[11px] font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                {category}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {availableVitals
+                  .filter((m) => m.category === category)
+                  .map((metric) => (
+                    <button
+                      key={metric.metricKey}
+                      type="button"
+                      onClick={() => onAddStat('vital', metric.metricKey)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors cursor-pointer"
+                      style={{
+                        borderColor: 'var(--border-card)',
+                        color: 'var(--color-text-primary)',
+                        backgroundColor: 'transparent',
+                      }}
+                    >
+                      <span style={{ color: 'var(--color-sage)' }}>+</span>
+                      {metric.label}
+                      {metric.displayUnit && (
+                        <span style={{ color: 'var(--color-text-muted)' }}>
+                          ({metric.displayUnit})
+                        </span>
+                      )}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

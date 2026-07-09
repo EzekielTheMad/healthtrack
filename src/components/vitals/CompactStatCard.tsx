@@ -20,6 +20,8 @@ interface CompactStatCardProps {
   unit: string;
   source: string;
   timestamp: string;
+  /** Rendered instead of the numeric value (ordinal metrics show their label text). */
+  displayValue?: string;
   sparklineData?: SparklinePoint[];
   rangeInfo?: RangeInfo;
 }
@@ -102,6 +104,7 @@ export default function CompactStatCard({
   unit,
   source,
   timestamp,
+  displayValue,
   sparklineData,
   rangeInfo,
 }: CompactStatCardProps) {
@@ -136,7 +139,7 @@ export default function CompactStatCard({
             className="text-2xl font-mono font-semibold"
             style={{ color: valueColor }}
           >
-            {value}
+            {displayValue ?? value}
           </span>
           <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
             {unit}

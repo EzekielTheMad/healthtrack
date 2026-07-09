@@ -13,8 +13,23 @@ export async function GET() {
     api: 'HealthTracker API v1',
     version: '1.0.0',
     auth: 'Bearer token in Authorization header. Format: Bearer ohts_pat_...',
-    docs: 'https://github.com/EzekielTheMad/healthtrack#readme',
+    docs: '/docs/api',
+    openapi: '/api/v1/openapi.json',
     endpoints: [
+      {
+        path: '/api/v1/metrics',
+        method: 'GET',
+        scope: null,
+        params: [],
+        description: 'Metric registry as JSON (public, no auth)',
+      },
+      {
+        path: '/api/v1/openapi.json',
+        method: 'GET',
+        scope: null,
+        params: [],
+        description: 'OpenAPI 3.1 document (public, no auth)',
+      },
       {
         path: '/api/v1/medications',
         method: 'GET',
@@ -42,6 +57,20 @@ export async function GET() {
         scope: 'read:vitals',
         params: ['metric', 'days', 'limit'],
         description: 'List vital signs',
+      },
+      {
+        path: '/api/v1/vitals',
+        method: 'POST',
+        scope: 'write:vitals',
+        params: [],
+        description: 'Upsert one vital record (idempotent on metric/day/source)',
+      },
+      {
+        path: '/api/v1/vitals/batch',
+        method: 'POST',
+        scope: 'write:vitals',
+        params: [],
+        description: 'Upsert up to 500 vital records in one transaction',
       },
       {
         path: '/api/v1/labs',

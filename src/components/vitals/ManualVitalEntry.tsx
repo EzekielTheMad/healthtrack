@@ -4,32 +4,49 @@ import React, { useState } from 'react';
 import type { Vital } from '@/lib/types';
 import { useProfile } from '@/hooks/useProfile';
 import { weightToLbs } from '@/lib/units';
+import {
+  METRICS,
+  CATEGORY_LABELS,
+  CATEGORY_ORDER,
+  getMetric,
+  type MetricDef,
+} from '@/lib/metrics/registry';
 
 interface ManualVitalEntryProps {
   onSubmit: (vital: Omit<Vital, 'id' | 'user_id' | 'created_at'>) => Promise<void>;
 }
 
-interface MetricConfig {
-  label: string;
-  key: string;
-  unit: string;
-  min: number;
-  max: number;
-  step: number;
-}
+// Section order for the metric dropdown's optgroups comes from the registry.
+const METRIC_GROUPS = CATEGORY_ORDER.map((category) => ({
+  category,
+  label: CATEGORY_LABELS[category],
+  metrics: METRICS.filter((m) => m.category === category),
+})).filter((g) => g.metrics.length > 0);
 
-const METRICS: MetricConfig[] = [
-  { label: 'Resting HR', key: 'resting_hr', unit: 'bpm', min: 20, max: 250, step: 1 },
-  { label: 'HRV', key: 'hrv', unit: 'ms', min: 0, max: 300, step: 1 },
-  { label: 'SpO2', key: 'spo2', unit: '%', min: 50, max: 100, step: 0.1 },
-  { label: 'Blood Pressure (Systolic)', key: 'bp_systolic', unit: 'mmHg', min: 50, max: 300, step: 1 },
-  { label: 'Blood Pressure (Diastolic)', key: 'bp_diastolic', unit: 'mmHg', min: 20, max: 200, step: 1 },
-  { label: 'Weight', key: 'weight', unit: 'lbs', min: 0, max: 1500, step: 0.1 },
-  { label: 'Sleep Duration', key: 'sleep_duration', unit: 'hours', min: 0, max: 24, step: 0.1 },
-  { label: 'Steps', key: 'steps', unit: 'steps', min: 0, max: 200000, step: 1 },
-  { label: 'AHI', key: 'ahi', unit: 'events/hr', min: 0, max: 200, step: 0.1 },
-  { label: 'Sleep Score', key: 'sleep_score', unit: 'score', min: 0, max: 100, step: 1 },
-];
+/** Input constraints for well-known metrics (carried over from the original list). */
+const INPUT_CONSTRAINTS: Record<string, { min: number; max: number; step: number }> = {
+  resting_hr: { min: 20, max: 250, step: 1 },
+  hrv_rmssd: { min: 0, max: 300, step: 1 },
+  spo2: { min: 50, max: 100, step: 0.1 },
+  bp_systolic: { min: 50, max: 300, step: 1 },
+  bp_diastolic: { min: 20, max: 200, step: 1 },
+  weight: { min: 0, max: 1500, step: 0.1 },
+  sleep_duration: { min: 0, max: 24, step: 0.1 },
+  steps: { min: 0, max: 200000, step: 1 },
+  ahi: { min: 0, max: 200, step: 0.1 },
+  sleep_score: { min: 0, max: 100, step: 1 },
+  pain_level: { min: 0, max: 10, step: 1 },
+};
+
+function constraintsFor(m: MetricDef): { min: number; max: number; step: number } {
+  return (
+    INPUT_CONSTRAINTS[m.key] ?? {
+      min: m.min ?? 0,
+      max: m.max ?? 1000000,
+      step: (m.decimals ?? 0) > 0 ? 0.1 : 1,
+    }
+  );
+}
 
 function toLocalDatetimeString(date: Date): string {
   const offset = date.getTimezoneOffset();
@@ -41,24 +58,24 @@ export default function ManualVitalEntry({ onSubmit }: ManualVitalEntryProps) {
   const { profile } = useProfile();
   const unitSystem = profile?.unit_system ?? 'imperial';
 
-  const [selectedMetricIndex, setSelectedMetricIndex] = useState(0);
+  const [metricKey, setMetricKey] = useState(METRICS[0].key);
   const [value, setValue] = useState('');
-  const [unit, setUnit] = useState(METRICS[0].unit);
   const [recordedAt, setRecordedAt] = useState(toLocalDatetimeString(new Date()));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const metric = METRICS[selectedMetricIndex];
+  const metric = getMetric(metricKey) ?? METRICS[0];
+  const isOrdinal = metric.valueType === 'ordinal';
+  const ordinalLabels = metric.ordinalLabels ?? [];
+  const constraints = constraintsFor(metric);
 
-  // Override unit for weight based on user preference
-  const effectiveUnit = metric.key === 'weight'
-    ? (unitSystem === 'metric' ? 'kg' : 'lbs')
-    : metric.unit;
+  // Unit hint from the registry; weight follows the user's unit preference
+  // (entered kg values are converted to the canonical lbs before saving).
+  const entryUnit =
+    metric.key === 'weight' ? (unitSystem === 'metric' ? 'kg' : 'lbs') : (metric.unit ?? '');
 
-  function handleMetricChange(index: number) {
-    setSelectedMetricIndex(index);
-    const m = METRICS[index];
-    setUnit(m.key === 'weight' ? (unitSystem === 'metric' ? 'kg' : 'lbs') : m.unit);
+  function handleMetricChange(key: string) {
+    setMetricKey(key);
     setValue('');
     setError(null);
   }
@@ -67,23 +84,24 @@ export default function ManualVitalEntry({ onSubmit }: ManualVitalEntryProps) {
     e.preventDefault();
     setError(null);
 
-    const numVal = parseFloat(value);
+    const numVal = isOrdinal ? parseInt(value, 10) : parseFloat(value);
     if (isNaN(numVal)) {
-      setError('Please enter a valid number.');
+      setError(isOrdinal ? 'Please choose a value.' : 'Please enter a valid number.');
       return;
     }
 
     setSubmitting(true);
     try {
       // Convert weight to lbs for DB storage if user entered in kg
-      const dbValue = metric.key === 'weight' && unitSystem === 'metric'
-        ? weightToLbs(numVal, 'metric')
-        : numVal;
+      const dbValue =
+        metric.key === 'weight' && unitSystem === 'metric'
+          ? weightToLbs(numVal, 'metric')
+          : numVal;
 
       await onSubmit({
         metric_key: metric.key,
         value: dbValue,
-        unit: metric.key === 'weight' ? 'lbs' : unit, // Always store weight as lbs
+        unit: metric.unit, // canonical stored unit from the registry
         source: 'manual',
         recorded_at: new Date(recordedAt).toISOString(),
         metadata: {},
@@ -109,7 +127,7 @@ export default function ManualVitalEntry({ onSubmit }: ManualVitalEntryProps) {
         Record Vital
       </h2>
 
-      {/* Metric selector */}
+      {/* Metric selector, grouped by registry category */}
       <div>
         <label
           htmlFor="vital-metric"
@@ -120,8 +138,8 @@ export default function ManualVitalEntry({ onSubmit }: ManualVitalEntryProps) {
         </label>
         <select
           id="vital-metric"
-          value={selectedMetricIndex}
-          onChange={(e) => handleMetricChange(parseInt(e.target.value, 10))}
+          value={metricKey}
+          onChange={(e) => handleMetricChange(e.target.value)}
           className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
           style={{
             backgroundColor: 'var(--bg-primary)',
@@ -130,10 +148,14 @@ export default function ManualVitalEntry({ onSubmit }: ManualVitalEntryProps) {
             colorScheme: 'dark',
           }}
         >
-          {METRICS.map((m, i) => (
-            <option key={m.key} value={i}>
-              {m.label}
-            </option>
+          {METRIC_GROUPS.map((group) => (
+            <optgroup key={group.category} label={group.label}>
+              {group.metrics.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
@@ -148,46 +170,71 @@ export default function ManualVitalEntry({ onSubmit }: ManualVitalEntryProps) {
           >
             Value
           </label>
-          <input
-            id="vital-value"
-            type="number"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            min={metric.min}
-            max={metric.max}
-            step={metric.step}
-            required
-            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-            style={{
-              backgroundColor: 'var(--bg-primary)',
-              borderColor: error ? 'var(--color-terracotta)' : 'var(--border-card)',
-              color: 'var(--color-text-primary)',
-              colorScheme: 'dark',
-            }}
-            aria-invalid={!!error}
-            aria-describedby={error ? 'vital-error' : undefined}
-          />
+          {isOrdinal ? (
+            <select
+              id="vital-value"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              required
+              className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: error ? 'var(--color-terracotta)' : 'var(--border-card)',
+                color: 'var(--color-text-primary)',
+                colorScheme: 'dark',
+              }}
+              aria-invalid={!!error}
+              aria-describedby={error ? 'vital-error' : undefined}
+            >
+              <option value="" disabled>
+                Select…
+              </option>
+              {ordinalLabels.map((label, i) => (
+                <option key={label} value={i + 1}>
+                  {label} ({i + 1}/{ordinalLabels.length})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              id="vital-value"
+              type="number"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              min={constraints.min}
+              max={constraints.max}
+              step={constraints.step}
+              required
+              className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: error ? 'var(--color-terracotta)' : 'var(--border-card)',
+                color: 'var(--color-text-primary)',
+                colorScheme: 'dark',
+              }}
+              aria-invalid={!!error}
+              aria-describedby={error ? 'vital-error' : undefined}
+            />
+          )}
         </div>
         <div>
-          <label
-            htmlFor="vital-unit"
+          <span
             className="text-sm font-medium mb-1 block"
             style={{ color: 'var(--color-text-muted)' }}
           >
             Unit
-          </label>
-          <input
-            id="vital-unit"
-            type="text"
-            value={unit}
-            onChange={(e) => setUnit(e.target.value)}
-            className="w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2"
+          </span>
+          <div
+            className="w-full rounded-lg border px-3 py-2 text-sm"
             style={{
               backgroundColor: 'var(--bg-primary)',
               borderColor: 'var(--border-card)',
-              color: 'var(--color-text-primary)',
+              color: 'var(--color-text-muted)',
             }}
-          />
+            aria-label="Unit"
+          >
+            {isOrdinal ? `1–${ordinalLabels.length} scale` : entryUnit || '—'}
+          </div>
         </div>
       </div>
 
