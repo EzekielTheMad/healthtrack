@@ -1,7 +1,8 @@
 // Phase 4: Medication interaction checking via Claude API
 
 import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_MODEL } from './model';
+import { reasoningModel } from './model';
+import { createMessage } from './call';
 import type { Medication } from '@/lib/types';
 
 export interface InteractionCheckResult {
@@ -70,8 +71,8 @@ export async function checkMedicationInteractions(
     })
     .join('\n');
 
-  const message = await client.messages.create({
-    model: ANTHROPIC_MODEL,
+  const message = await createMessage(client, {
+    model: reasoningModel(),
     thinking: { type: 'disabled' },
     max_tokens: 2048,
     system: SYSTEM_PROMPT,

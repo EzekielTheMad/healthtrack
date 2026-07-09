@@ -53,8 +53,12 @@ export default function VaccineImport({ onParsed, onCancel }: VaccineImportProps
 
         const { parsed } = (await res.json()) as { parsed: ParsedVaccinePdfResult };
         onParsed(parsed);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Something went wrong.');
+      } catch {
+        // Parsing runs through the AI extractor; if it fails, keep it friendly
+        // and point the user at manual entry rather than surfacing a raw error.
+        setError(
+          "Couldn't read this PDF automatically — you can add the vaccine manually.",
+        );
       } finally {
         setProcessing(false);
       }
@@ -162,9 +166,9 @@ export default function VaccineImport({ onParsed, onCancel }: VaccineImportProps
         <div
           className="rounded-lg px-4 py-3 text-sm"
           style={{
-            backgroundColor: 'rgba(224, 122, 95, 0.1)',
-            color: 'var(--color-terracotta)',
-            border: '1px solid rgba(248,113,113,0.2)',
+            backgroundColor: 'var(--bg-card)',
+            color: 'var(--color-text-muted)',
+            border: '1px solid var(--border-card)',
           }}
         >
           {error}

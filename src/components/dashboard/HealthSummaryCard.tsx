@@ -102,15 +102,12 @@ export default function HealthSummaryCard() {
       )}
 
       {error && !loading && (
-        <div
-          className="rounded-lg px-4 py-3 text-sm"
-          style={{
-            backgroundColor: 'rgba(224, 122, 95, 0.1)',
-            color: 'var(--color-terracotta)',
-          }}
-        >
-          {error}
-        </div>
+        // AI is configured (we only fetch when capabilities.ai) but the call
+        // failed at runtime. Keep it calm and non-alarming — this is an
+        // optional enhancement, not a broken page.
+        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          AI summary is temporarily unavailable.
+        </p>
       )}
 
       {data && !loading && (

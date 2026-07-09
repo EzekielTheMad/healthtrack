@@ -114,20 +114,22 @@ export default function QueryInput({ onSubmit, loading, error }: QueryInputProps
         ))}
       </div>
 
-      {/* Error display */}
+      {/* Error display — calm, non-alarming. A failed AI query is a temporary
+          hiccup, not a broken page, so use muted styling (not a red alert)
+          and offer a quiet Retry. */}
       {error && (
         <div
           className="mt-3 rounded-lg px-4 py-3 text-sm flex items-center justify-between"
           style={{
-            backgroundColor: 'rgba(248, 113, 113, 0.1)',
-            border: '1px solid rgba(248, 113, 113, 0.3)',
-            color: 'var(--color-terracotta)',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-card)',
+            color: 'var(--color-text-muted)',
           }}
         >
           <span>{error}</span>
           <button
             className="ml-3 text-xs font-medium underline hover:opacity-80"
-            style={{ color: 'var(--color-terracotta)' }}
+            style={{ color: 'var(--color-text-muted)' }}
             onClick={() => handleSubmit()}
           >
             Retry

@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_MODEL } from './model';
+import { reasoningModel } from './model';
+import { createMessage } from './call';
 
 export interface HealthContext {
   profile_data: string;
@@ -63,8 +64,8 @@ export async function queryHealthData(
   const client = new Anthropic({ apiKey });
   const systemPrompt = buildSystemPrompt(context);
 
-  const message = await client.messages.create({
-    model: ANTHROPIC_MODEL,
+  const message = await createMessage(client, {
+    model: reasoningModel(),
     thinking: { type: 'disabled' },
     max_tokens: 4096,
     system: systemPrompt,

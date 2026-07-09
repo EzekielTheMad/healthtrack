@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_MODEL } from './model';
+import { reasoningModel } from './model';
+import { createMessage } from './call';
 
 export interface HealthSummaryInput {
   medications: Array<{ name: string; dosage: string | null; frequency: string | null }>;
@@ -120,8 +121,8 @@ export async function generateHealthSummary(
 
   const userMessage = parts.join('\n\n');
 
-  const message = await client.messages.create({
-    model: ANTHROPIC_MODEL,
+  const message = await createMessage(client, {
+    model: reasoningModel(),
     thinking: { type: 'disabled' },
     max_tokens: 1024,
     system: SYSTEM_PROMPT,

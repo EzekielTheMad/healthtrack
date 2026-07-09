@@ -105,11 +105,11 @@ export function useInteractionAlerts() {
         });
 
         if (!res.ok) {
-          // 501 = AI not configured on this instance — interaction checks are
-          // an optional feature; skip silently rather than surface an error.
-          if (res.status === 501) return;
-          const errData = await res.json().catch(() => null);
-          setError(errData?.message ?? 'Failed to check interactions');
+          // Interaction checks run automatically in the background when meds
+          // change — they're an optional enhancement, not a user action. Any
+          // failure (501 = AI not configured, or a transient runtime AI error)
+          // should stay quiet rather than surface an alarming error. The
+          // existing alerts on screen remain valid.
           return;
         }
 

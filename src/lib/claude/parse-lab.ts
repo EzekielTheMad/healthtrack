@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { ANTHROPIC_MODEL } from './model';
+import { extractionModel } from './model';
+import { createMessage } from './call';
 
 export interface ParsedLabResultItem {
   panel_name: string | null;
@@ -58,8 +59,8 @@ export async function parseLabPdf(pdfBuffer: Buffer): Promise<ParsedLabResult> {
 
   const base64Content = pdfBuffer.toString('base64');
 
-  const message = await client.messages.create({
-    model: ANTHROPIC_MODEL,
+  const message = await createMessage(client, {
+    model: extractionModel(),
     thinking: { type: 'disabled' },
     max_tokens: 8192,
     system: SYSTEM_PROMPT,
