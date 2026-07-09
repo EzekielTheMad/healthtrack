@@ -9,11 +9,14 @@ PGID="${PGID:-100}"
 
 mkdir -p /data/uploads /data/keys
 
-# chown -R only when ownership doesn't match (fast path on restarts).
-if [ "$(stat -c '%u:%g' /data)" != "${PUID}:${PGID}" ]; then
-  echo "[entrypoint] fixing /data ownership -> ${PUID}:${PGID}"
-  chown -R "${PUID}:${PGID}" /data
-fi
+# Normalise ownership of the whole data tree to the runtime user before
+# dropping privileges. Do NOT gate this on /data's own ownership: on Unraid
+# the appdata mount is pre-owned 99:100, so a top-level check passes while
+# the root-created keys/ and uploads/ subdirs stay root-owned — which left
+# keys/auth_secret unwritable and made better-auth 500 on every sign-in.
+# The tree is small (a SQLite db + a few uploaded files), so an
+# unconditional recursive chown is cheap and reliably correct.
+chown -R "${PUID}:${PGID}" /data
 
 echo "[entrypoint] applying database migrations"
 su-exec "${PUID}:${PGID}" node /app/db-migrate.js
