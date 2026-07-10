@@ -19,6 +19,12 @@ import {
   getVitalDotColor,
 } from '@/lib/chart-config';
 import ChartTooltip from '@/components/shared/ChartTooltip';
+import {
+  formatUtcDay,
+  formatUtcMonthYear,
+  formatVitalDateLong,
+} from '@/lib/dates';
+import { getMetric } from '@/lib/metrics/registry';
 
 interface VitalDataPoint {
   value: number;
@@ -37,15 +43,20 @@ interface VitalTrendChartProps {
 }
 
 /**
- * Formats a date string for the X axis.
- * Uses "MMM d" for ranges under ~90 days, "MMM yyyy" for longer ranges.
+ * Formats a date string for the X axis: "MMM d" for ranges under ~90 days,
+ * "MMM yyyy" for longer ranges. Day-normalized (non-intraday) rows format
+ * from UTC date parts — local-TZ rendering shifted axis labels back a day
+ * anywhere west of UTC. Intraday rows keep local dates.
  */
-function formatAxisDate(dateStr: string, useShort: boolean): string {
-  const d = new Date(dateStr);
-  if (useShort) {
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+function formatAxisDate(dateStr: string, useShort: boolean, intraday: boolean): string {
+  if (intraday) {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString(
+      undefined,
+      useShort ? { month: 'short', day: 'numeric' } : { month: 'short', year: 'numeric' },
+    );
   }
-  return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  return useShort ? formatUtcDay(dateStr) : formatUtcMonthYear(dateStr);
 }
 
 /** Custom dot renderer with range-aware coloring */
@@ -75,6 +86,7 @@ function VitalDot(props: {
 
 export default function VitalTrendChart({
   data,
+  metricKey,
   label,
   refLow,
   refHigh,
@@ -83,6 +95,7 @@ export default function VitalTrendChart({
 }: VitalTrendChartProps) {
   const labels = useMemo(() => ordinalLabels ?? [], [ordinalLabels]);
   const isOrdinal = labels.length > 0;
+  const intraday = getMetric(metricKey)?.intraday === true;
   const sorted = useMemo(
     () =>
       [...data].sort(
@@ -168,7 +181,7 @@ export default function VitalTrendChart({
 
           <XAxis
             dataKey="date"
-            tickFormatter={(v) => formatAxisDate(v, useShortDateFormat)}
+            tickFormatter={(v) => formatAxisDate(v, useShortDateFormat, intraday)}
             tick={{ fill: CHART_COLORS.muted, fontSize: 10 }}
             axisLine={{ stroke: CHART_COLORS.grid }}
             tickLine={false}
@@ -195,13 +208,7 @@ export default function VitalTrendChart({
                 unit={unit}
                 refLow={refLow}
                 refHigh={refHigh}
-                formatDate={(d) =>
-                  new Date(d).toLocaleDateString(undefined, {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })
-                }
+                formatDate={(d) => formatVitalDateLong(d, metricKey)}
               />
             }
           />

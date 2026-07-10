@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useRef, useState } from 'react';
+import { formatUtcDay } from '@/lib/dates';
 
 interface BarChartDataPoint {
   value: number;
@@ -16,9 +17,10 @@ interface BarChartProps {
   refHigh?: number;
 }
 
+// Bar-bucket metrics are all day-normalized (never intraday) — axis labels
+// must come from UTC date parts or TZ<0 shifts every bar back a day.
 function abbreviateDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return formatUtcDay(dateStr);
 }
 
 function getBarColor(value: number, refLow?: number, refHigh?: number): string {

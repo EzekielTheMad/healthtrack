@@ -13,7 +13,8 @@ interface DateRangeContextType {
 const DateRangeContext = createContext<DateRangeContextType | null>(null);
 
 export function DateRangeProvider({ children }: { children: ReactNode }) {
-  const value = useDateRange('6m');
+  // 1M default — 6M rendered ~90 unreadable bars per bar chart on /vitals.
+  const value = useDateRange('1m');
 
   return (
     <DateRangeContext.Provider value={value}>{children}</DateRangeContext.Provider>

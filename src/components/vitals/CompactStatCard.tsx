@@ -3,6 +3,7 @@
 import React from 'react';
 import SourceBadge from '@/components/shared/SourceBadge';
 import RangeIndicator from '@/components/shared/RangeIndicator';
+import { formatVitalDate } from '@/lib/dates';
 
 interface SparklinePoint {
   value: number;
@@ -20,20 +21,16 @@ interface CompactStatCardProps {
   unit: string;
   source: string;
   timestamp: string;
+  /** Registry key — drives date formatting (UTC day vs local datetime). */
+  metricKey: string;
   /** Rendered instead of the numeric value (ordinal metrics show their label text). */
   displayValue?: string;
   sparklineData?: SparklinePoint[];
   rangeInfo?: RangeInfo;
-}
-
-function formatShortDate(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  /** When set, the card is a button toggling its expanded chart panel. */
+  onClick?: () => void;
+  /** Whether this card's expanded panel is currently open. */
+  expanded?: boolean;
 }
 
 function Sparkline({ data }: { data: SparklinePoint[] }) {
@@ -104,9 +101,12 @@ export default function CompactStatCard({
   unit,
   source,
   timestamp,
+  metricKey,
   displayValue,
   sparklineData,
   rangeInfo,
+  onClick,
+  expanded,
 }: CompactStatCardProps) {
   const isInRange =
     rangeInfo != null ? value >= rangeInfo.low && value <= rangeInfo.high : true;
@@ -119,10 +119,25 @@ export default function CompactStatCard({
     else valueColor = 'var(--color-terracotta)';
   }
 
+  const Wrapper: 'button' | 'div' = onClick ? 'button' : 'div';
+
   return (
-    <div
-      className="rounded-xl border p-4 flex flex-col gap-2"
-      style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+    <Wrapper
+      {...(onClick
+        ? {
+            type: 'button' as const,
+            onClick,
+            'aria-expanded': expanded === true,
+            'aria-label': `${label} — ${expanded ? 'hide' : 'show'} chart`,
+          }
+        : {})}
+      className={`rounded-xl border p-4 flex flex-col gap-2 text-left w-full${
+        onClick ? ' cursor-pointer transition-colors' : ''
+      }`}
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        borderColor: expanded ? 'var(--color-sage)' : 'var(--border-card)',
+      }}
     >
       {/* Header: label + source badge */}
       <div className="flex items-center justify-between">
@@ -167,8 +182,8 @@ export default function CompactStatCard({
         style={{ color: 'var(--color-text-muted)' }}
         dateTime={timestamp}
       >
-        {formatShortDate(timestamp)}
+        {formatVitalDate(timestamp, metricKey)}
       </time>
-    </div>
+    </Wrapper>
   );
 }
