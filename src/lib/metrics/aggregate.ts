@@ -49,7 +49,8 @@ export interface MetricAggregate {
   count30d: number;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** Milliseconds per day — shared by window math here and in focus.ts. */
+export const DAY_MS = 24 * 60 * 60 * 1000;
 /** Relative change within ±5% counts as flat. */
 const TREND_DEAD_BAND = 0.05;
 
@@ -60,7 +61,12 @@ const REGISTRY_INDEX: ReadonlyMap<string, number> = new Map(
   METRICS.map((m, i) => [m.key, i]),
 );
 
-function windowValue(kind: MetricDef['aggregate'], values: number[]): number | null {
+/**
+ * Collapse a window of raw values per the registry aggregate hint: total for
+ * `sum` metrics, mean otherwise; null for an empty window. Shared with the
+ * focus-view math (src/lib/metrics/focus.ts).
+ */
+export function windowValue(kind: MetricDef['aggregate'], values: number[]): number | null {
   if (values.length === 0) return null;
   const sum = values.reduce((a, b) => a + b, 0);
   return kind === 'sum' ? sum : sum / values.length;

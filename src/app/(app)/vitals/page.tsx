@@ -8,6 +8,7 @@ import type { Vital } from '@/lib/types';
 import ManualVitalEntry from '@/components/vitals/ManualVitalEntry';
 import TrendsView from '@/components/vitals/TrendsView';
 import DailyVitalsView from '@/components/vitals/DailyVitalsView';
+import FocusView from '@/components/vitals/FocusView';
 import { defaultDayKey } from '@/lib/metrics/vitals-view';
 import { localDayKey } from '@/lib/dates';
 import SourceBadge from '@/components/shared/SourceBadge';
@@ -54,7 +55,7 @@ export default function VitalsPage() {
   });
   const { profile, loading: profileLoading } = useProfile();
   const [showForm, setShowForm] = useState(false);
-  const [view, setView] = useState<'trends' | 'daily'>('trends');
+  const [view, setView] = useState<'focus' | 'daily' | 'trends'>('focus');
 
   // Bridge for DateRangeFilter
   const filterValue = useMemo(
@@ -125,14 +126,14 @@ export default function VitalsPage() {
         </button>
       </div>
 
-      {/* View toggle: Trends (default) | Daily */}
+      {/* View toggle: Focus (default) | Daily | All metrics */}
       <div
         className="inline-flex items-center gap-1 rounded-lg border p-1"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
         role="tablist"
         aria-label="Vitals view"
       >
-        {(['trends', 'daily'] as const).map((v) => {
+        {(['focus', 'daily', 'trends'] as const).map((v) => {
           const active = view === v;
           return (
             <button
@@ -147,13 +148,14 @@ export default function VitalsPage() {
                 color: active ? 'var(--color-sage)' : 'var(--color-text-muted)',
               }}
             >
-              {v === 'trends' ? 'Trends' : 'Daily'}
+              {v === 'focus' ? 'Focus' : v === 'daily' ? 'Daily' : 'All metrics'}
             </button>
           );
         })}
       </div>
 
-      {/* Date Range Filter — trends only; the daily view has its own day picker */}
+      {/* Date Range Filter — All metrics only; Focus uses a fixed 90d window
+          and the daily view has its own day picker */}
       {view === 'trends' && (
         <DateRangeFilter value={filterValue} onChange={handleFilterChange} />
       )}
@@ -211,6 +213,12 @@ export default function VitalsPage() {
             <LoadingSpinner size="lg" />
           </div>
         </div>
+      ) : view === 'focus' ? (
+        <FocusView
+          userAge={userAge}
+          userSex={userSex}
+          onAddManual={() => setShowForm(true)}
+        />
       ) : view === 'daily' ? (
         <DailyVitalsView initialDay={initialDay} />
       ) : !hasAnyData ? (
