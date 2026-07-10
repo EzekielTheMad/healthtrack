@@ -1,6 +1,8 @@
 interface VitalRange {
   label: string;
-  low: number;
+  /** Null for one-sided "below high is normal" ranges (BP normal, AHI) —
+      consumers must render these as "≤ high", not fabricate a 0 lower bound. */
+  low: number | null;
   high: number;
   unit: string;
 }
@@ -127,12 +129,14 @@ export function getVitalRange(
       matchesSex(e, sex),
   );
 
-  if (!match) return null;
+  // No "Normal" seed entry is open-ended above; a one-sided upper bound
+  // would need the same honest treatment as null lows before being added.
+  if (!match || match.high === null) return null;
 
   return {
     label: match.label,
-    low: match.low ?? 0,
-    high: match.high ?? Infinity,
+    low: match.low,
+    high: match.high,
     unit: match.unit,
   };
 }

@@ -15,6 +15,13 @@
       "when": 1783622626999,
       "tag": "0001_hrv-rmssd-rename",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783705960895,
+      "tag": "0002_vitals-upsert-unique",
+      "breakpoints": true
     }
   ]
 }

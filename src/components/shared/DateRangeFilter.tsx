@@ -112,9 +112,12 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
               onClick={() => handlePreset(preset)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer"
               style={{
-                backgroundColor: isActive ? 'rgba(74,222,128,0.15)' : 'transparent',
+                // Sage tint convention (see FocusView verdict badges).
+                backgroundColor: isActive ? 'rgba(129, 178, 154, 0.15)' : 'transparent',
                 color: isActive ? 'var(--color-sage)' : 'var(--color-text-muted)',
-                border: isActive ? '1px solid #4ADE80' : '1px solid #1E2642',
+                border: isActive
+                  ? '1px solid var(--color-sage)'
+                  : '1px solid var(--border-card)',
               }}
             >
               {preset}
@@ -126,9 +129,11 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
           onClick={() => setShowCustom((prev) => !prev)}
           className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer"
           style={{
-            backgroundColor: showCustom ? 'rgba(74,222,128,0.15)' : 'transparent',
+            backgroundColor: showCustom ? 'rgba(129, 178, 154, 0.15)' : 'transparent',
             color: showCustom ? 'var(--color-sage)' : 'var(--color-text-muted)',
-            border: showCustom ? '1px solid #4ADE80' : '1px solid #1E2642',
+            border: showCustom
+              ? '1px solid var(--color-sage)'
+              : '1px solid var(--border-card)',
           }}
         >
           Custom

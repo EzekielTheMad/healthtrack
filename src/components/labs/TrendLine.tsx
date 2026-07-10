@@ -51,10 +51,11 @@ export default function TrendLine({
     .map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`)
     .join(' ');
 
-  // Reference range band
-  const hasRefBand = refLow !== undefined && refHigh !== undefined;
+  // Reference range band — one-sided ranges (refHigh only) shade from the
+  // bottom of the chart instead of fabricating a lower bound.
+  const hasRefBand = refHigh !== undefined;
   const refBandY1 = refHigh !== undefined ? scaleY(refHigh) : 0;
-  const refBandY2 = refLow !== undefined ? scaleY(refLow) : height;
+  const refBandY2 = refLow !== undefined ? scaleY(refLow) : padding.top + chartH;
 
   const getPointColor = (value: number): string => {
     if (refLow !== undefined && value < refLow) return 'var(--color-warning)';

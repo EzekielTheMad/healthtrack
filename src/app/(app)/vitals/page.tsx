@@ -144,7 +144,8 @@ export default function VitalsPage() {
               onClick={() => setView(v)}
               className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
               style={{
-                backgroundColor: active ? 'rgba(74,222,128,0.15)' : 'transparent',
+                // Sage tint convention (see FocusView verdict badges).
+                backgroundColor: active ? 'rgba(129, 178, 154, 0.15)' : 'transparent',
                 color: active ? 'var(--color-sage)' : 'var(--color-text-muted)',
               }}
             >

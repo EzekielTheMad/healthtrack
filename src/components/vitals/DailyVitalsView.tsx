@@ -8,6 +8,7 @@ import {
   type DailyEntry,
 } from '@/lib/metrics/vitals-view';
 import { CATEGORY_LABELS } from '@/lib/metrics/registry';
+import { displayUnit } from '@/lib/metrics/format';
 import { dayKeyToUtcIso, formatLocalTime, localDayKey, shiftDayKey } from '@/lib/dates';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 
@@ -44,11 +45,12 @@ function DeltaCell({ entry }: { entry: DailyEntry }) {
   }
 
   const arrow = delta.direction === 'up' ? '▲' : delta.direction === 'down' ? '▼' : '—';
-  // Muted, non-judgemental colors — "up" is not universally good for vitals.
+  // Judged by the registry goalDirection — a falling resting HR is good, a
+  // falling step count is not, and directionless metrics stay muted.
   const color =
-    delta.direction === 'up'
+    delta.tone === 'good'
       ? 'var(--color-sage)'
-      : delta.direction === 'down'
+      : delta.tone === 'bad'
         ? 'var(--color-terracotta)'
         : 'var(--color-text-muted)';
   const baselineLabel = entry.aggregate === 'sum' ? 'vs 7d daily avg' : 'vs 7d avg';
@@ -69,7 +71,7 @@ function DeltaCell({ entry }: { entry: DailyEntry }) {
       ) : (
         <span>
           {delta.display}
-          {entry.unit ? ` ${entry.unit}` : ''} {baselineLabel}
+          {entry.unit ? ` ${displayUnit(entry.unit)}` : ''} {baselineLabel}
         </span>
       )}
     </span>
@@ -130,12 +132,12 @@ export function DailyTable({ sections }: { sections: DailySection[] }) {
                       style={{ color: 'var(--color-text-primary)' }}
                     >
                       {reading.display}
-                      {entry.unit && (
+                      {entry.unit && !entry.duration && (
                         <span
                           className="text-xs ml-1"
                           style={{ color: 'var(--color-text-muted)' }}
                         >
-                          {entry.unit}
+                          {displayUnit(entry.unit)}
                         </span>
                       )}
                       {entry.intraday && (

@@ -86,6 +86,39 @@ describe('TrendsView', () => {
     expect(screen.queryByRole('region')).not.toBeInTheDocument();
   });
 
+  it('clamps card values to registry decimals and renders one-sided ranges honestly', () => {
+    render(
+      <TrendsView
+        vitals={[vital('ahi', 3.3333333333, '2026-07-08T00:00:00Z')]}
+        {...baseProps}
+      />,
+    );
+    // Raw stored float renders at AHI's 1 decimal (card value + range row).
+    expect(screen.getAllByText('3.3').length).toBeGreaterThan(0);
+    expect(screen.queryByText('3.3333333333')).not.toBeInTheDocument();
+    // AHI normal range is one-sided: "≤ 4.9", never a fabricated 0–4.9 band.
+    expect(screen.getByText('≤ 4.9')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: '3.3 events/hr, normal range 4.9 or below' }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders minute-based sleep metrics as durations and hours as hrs', () => {
+    render(
+      <TrendsView
+        vitals={[
+          vital('deep_sleep', 462, '2026-07-08T00:00:00Z'),
+          vital('sleep_duration', 7.5, '2026-07-08T00:00:00Z'),
+        ]}
+        {...baseProps}
+      />,
+    );
+    expect(screen.getByText('7h 42m')).toBeInTheDocument();
+    expect(screen.queryByText('462')).not.toBeInTheDocument();
+    expect(screen.getByText('hrs')).toBeInTheDocument();
+    expect(screen.queryByText('hours')).not.toBeInTheDocument();
+  });
+
   it('labels long-range bar panels as weekly aggregates', () => {
     render(
       <TrendsView

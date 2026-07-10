@@ -94,7 +94,7 @@ describe('bodyVerdict', () => {
 // ---------------------------------------------------------------------------
 
 describe('cpapAdherence', () => {
-  it('counts nights since the first cpap record; zero-usage and missing nights are unused', () => {
+  it('counts nights since the first cpap record; sub-threshold and missing nights are unused', () => {
     const rows = [
       row('cpap_usage', 7.5, '2026-07-01'), // first record → window start
       row('cpap_usage', 0, '2026-07-02'), // recorded but unused
@@ -111,7 +111,47 @@ describe('cpapAdherence', () => {
       usedNights: 5,
       totalNights: 10, // Jul 1 .. Jul 10 inclusive
       avgHours: 7.2, // (7.5+6+8+7+7.5)/5
+      compliant: false, // 50% < 70%
     });
+  });
+
+  it('counts a night as used only at 4 or more hours (exactly 4.0 counts)', () => {
+    const rows = [
+      row('cpap_usage', 4.0, '2026-07-09'), // boundary — counts
+      row('cpap_usage', 3.9, '2026-07-10'), // under the compliance threshold
+    ];
+    const a = cpapAdherence(rows, NOW);
+    expect(a?.usedNights).toBe(1);
+    expect(a?.totalNights).toBe(2);
+    expect(a?.avgHours).toBe(4);
+  });
+
+  it('is compliant at exactly 70% of nights and not below', () => {
+    // 7 of 10 nights ≥4h since the first record (Jul 1 .. Jul 10).
+    const seventy = [
+      ...['01', '02', '03', '04', '05', '06', '07'].map((d) =>
+        row('cpap_usage', 7, `2026-07-${d}`),
+      ),
+      row('cpap_usage', 0, '2026-07-10'), // keeps today in the denominator
+    ];
+    expect(cpapAdherence(seventy, NOW)?.compliant).toBe(true); // 7/10
+    const belowSeventy = seventy.slice(1); // first record Jul 2 → 6/9 ≈ 67%
+    expect(cpapAdherence(belowSeventy, NOW)?.compliant).toBe(false);
+  });
+
+  it('judges compliance against the today-excluded denominator', () => {
+    // 3 of 4 nights ≥4h, Jul 6 .. Jul 9 — today (Jul 10) has no record and
+    // must not dilute 75% down to 60%.
+    const rows = [
+      row('cpap_usage', 7, '2026-07-06'),
+      row('cpap_usage', 7, '2026-07-07'),
+      row('cpap_usage', 0, '2026-07-08'),
+      row('cpap_usage', 7, '2026-07-09'),
+    ];
+    const a = cpapAdherence(rows, NOW);
+    expect(a?.totalNights).toBe(4);
+    expect(a?.pct).toBe(75);
+    expect(a?.compliant).toBe(true);
   });
 
   it('caps the window at 90 days back even when the first record is older', () => {
@@ -123,6 +163,27 @@ describe('cpapAdherence', () => {
     expect(a?.totalNights).toBe(90);
     expect(a?.usedNights).toBe(1);
     expect(a?.pct).toBe(1);
+  });
+
+  it('ends the denominator at yesterday when tonight has no data yet', () => {
+    const rows = [
+      row('cpap_usage', 7, '2026-07-08'),
+      row('cpap_usage', 7, '2026-07-09'),
+      // no record for Jul 10 (today) — tonight hasn't happened yet
+    ];
+    const a = cpapAdherence(rows, NOW);
+    expect(a?.totalNights).toBe(2); // Jul 8 .. Jul 9
+    expect(a?.pct).toBe(100);
+  });
+
+  it('includes today in the denominator once today has a record', () => {
+    const rows = [
+      row('cpap_usage', 7, '2026-07-09'),
+      row('cpap_usage', 7, '2026-07-10'),
+    ];
+    const a = cpapAdherence(rows, NOW);
+    expect(a?.totalNights).toBe(2); // Jul 9 .. Jul 10
+    expect(a?.pct).toBe(100);
   });
 
   it('returns null without cpap_usage rows', () => {
@@ -280,10 +341,24 @@ describe('apnea panel', () => {
     expect(jun27.ahi).toBeNull();
   });
 
-  it('shows adherence with average hours on used nights', () => {
+  it('shows adherence with the night counts, amber under 70%', () => {
     const s = stat(apneaRows(), 'apnea', 'adherence');
     expect(s.value).toBe('60%'); // 6 used / 10 nights since first record
-    expect(s.sub).toBe('avg 7 hrs on used nights');
+    expect(s.sub).toBe('6/10 nights ≥4h');
+    expect(s.tone).toBe('warn');
+  });
+
+  it('tints adherence green at 70% or more compliant nights', () => {
+    const rows = [
+      ...['03', '04', '05', '06', '07', '08', '09'].map((d) =>
+        row('cpap_usage', 7, `2026-07-${d}`),
+      ),
+      row('ahi', 3, '2026-07-09'),
+    ];
+    const s = stat(rows, 'apnea', 'adherence');
+    expect(s.value).toBe('100%'); // 7/7 nights (today has no record yet)
+    expect(s.sub).toBe('7/7 nights ≥4h');
+    expect(s.tone).toBe('good');
   });
 
   it('flags mask-leak nights over 24 L/min with a warning tint', () => {
@@ -376,6 +451,56 @@ describe('recovery panel', () => {
     const s = stat(rows, 'recovery', 'readiness_score');
     expect(s.sub).toBe('no change vs 30d avg');
     expect(s.tone).toBe('neutral');
+  });
+
+  it('day-deduplicates same-day rows in the 30d mean', () => {
+    const rows = [
+      row('readiness_score', 80, '2026-07-10'),
+      row('readiness_score', 60, '2026-07-01'),
+      row('readiness_score', 60, '2026-07-01'), // duplicate reading, same day
+    ];
+    const s = stat(rows, 'recovery', 'readiness_score');
+    // Daily means 80 and 60 → 30d mean 70 (not mean of three rows ≈ 66.7).
+    expect(s.sub).toBe('+10 vs 30d avg');
+  });
+
+  it('excludes the latest HRV reading from its own fallback baseline', () => {
+    const rows = [
+      row('hrv_rmssd', 54, '2026-07-10'),
+      row('hrv_rmssd', 60, '2026-07-05'),
+    ];
+    // Baseline is 60 (not mean(54, 60) = 57) → 54 is −10% → Take it easier.
+    expect(panel(rows, 'recovery').verdict).toEqual({
+      label: 'Take it easier',
+      tone: 'warning',
+    });
+  });
+
+  it('is Not enough data when a single HRV reading has no baseline', () => {
+    const rows = [row('hrv_rmssd', 50, '2026-07-10')];
+    const p = panel(rows, 'recovery');
+    expect(p.verdict).toEqual({ label: 'Not enough data', tone: 'neutral' });
+    expect(p.caption).toBeNull(); // no HRV-norm caption without a derivation
+  });
+
+  it('keeps today-language while the verdict reading is fresh (≤48h)', () => {
+    const rows = [
+      row('readiness_score', 80, '2026-07-09'),
+      row('sleep_duration', 7.5, '2026-07-09'),
+    ];
+    const p = panel(rows, 'recovery');
+    expect(p.title).toBe('Recovery today');
+    expect(p.stats.find((s) => s.key === 'sleep_duration')!.label).toBe('Sleep last night');
+  });
+
+  it('dates the title and sleep label when the latest reading is older than 48h', () => {
+    const rows = [
+      row('readiness_score', 80, '2026-07-07'),
+      row('sleep_duration', 7.5, '2026-07-06'),
+    ];
+    const p = panel(rows, 'recovery');
+    expect(p.title).toBe('Recovery (Jul 7)');
+    expect(p.stats.find((s) => s.key === 'sleep_duration')!.label).toBe('Sleep (Jul 6)');
   });
 });
 
@@ -471,9 +596,9 @@ describe('activity panel', () => {
       row('steps', 3000, '2026-06-20'),
     ];
     const s = stat(rows, 'activity', 'steps');
-    // 7d: 3000/7 ≈ 428.6/day; 30d: 6000/30 = 200/day → +114%
+    // 7d: 3000/7 ≈ 428.6/day; 30d over 21 days covered: 6000/21 ≈ 285.7 → +50%
     expect(s.value).toBe('429');
-    expect(s.sub).toBe('+114% vs 30d avg');
+    expect(s.sub).toBe('+50% vs 30d avg');
     expect(s.tone).toBe('good');
   });
 
@@ -483,12 +608,35 @@ describe('activity panel', () => {
       ...['04', '05', '06', '07', '08', '09', '10'].map((d) =>
         row('steps', 1000, `2026-07-${d}`),
       ),
-      row('steps', 23000, '2026-06-15'),
+      row('steps', 23000, '2026-06-11'),
     ];
     const s = stat(rows, 'activity', 'steps');
-    expect(s.value).toBe('1000');
+    expect(s.value).toBe('1,000');
     expect(s.sub).toBe('no change vs 30d avg');
     expect(s.tone).toBe('neutral');
+  });
+
+  it('divides by days covered when history is shorter than the window', () => {
+    const rows = [
+      row('steps', 1000, '2026-07-08'),
+      row('steps', 1000, '2026-07-09'),
+      row('steps', 1000, '2026-07-10'),
+    ];
+    const s = stat(rows, 'activity', 'steps');
+    // First record 3 days ago → both windows cover the same 3 days.
+    expect(s.value).toBe('1,000');
+    expect(s.sub).toBe('no change vs 30d avg');
+  });
+
+  it('day-deduplicates same-day rows instead of double-counting the sum', () => {
+    const rows = [
+      row('steps', 6000, '2026-07-10'),
+      row('steps', 6000, '2026-07-10'), // duplicate reading, same day
+      row('steps', 6000, '2026-07-04'),
+    ];
+    const s = stat(rows, 'activity', 'steps');
+    // 2 days × 6000 over 7 days covered... first record Jul 4 → 7 days covered
+    expect(s.value).toBe('1,714'); // 12000/7, not 18000/7
   });
 
   it('includes active calories only when present', () => {

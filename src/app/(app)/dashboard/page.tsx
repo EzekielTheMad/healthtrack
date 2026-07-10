@@ -331,14 +331,14 @@ export default function DashboardPage() {
                         )}
                       </div>
                       {sparklineData.length > 1 ? (
-                        <TrendLine data={sparklineData} refLow={range?.low} refHigh={range?.high} width={160} height={40} />
+                        <TrendLine data={sparklineData} refLow={range?.low ?? undefined} refHigh={range?.high} width={160} height={40} />
                       ) : (
                         <div className="flex items-center justify-center h-10 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
                           {hasData ? 'Not enough data for trend' : 'No data'}
                         </div>
                       )}
                       {hasData && range ? (
-                        <RangeIndicator value={latest.value} low={range.low} high={range.high} unit={range.unit} label={range.label} />
+                        <RangeIndicator value={latest.value} displayValue={displayValue} low={range.low} high={range.high} unit={range.unit} label={range.label} />
                       ) : hasData ? (
                         <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>Set up your profile for reference ranges</p>
                       ) : null}

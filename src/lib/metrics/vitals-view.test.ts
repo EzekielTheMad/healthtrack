@@ -181,6 +181,32 @@ describe('buildDailySections', () => {
     const [{ entries: [dur] }] = buildDailySections(rows, '2026-07-08');
     expect(dur.readings[0].display).toBe('7.3'); // decimals: 1
   });
+
+  it('tones deltas by the registry goalDirection', () => {
+    const build = (key: string, today: number, prior: number) => {
+      const sections = buildDailySections(
+        [row(key, today, day('2026-07-08')), row(key, prior, day('2026-07-07'))],
+        '2026-07-08',
+      );
+      return sections.flatMap((s) => s.entries).find((e) => e.key === key)!.delta!;
+    };
+    // Lower-is-better: a drop reads positive, a rise negative.
+    expect(build('resting_hr', 55, 60)).toMatchObject({ direction: 'down', tone: 'good' });
+    expect(build('resting_hr', 65, 60)).toMatchObject({ direction: 'up', tone: 'bad' });
+    // Higher-is-better: a drop reads negative (sum baseline is total / 7).
+    expect(build('steps', 1000, 21000)).toMatchObject({ direction: 'down', tone: 'bad' });
+    // Neutral metrics carry no judgement either way.
+    expect(build('body_temp', 98.9, 97.8)).toMatchObject({ direction: 'up', tone: 'neutral' });
+    // Flat deltas stay neutral regardless of direction.
+    expect(build('resting_hr', 60, 60)).toMatchObject({ direction: 'flat', tone: 'neutral' });
+  });
+
+  it('renders minute-based sleep metrics as h/m durations', () => {
+    const rows = [row('deep_sleep', 462, day('2026-07-08'))];
+    const [{ entries: [deep] }] = buildDailySections(rows, '2026-07-08');
+    expect(deep.duration).toBe(true);
+    expect(deep.readings[0].display).toBe('7h 42m');
+  });
 });
 
 describe('shouldBucketWeekly', () => {
@@ -202,8 +228,8 @@ describe('bucketWeekly', () => {
     ];
     const out = bucketWeekly(points, 'mean', 0);
     expect(out).toEqual([
-      { value: 85, date: '2026-07-06T00:00:00.000Z' },
-      { value: 70, date: '2026-07-13T00:00:00.000Z' },
+      { value: 85, date: '2026-07-06T00:00:00.000Z', days: 2 },
+      { value: 70, date: '2026-07-13T00:00:00.000Z', days: 1 },
     ]);
   });
 
@@ -213,7 +239,7 @@ describe('bucketWeekly', () => {
       { value: 20, date: '2026-07-06T00:00:00Z' }, // Mon
     ];
     const out = bucketWeekly(points, 'mean', 0);
-    expect(out).toEqual([{ value: 15, date: '2026-07-06T00:00:00.000Z' }]);
+    expect(out).toEqual([{ value: 15, date: '2026-07-06T00:00:00.000Z', days: 2 }]);
   });
 
   it('sums sum metrics within each week', () => {
@@ -222,7 +248,7 @@ describe('bucketWeekly', () => {
       { value: 12000, date: '2026-07-07T00:00:00Z' },
     ];
     const out = bucketWeekly(points, 'sum', 0);
-    expect(out).toEqual([{ value: 20000, date: '2026-07-06T00:00:00.000Z' }]);
+    expect(out).toEqual([{ value: 20000, date: '2026-07-06T00:00:00.000Z', days: 2 }]);
   });
 
   it('averages latest-aggregate metrics like mean metrics', () => {
@@ -231,7 +257,23 @@ describe('bucketWeekly', () => {
       { value: 212, date: '2026-07-07T00:00:00Z' },
     ];
     const out = bucketWeekly(points, 'latest', 1);
-    expect(out).toEqual([{ value: 211, date: '2026-07-06T00:00:00.000Z' }]);
+    expect(out).toEqual([{ value: 211, date: '2026-07-06T00:00:00.000Z', days: 2 }]);
+  });
+
+  it('reports how many days of data each bucket aggregates (partial edge weeks stay honest)', () => {
+    const points = [
+      // Partial edge week: only Thu–Sun of the week of Jun 29 are in range.
+      { value: 1000, date: '2026-07-02T00:00:00Z' },
+      { value: 1000, date: '2026-07-03T00:00:00Z' },
+      { value: 1000, date: '2026-07-04T00:00:00Z' },
+      { value: 1000, date: '2026-07-05T00:00:00Z' },
+      // Full week of Jul 6 (two same-day readings count as one day).
+      { value: 500, date: '2026-07-06T00:00:00Z' },
+      { value: 500, date: '2026-07-06T00:00:00Z' },
+      { value: 1000, date: '2026-07-07T00:00:00Z' },
+    ];
+    const out = bucketWeekly(points, 'sum', 0);
+    expect(out.map((p) => p.days)).toEqual([4, 2]);
   });
 
   it('rounds bucket values to the given decimals and sorts weeks ascending', () => {

@@ -66,6 +66,16 @@ describe('DailyTable', () => {
     expect(screen.getByText(formatLocalTime(local(18)))).toBeInTheDocument();
   });
 
+  it('renders duration metrics as h/m without a unit suffix', () => {
+    const sections = buildDailySections(
+      [row('deep_sleep', 462, '2026-07-08T00:00:00Z')],
+      '2026-07-08',
+    );
+    render(<DailyTable sections={sections} />);
+    expect(screen.getByText('7h 42m')).toBeInTheDocument();
+    expect(screen.queryByText('min')).not.toBeInTheDocument();
+  });
+
   it('renders ordinal readings as label text', () => {
     const sections = buildDailySections(
       [row('mood', 4, '2026-07-08T00:00:00Z')],

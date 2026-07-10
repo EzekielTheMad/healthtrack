@@ -10,6 +10,7 @@ import {
   real,
   index,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
 import { user } from './auth';
 import { dependents } from './users';
@@ -39,6 +40,16 @@ export const vitals = sqliteTable(
   (t) => [
     index('idx_vitals_user_metric').on(t.userId, t.metricKey, sql`${t.recordedAt} desc`),
     index('idx_vitals_dependent').on(t.dependentId),
+    // Backs the app-level upsert tuple (upsertOwnVital in src/lib/repos/vitals.ts).
+    // SQLite treats NULLs as distinct in unique indexes, so the nullable
+    // dependent_id is coalesced to '' — owner rows are actually constrained.
+    uniqueIndex('idx_vitals_upsert_tuple').on(
+      t.userId,
+      t.metricKey,
+      t.recordedAt,
+      t.source,
+      sql`coalesce(${t.dependentId}, '')`,
+    ),
   ],
 );
 

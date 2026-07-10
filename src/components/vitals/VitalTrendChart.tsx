@@ -24,6 +24,12 @@ import {
   formatUtcMonthYear,
   formatVitalDateLong,
 } from '@/lib/dates';
+import {
+  displayUnit,
+  formatDuration,
+  formatMetricValue,
+  isDurationMetric,
+} from '@/lib/metrics/format';
 import { getMetric } from '@/lib/metrics/registry';
 
 interface VitalDataPoint {
@@ -95,7 +101,9 @@ export default function VitalTrendChart({
 }: VitalTrendChartProps) {
   const labels = useMemo(() => ordinalLabels ?? [], [ordinalLabels]);
   const isOrdinal = labels.length > 0;
-  const intraday = getMetric(metricKey)?.intraday === true;
+  const metric = getMetric(metricKey);
+  const intraday = metric?.intraday === true;
+  const duration = isDurationMetric(metric);
   const sorted = useMemo(
     () =>
       [...data].sort(
@@ -166,7 +174,7 @@ export default function VitalTrendChart({
         }}
       >
         {label}
-        {unit ? ` (${unit})` : ''}
+        {!duration && unit ? ` (${displayUnit(unit)})` : ''}
       </p>
       <ResponsiveContainer width="100%" height={CHART_DEFAULTS.height - 20}>
         <LineChart
@@ -205,18 +213,27 @@ export default function VitalTrendChart({
           <Tooltip
             content={
               <ChartTooltip
-                unit={unit}
+                unit={duration ? '' : displayUnit(unit ?? null)}
                 refLow={refLow}
                 refHigh={refHigh}
                 formatDate={(d) => formatVitalDateLong(d, metricKey)}
+                formatValue={
+                  isOrdinal
+                    ? undefined
+                    : (v) =>
+                        duration
+                          ? formatDuration(v)
+                          : formatMetricValue(v, metric?.decimals ?? 1)
+                }
               />
             }
           />
 
-          {/* Reference range shading */}
-          {refLow !== undefined && refHigh !== undefined && (
+          {/* Reference range shading — one-sided ranges shade up to refHigh
+              from the bottom of the domain (no fabricated 0 lower bound). */}
+          {refHigh !== undefined && (
             <ReferenceArea
-              y1={refLow}
+              y1={refLow ?? yDomain[0]}
               y2={refHigh}
               fill={CHART_COLORS.sage}
               fillOpacity={REFERENCE_AREA_OPACITY}

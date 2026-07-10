@@ -4,6 +4,13 @@ import React from 'react';
 import SourceBadge from '@/components/shared/SourceBadge';
 import RangeIndicator from '@/components/shared/RangeIndicator';
 import { formatVitalDate } from '@/lib/dates';
+import { getMetric } from '@/lib/metrics/registry';
+import {
+  displayUnit,
+  formatDuration,
+  formatMetricValue,
+  isDurationMetric,
+} from '@/lib/metrics/format';
 
 interface SparklinePoint {
   value: number;
@@ -11,7 +18,8 @@ interface SparklinePoint {
 }
 
 interface RangeInfo {
-  low: number;
+  /** Null for one-sided "below high is normal" ranges (BP normal, AHI). */
+  low: number | null;
   high: number;
 }
 
@@ -21,7 +29,7 @@ interface CompactStatCardProps {
   unit: string;
   source: string;
   timestamp: string;
-  /** Registry key — drives date formatting (UTC day vs local datetime). */
+  /** Registry key — drives date/value formatting and trend direction. */
   metricKey: string;
   /** Rendered instead of the numeric value (ordinal metrics show their label text). */
   displayValue?: string;
@@ -33,7 +41,13 @@ interface CompactStatCardProps {
   expanded?: boolean;
 }
 
-function Sparkline({ data }: { data: SparklinePoint[] }) {
+function Sparkline({
+  data,
+  goalDirection,
+}: {
+  data: SparklinePoint[];
+  goalDirection?: 'higher' | 'lower';
+}) {
   if (data.length < 2) return null;
 
   const sorted = [...data].sort(
@@ -59,12 +73,16 @@ function Sparkline({ data }: { data: SparklinePoint[] }) {
     })
     .join(' ');
 
-  // Determine trend color: compare last to first
+  // Trend color from last vs first, judged by the metric's goalDirection —
+  // for lower-is-better metrics a falling line is the good direction.
+  // Metrics without a direction stay neutral.
   const first = values[0];
   const last = values[values.length - 1];
   let strokeColor = 'var(--color-text-muted)'; // neutral
-  if (last > first) strokeColor = 'var(--color-sage)'; // green uptrend
-  if (last < first) strokeColor = 'var(--color-terracotta)'; // red downtrend
+  if (goalDirection !== undefined && last !== first) {
+    const improved = (last > first) === (goalDirection === 'higher');
+    strokeColor = improved ? 'var(--color-sage)' : 'var(--color-terracotta)';
+  }
 
   return (
     <svg
@@ -108,9 +126,20 @@ export default function CompactStatCard({
   onClick,
   expanded,
 }: CompactStatCardProps) {
+  const metric = getMetric(metricKey);
+  const duration = isDurationMetric(metric);
+  // Clamp raw stored floats to the registry decimals; minute-based sleep
+  // metrics render as h/m durations (with the unit folded into the text).
+  const valueText =
+    displayValue ??
+    (duration ? formatDuration(value) : formatMetricValue(value, metric?.decimals ?? 1));
+  const unitText = duration ? '' : displayUnit(unit || (metric?.unit ?? null));
+
   const isInRange =
-    rangeInfo != null ? value >= rangeInfo.low && value <= rangeInfo.high : true;
-  const isLow = rangeInfo != null && value < rangeInfo.low;
+    rangeInfo != null
+      ? value <= rangeInfo.high && (rangeInfo.low === null || value >= rangeInfo.low)
+      : true;
+  const isLow = rangeInfo != null && rangeInfo.low !== null && value < rangeInfo.low;
 
   let valueColor = 'var(--color-text-primary)';
   if (rangeInfo != null) {
@@ -154,14 +183,14 @@ export default function CompactStatCard({
             className="text-2xl font-mono font-semibold"
             style={{ color: valueColor }}
           >
-            {displayValue ?? value}
+            {valueText}
           </span>
           <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            {unit}
+            {unitText}
           </span>
         </div>
         {sparklineData && sparklineData.length >= 2 && (
-          <Sparkline data={sparklineData} />
+          <Sparkline data={sparklineData} goalDirection={metric?.goalDirection} />
         )}
       </div>
 
@@ -169,9 +198,10 @@ export default function CompactStatCard({
       {rangeInfo && (
         <RangeIndicator
           value={value}
+          displayValue={valueText}
           low={rangeInfo.low}
           high={rangeInfo.high}
-          unit={unit}
+          unit={unitText}
           label=""
         />
       )}

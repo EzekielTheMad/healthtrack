@@ -4,45 +4,63 @@ import React from 'react';
 
 interface RangeIndicatorProps {
   value: number;
-  low: number;
+  /** Null for one-sided "anything at or below high is normal" ranges (BP
+      normal, AHI) — rendered as "≤ high" with the band anchored at the left
+      edge instead of fabricating a 0 lower bound. */
+  low: number | null;
   high: number;
   unit: string;
   label: string;
+  /** Formatted value text (registry decimals); defaults to the raw value. */
+  displayValue?: string;
 }
 
-export default function RangeIndicator({ value, low, high, unit, label }: RangeIndicatorProps) {
-  const rangeSpan = high - low;
+export default function RangeIndicator({
+  value,
+  low,
+  high,
+  unit,
+  label,
+  displayValue,
+}: RangeIndicatorProps) {
+  const oneSided = low === null;
+  // One-sided bars anchor at the smaller of 0 and the value; two-sided bars
+  // pad 30% of the range on each side.
+  const rangeSpan = oneSided ? high - Math.min(0, value) : high - low;
   const padding = rangeSpan * 0.3;
-  const barMin = low - padding;
+  const barMin = oneSided ? Math.min(0, value) : low - padding;
   const barMax = high + padding;
   const barSpan = barMax - barMin;
 
   const clampedValue = Math.max(barMin, Math.min(barMax, value));
   const position = ((clampedValue - barMin) / barSpan) * 100;
 
-  const isInRange = value >= low && value <= high;
-  const isLow = value < low;
+  const isInRange = value <= high && (oneSided || value >= low);
+  const isLow = !oneSided && value < low;
 
   let indicatorColor = 'var(--color-sage)'; // green, in range
   if (!isInRange) {
     indicatorColor = isLow ? 'var(--color-warning)' : 'var(--color-terracotta)'; // yellow if low, red if high
   }
 
-  const normalStart = ((low - barMin) / barSpan) * 100;
-  const normalWidth = ((high - low) / barSpan) * 100;
+  const normalStart = oneSided ? 0 : ((low - barMin) / barSpan) * 100;
+  const normalWidth = ((high - (oneSided ? barMin : low)) / barSpan) * 100;
+
+  const valueText = displayValue ?? String(value);
+  const rangeText = oneSided ? `${high} or below` : `${low} to ${high}`;
 
   return (
     <div
       className="w-full"
       role="img"
-      aria-label={`${label} ${value} ${unit}, normal range ${low} to ${high}`}
+      aria-label={`${label ? `${label} ` : ''}${valueText} ${unit}, normal range ${rangeText}`}
     >
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
           {label}
         </span>
         <span className="text-sm font-mono font-medium" style={{ color: 'var(--color-text-primary)' }}>
-          {value} {unit}
+          {valueText} {unit}
         </span>
       </div>
 
@@ -74,10 +92,10 @@ export default function RangeIndicator({ value, low, high, unit, label }: RangeI
 
       <div className="flex items-center justify-between mt-1">
         <span className="text-[10px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
-          {low}
+          {oneSided ? '' : low}
         </span>
         <span className="text-[10px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
-          {high}
+          {oneSided ? `≤ ${high}` : high}
         </span>
       </div>
     </div>

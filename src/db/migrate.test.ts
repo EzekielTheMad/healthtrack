@@ -178,6 +178,52 @@ describe('runMigrations', () => {
     );
   });
 
+  it('migration 0002 dedups legacy vitals rows and enforces the upsert tuple', async () => {
+    const partial = stagePartialMigrations();
+    try {
+      const { runMigrations, sqlite } = await loadDb();
+      // Old build: only migration 0000 applied — no unique index yet.
+      runMigrations(partial);
+      const now = new Date().toISOString();
+      const day = '2026-07-10T00:00:00Z';
+      sqlite
+        .prepare(
+          "insert into user (id, name, email, emailVerified, createdAt, updatedAt) values ('u1', 'Test', 't@example.com', 1, 0, 0)",
+        )
+        .run();
+      const insertVital = sqlite.prepare(
+        "insert into vitals (id, user_id, metric_key, value, source, recorded_at, created_at) values (?, 'u1', ?, ?, ?, ?, ?)",
+      );
+      // Duplicate tuple with NULL dependent_id — exactly what the app-level
+      // upsert should have collapsed, slipped in by an older build.
+      insertVital.run('v1', 'weight', 210, 'manual', day, now);
+      insertVital.run('v2', 'weight', 212, 'manual', day, now);
+      // Same metric/day from a different source — a distinct tuple, kept.
+      insertVital.run('v3', 'weight', 211, 'withings', day, now);
+
+      // Upgrade: full migrations folder applies 0002 (dedup + unique index).
+      runMigrations();
+
+      const weights = sqlite
+        .prepare("select id, value from vitals where metric_key='weight' order by id")
+        .all() as { id: string; value: number }[];
+      // The most recently inserted duplicate survives (upsert semantics).
+      expect(weights).toEqual([
+        { id: 'v2', value: 212 },
+        { id: 'v3', value: 211 },
+      ]);
+
+      // The tuple is now constrained even with dependent_id NULL (the index
+      // coalesces NULL to '' — plain unique columns would treat NULLs as
+      // distinct and never fire).
+      expect(() => insertVital.run('v4', 'weight', 215, 'manual', day, now)).toThrow(
+        /UNIQUE/i,
+      );
+    } finally {
+      fs.rmSync(partial, { recursive: true, force: true });
+    }
+  });
+
   it('migration 0001 renames legacy hrv rows to hrv_rmssd on upgrade', async () => {
     const partial = stagePartialMigrations();
     try {

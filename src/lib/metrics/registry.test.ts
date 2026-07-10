@@ -80,6 +80,25 @@ describe('metric registry', () => {
     }
   });
 
+  it('marks delta goal directions: lower/higher-is-better and neutral metrics', () => {
+    for (const key of [
+      'resting_hr', 'ahi', 'mask_leak', 'sleep_latency', 'awake_time',
+      'restless_periods', 'body_fat_pct', 'weight',
+    ]) {
+      expect(getMetric(key)!.goalDirection, key).toBe('lower');
+    }
+    for (const key of ['steps', 'hrv_rmssd', 'readiness_score', 'sleep_duration', 'spo2']) {
+      expect(getMetric(key)!.goalDirection, key).toBe('higher');
+    }
+    // Range-based or ambiguous metrics stay neutral (no direction).
+    for (const key of [
+      'bp_systolic', 'bp_diastolic', 'body_temp', 'blood_glucose',
+      'respiratory_rate', 'time_in_bed', 'waist',
+    ]) {
+      expect(getMetric(key)!.goalDirection, key).toBeUndefined();
+    }
+  });
+
   it('marks intraday metrics: blood_glucose and blood pressure', () => {
     expect(getMetric('blood_glucose')?.intraday).toBe(true);
     expect(getMetric('bp_systolic')?.intraday).toBe(true);

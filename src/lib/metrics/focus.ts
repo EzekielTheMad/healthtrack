@@ -13,7 +13,8 @@
 // ---------------------------------------------------------------------------
 
 import { DAY_MS, windowValue } from './aggregate';
-import { getVitalDayKey, shiftDayKey } from '../dates';
+import { formatUtcDay, getVitalDayKey, shiftDayKey } from '../dates';
+import { formatMetricValue } from './format';
 import { getMetric } from './registry';
 
 /** Structural subset of `Vital` — snake_case API rows are assignable. */
@@ -101,13 +102,24 @@ function latestOf(rows: FocusVitalRow[]): FocusVitalRow {
   return latest;
 }
 
-/** Values with recorded_at in the trailing `days`-day window ending at now. */
-function valuesInWindow(rows: FocusVitalRow[], now: Date, days: number): number[] {
-  const cut = now.getTime() - days * DAY_MS;
+/**
+ * Day-deduplicated values (same-day means) in the trailing `days`-day window
+ * ending on `todayKey` inclusive — the same bucketing the apnea and weight
+ * paths use, so duplicate same-day rows never double-count. `excludeDay`
+ * drops one day key from the window (baselines that must not contain the
+ * reading they are compared against).
+ */
+function dailyValuesInWindow(
+  rows: FocusVitalRow[],
+  metricKey: string,
+  todayKey: string,
+  days: number,
+  excludeDay?: string,
+): number[] {
+  const cut = shiftDayKey(todayKey, -(days - 1));
   const out: number[] = [];
-  for (const r of rows) {
-    const t = Date.parse(r.recorded_at);
-    if (!Number.isNaN(t) && t > cut && t <= now.getTime()) out.push(r.value);
+  for (const [k, v] of dailyMeans(rows, metricKey, todayKey)) {
+    if (k >= cut && k !== excludeDay) out.push(v);
   }
   return out;
 }
@@ -232,21 +244,32 @@ export function bodyVerdict(ratePerWeek: number | null): Verdict {
 // CPAP adherence
 // ---------------------------------------------------------------------------
 
+/** Standard clinical compliance threshold: a night counts at ≥4h of usage. */
+const CPAP_COMPLIANT_HOURS = 4;
+/** Compliant when at least 70% of window nights meet the 4-hour threshold. */
+const CPAP_COMPLIANT_RATIO = 0.7;
+
 export interface CpapAdherence {
-  /** Rounded % of nights with usage > 0 in the window. */
+  /** Rounded % of nights with ≥4h usage in the window. */
   pct: number;
+  /** Nights meeting the 4-hour compliance threshold. */
   usedNights: number;
-  /** Nights from the first cpap record (capped 90d back) through today. */
+  /** Nights from the first cpap record (capped 90d back) through yesterday —
+      today only counts once tonight has a record. */
   totalNights: number;
   /** Mean nightly hours over used nights, null when none were used. */
   avgHours: number | null;
+  /** Standard compliance framing: ≥70% of nights at ≥4h. */
+  compliant: boolean;
 }
 
 /**
  * Adherence since the FIRST cpap_usage record (window start capped at 90 days
- * back), through the UTC day of `now` inclusive. A night counts as used when
- * its daily usage (same-day mean) is > 0; recorded-zero and missing nights
- * are unused. Null without any cpap_usage rows.
+ * back), through YESTERDAY — tonight can't be missing before it happens, so
+ * today only joins the denominator once it has a record. A night counts as
+ * used at the clinical compliance threshold: daily usage (same-day mean) of
+ * 4 hours or more; shorter, recorded-zero, and missing nights are unused.
+ * Null without any cpap_usage rows.
  */
 export function cpapAdherence(rows: FocusVitalRow[], now: Date): CpapAdherence | null {
   const usage = rowsFor(rows, 'cpap_usage');
@@ -262,11 +285,12 @@ export function cpapAdherence(rows: FocusVitalRow[], now: Date): CpapAdherence |
   }
   const capStart = shiftDayKey(todayKey, -89);
   const start = firstKey > capStart ? firstKey : capStart;
+  const end = daily.has(todayKey) ? todayKey : shiftDayKey(todayKey, -1);
 
-  const totalNights = diffDays(start, todayKey) + 1;
+  const totalNights = diffDays(start, end) + 1;
   const usedHours: number[] = [];
   for (const [k, hours] of daily) {
-    if (k >= start && hours > 0) usedHours.push(hours);
+    if (k >= start && hours >= CPAP_COMPLIANT_HOURS) usedHours.push(hours);
   }
   const usedNights = usedHours.length;
 
@@ -275,6 +299,7 @@ export function cpapAdherence(rows: FocusVitalRow[], now: Date): CpapAdherence |
     usedNights,
     totalNights,
     avgHours: usedNights > 0 ? mean(usedHours) : null,
+    compliant: usedNights / totalNights >= CPAP_COMPLIANT_RATIO,
   };
 }
 
@@ -376,11 +401,8 @@ function buildApneaPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
       label: 'Adherence',
       value: `${adherence.pct}%`,
       unit: null,
-      sub:
-        adherence.avgHours !== null
-          ? `avg ${fmtNum(adherence.avgHours, 1)} hrs on used nights`
-          : null,
-      tone: 'neutral',
+      sub: `${adherence.usedNights}/${adherence.totalNights} nights ≥4h`,
+      tone: adherence.compliant ? 'good' : 'warn',
     });
   }
   const leakDaily = dailyMeans(rowsFor(rows, 'mask_leak'), 'mask_leak', todayKey);
@@ -427,10 +449,36 @@ function buildRecoveryPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
   const hrvRows = rowsFor(rows, 'hrv_rmssd');
   if (readinessRows.length === 0 && hrvRows.length === 0) return null;
 
+  const todayKey = utcDayKey(now);
+
   const readinessLatest = readinessRows.length > 0 ? latestOf(readinessRows).value : null;
-  const hrvLatest = hrvRows.length > 0 ? latestOf(hrvRows).value : null;
-  const hrvMean30 = windowValue('mean', valuesInWindow(hrvRows, now, 30));
+  const hrvLatestRow = hrvRows.length > 0 ? latestOf(hrvRows) : null;
+  const hrvLatest = hrvLatestRow !== null ? hrvLatestRow.value : null;
+  // Fallback baseline: 30d of daily means EXCLUDING the latest reading's own
+  // day — the norm must not contain the value it is compared against.
+  const hrvMean30 =
+    hrvLatestRow !== null
+      ? windowValue(
+          'mean',
+          dailyValuesInWindow(
+            hrvRows,
+            'hrv_rmssd',
+            todayKey,
+            30,
+            getVitalDayKey(hrvLatestRow.recorded_at, 'hrv_rmssd'),
+          ),
+        )
+      : null;
   const verdict = recoveryVerdict(readinessLatest, hrvLatest, hrvMean30);
+
+  /** "Jul 8" when a metric's latest reading is older than 48h, else null. */
+  const staleDay = (metricRows: FocusVitalRow[]): string | null => {
+    if (metricRows.length === 0) return null;
+    const latest = latestOf(metricRows);
+    const t = Date.parse(latest.recorded_at);
+    if (Number.isNaN(t) || now.getTime() - t <= 2 * DAY_MS) return null;
+    return formatUtcDay(latest.recorded_at);
+  };
 
   const stats: FocusStat[] = [];
   const pushDelta = (
@@ -439,12 +487,12 @@ function buildRecoveryPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
     metricRows: FocusVitalRow[],
     unit: string | null,
     decimals: number,
-    lowerIsBetter: boolean,
     percent: boolean,
   ) => {
     if (metricRows.length === 0) return;
+    const lowerIsBetter = getMetric(key)?.goalDirection === 'lower';
     const latest = latestOf(metricRows).value;
-    const mean30 = windowValue('mean', valuesInWindow(metricRows, now, 30));
+    const mean30 = windowValue('mean', dailyValuesInWindow(metricRows, key, todayKey, 30));
     let sub: string | null = null;
     let tone: StatTone = 'neutral';
     if (mean30 !== null) {
@@ -457,26 +505,31 @@ function buildRecoveryPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
     stats.push({ key, label, value: fmtNum(latest, decimals), unit, sub, tone });
   };
 
-  pushDelta('readiness_score', 'Readiness', readinessRows, null, 0, false, false);
-  pushDelta('hrv_rmssd', 'HRV', hrvRows, 'ms', 0, false, true);
-  pushDelta('resting_hr', 'Resting HR', rowsFor(rows, 'resting_hr'), 'bpm', 0, true, false);
+  pushDelta('readiness_score', 'Readiness', readinessRows, null, 0, false);
+  pushDelta('hrv_rmssd', 'HRV', hrvRows, 'ms', 0, true);
+  pushDelta('resting_hr', 'Resting HR', rowsFor(rows, 'resting_hr'), 'bpm', 0, false);
+  const sleepRows = rowsFor(rows, 'sleep_duration');
+  const sleepStale = staleDay(sleepRows);
   pushDelta(
     'sleep_duration',
-    'Sleep last night',
-    rowsFor(rows, 'sleep_duration'),
+    sleepStale !== null ? `Sleep (${sleepStale})` : 'Sleep last night',
+    sleepRows,
     'hrs',
     1,
     false,
-    false,
   );
+
+  // The verdict reads as "today" — when the reading behind it is older than
+  // 48h, date the panel instead of presenting it as current.
+  const verdictStale = staleDay(readinessRows.length > 0 ? readinessRows : hrvRows);
 
   return {
     id: 'recovery',
-    title: 'Recovery today',
+    title: verdictStale !== null ? `Recovery (${verdictStale})` : 'Recovery today',
     verdict,
     stats,
     caption:
-      readinessLatest === null && hrvLatest !== null
+      readinessLatest === null && hrvLatest !== null && hrvMean30 !== null
         ? 'Verdict derived from HRV vs its 30-day norm (±10%).'
         : null,
     nights: null,
@@ -578,6 +631,7 @@ function buildActivityPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
   const stepsRows = rowsFor(rows, 'steps');
   if (stepsRows.length === 0) return null;
 
+  const todayKey = utcDayKey(now);
   const stats: FocusStat[] = [];
   const pushDailyAvg = (
     key: string,
@@ -586,10 +640,20 @@ function buildActivityPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
     unit: string | null,
   ) => {
     if (metricRows.length === 0) return;
-    const total7 = windowValue('sum', valuesInWindow(metricRows, now, 7)) ?? 0;
-    const total30 = windowValue('sum', valuesInWindow(metricRows, now, 30)) ?? 0;
-    const avg7 = total7 / 7;
-    const avg30 = total30 / 30;
+    const daily = dailyMeans(metricRows, key, todayKey);
+    if (daily.size === 0) return; // only future-dated rows
+    let firstKey = todayKey;
+    for (const k of daily.keys()) {
+      if (k < firstKey) firstKey = k;
+    }
+    // Daily averages divide by days COVERED, not the full window — with 3
+    // days of history, "total / 7" would understate the honest daily pace.
+    // Both windows share the coverage cap so the comparison stays like-for-like.
+    const coverage = diffDays(firstKey, todayKey) + 1;
+    const total7 = windowValue('sum', dailyValuesInWindow(metricRows, key, todayKey, 7)) ?? 0;
+    const total30 = windowValue('sum', dailyValuesInWindow(metricRows, key, todayKey, 30)) ?? 0;
+    const avg7 = total7 / Math.min(7, coverage);
+    const avg30 = total30 / Math.min(30, coverage);
     let sub: string | null = null;
     let tone: StatTone = 'neutral';
     if (avg30 > 0) {
@@ -597,7 +661,7 @@ function buildActivityPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
       sub = d.sub;
       tone = d.tone;
     }
-    stats.push({ key, label, value: fmtNum(avg7, 0), unit, sub, tone });
+    stats.push({ key, label, value: formatMetricValue(avg7, 0), unit, sub, tone });
   };
 
   pushDailyAvg('steps', 'Steps (7d daily avg)', stepsRows, null);

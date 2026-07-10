@@ -13,6 +13,8 @@ import {
   shouldBucketWeekly,
   type ChartPoint,
 } from '@/lib/metrics/vitals-view';
+import { formatDuration, isDurationMetric } from '@/lib/metrics/format';
+import { getVitalDayKey, shiftDayKey } from '@/lib/dates';
 import { getVitalRange } from '@/lib/reference-ranges';
 import type { Vital } from '@/lib/types';
 import CategorySection from './CategorySection';
@@ -105,12 +107,15 @@ export default function TrendsView({
         const data = grouped.get(key)!;
         const metric = getMetric(key);
         const latest = data[0]; // recorded_at desc
+        // Sparkline: the trailing 7 CALENDAR days ending at the latest
+        // reading — "last 7 readings" reached weeks back on sparse metrics.
+        const sparkCut = shiftDayKey(getVitalDayKey(latest.recorded_at, key), -6);
         return {
           key,
           latest,
           data,
           sparkline: data
-            .slice(0, 7)
+            .filter((v) => getVitalDayKey(v.recorded_at, key) >= sparkCut)
             .map((v) => ({ value: v.value, date: v.recorded_at }))
             .reverse(),
           displayValue:
@@ -142,8 +147,12 @@ export default function TrendsView({
         <BarChart
           data={points.map((p) => ({ ...p, label: metricLabel(card.key) }))}
           height={240}
-          refLow={weeklyBars && metric!.aggregate === 'sum' ? undefined : range?.low}
+          refLow={
+            weeklyBars && metric!.aggregate === 'sum' ? undefined : (range?.low ?? undefined)
+          }
           refHigh={weeklyBars && metric!.aggregate === 'sum' ? undefined : range?.high}
+          decimals={metric!.decimals ?? 0}
+          formatValue={isDurationMetric(metric) ? formatDuration : undefined}
         />
       );
     } else {
@@ -152,7 +161,7 @@ export default function TrendsView({
           data={card.data.map((v) => ({ value: v.value, recorded_at: v.recorded_at }))}
           metricKey={card.key}
           label={metricLabel(card.key)}
-          refLow={range?.low}
+          refLow={range?.low ?? undefined}
           refHigh={range?.high}
           unit={card.latest.unit ?? ''}
           ordinalLabels={

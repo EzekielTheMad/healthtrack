@@ -15,6 +15,9 @@ interface ChartTooltipProps {
   refHigh?: number;
   /** Custom date formatter. Defaults to locale date string. */
   formatDate?: (dateStr: string) => string;
+  /** Custom value formatter (registry decimals, durations). Defaults to
+      0–1 decimals. */
+  formatValue?: (value: number) => string;
 }
 
 function getRangeStatus(
@@ -22,8 +25,9 @@ function getRangeStatus(
   refLow?: number,
   refHigh?: number,
 ): { label: string; color: string } | null {
-  if (refLow === undefined || refHigh === undefined) return null;
-  if (value < refLow) return { label: 'Low', color: CHART_COLORS.warning };
+  // One-sided ranges ("below refHigh is normal") have no Low band.
+  if (refHigh === undefined) return null;
+  if (refLow !== undefined && value < refLow) return { label: 'Low', color: CHART_COLORS.warning };
   if (value > refHigh) return { label: 'High', color: CHART_COLORS.terracotta };
   return { label: 'Normal', color: CHART_COLORS.sage };
 }
@@ -40,6 +44,7 @@ export default function ChartTooltip({
   refLow,
   refHigh,
   formatDate,
+  formatValue,
 }: ChartTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
 
@@ -88,7 +93,11 @@ export default function ChartTooltip({
           margin: '0',
         }}
       >
-        {typeof value === 'number' ? value.toFixed(value % 1 === 0 ? 0 : 1) : value}
+        {typeof value === 'number'
+          ? formatValue
+            ? formatValue(value)
+            : value.toFixed(value % 1 === 0 ? 0 : 1)
+          : value}
         {unit && (
           <span
             style={{

@@ -8,6 +8,7 @@
 // ---------------------------------------------------------------------------
 
 import { getVitalDayKey, shiftDayKey } from '../dates';
+import { formatDuration, isDurationMetric } from './format';
 import {
   CATEGORY_ORDER,
   METRICS,
@@ -40,6 +41,11 @@ export interface DailyDelta {
   amount: number;
   /** |amount| formatted at display precision (ordinals: 1 decimal). */
   display: string;
+  /**
+   * Whether the move reads as an improvement, from the registry
+   * goalDirection; metrics without a direction (and flat deltas) stay neutral.
+   */
+  tone: 'good' | 'bad' | 'neutral';
 }
 
 export interface DailyEntry {
@@ -47,6 +53,8 @@ export interface DailyEntry {
   label: string;
   unit: string | null;
   intraday: boolean;
+  /** True when readings render as h/m durations (minute-based sleep metrics). */
+  duration: boolean;
   /** Registry aggregate hint — sum metrics compare vs the 7d DAILY average. */
   aggregate: MetricDef['aggregate'];
   /**
@@ -111,15 +119,21 @@ function buildDelta(
   dayValue: number,
   baseline: number | null,
   decimals: number,
+  goalDirection: MetricDef['goalDirection'],
 ): DailyDelta | null {
   if (baseline === null) return null;
   const amount = dayValue - baseline;
   // Deltas that round to zero at display precision read as "no change".
   const flat = Math.abs(amount) < 0.5 * 10 ** -decimals;
+  let tone: DailyDelta['tone'] = 'neutral';
+  if (!flat && goalDirection !== undefined) {
+    tone = (amount > 0) === (goalDirection === 'higher') ? 'good' : 'bad';
+  }
   return {
     direction: flat ? 'flat' : amount > 0 ? 'up' : 'down',
     amount,
     display: fmtNum(Math.abs(amount), decimals),
+    tone,
   };
 }
 
@@ -156,6 +170,7 @@ export function buildDailySections(
     const aggregate = metric?.aggregate ?? 'mean';
     const decimals = displayDecimals(metric);
     const intraday = metric?.intraday === true;
+    const duration = isDurationMetric(metric);
 
     const dayValues = day.map((r) => r.value);
     const dayValue = aggregate === 'sum' ? dayValues.reduce((a, b) => a + b, 0) : mean(dayValues);
@@ -187,7 +202,9 @@ export function buildDailySections(
               display:
                 metric?.valueType === 'ordinal'
                   ? ordinalDisplay(metric, latest)
-                  : fmtNum(dayValue, metric?.decimals ?? decimals),
+                  : duration
+                    ? formatDuration(dayValue)
+                    : fmtNum(dayValue, metric?.decimals ?? decimals),
               recordedAt: latest.recorded_at,
               source: latest.source,
             },
@@ -199,10 +216,11 @@ export function buildDailySections(
       label: metric?.label ?? key,
       unit: metric?.unit ?? day[0].unit,
       intraday,
+      duration,
       aggregate,
       readings,
       dayValue,
-      delta: buildDelta(dayValue, baseline, decimals),
+      delta: buildDelta(dayValue, baseline, decimals, metric?.goalDirection),
     };
 
     const category = metric?.category ?? 'cardiovascular';
@@ -232,6 +250,9 @@ export function buildDailySections(
 export interface ChartPoint {
   value: number;
   date: string;
+  /** Weekly buckets only: distinct days with data aggregated into the bucket,
+      so partial edge weeks can be labeled honestly. */
+  days?: number;
 }
 
 /** Ranges longer than this many days aggregate bar charts to weekly buckets. */
@@ -254,24 +275,30 @@ function weekStartKey(iso: string): string {
 /**
  * Aggregate day-normalized chart points into Monday-start UTC weeks: sum
  * metrics sum within the week, mean/latest metrics average. Bucket values
- * round to `decimals`; output is labeled by week start, sorted ascending.
+ * round to `decimals`; output is labeled by week start, sorted ascending, and
+ * carries `days` (distinct days with data) so partial buckets — range-clipped
+ * edge weeks especially — stay honest in labels and tooltips.
  */
 export function bucketWeekly(
   points: ChartPoint[],
   aggregate: MetricDef['aggregate'],
   decimals = 1,
 ): ChartPoint[] {
-  const buckets = new Map<string, number[]>();
+  const buckets = new Map<string, { values: number[]; days: Set<string> }>();
   for (const p of points) {
     const key = weekStartKey(p.date);
-    const list = buckets.get(key);
-    if (list) list.push(p.value);
-    else buckets.set(key, [p.value]);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { values: [], days: new Set() };
+      buckets.set(key, bucket);
+    }
+    bucket.values.push(p.value);
+    bucket.days.add(p.date.slice(0, 10));
   }
 
   return [...buckets.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, values]) => ({
+    .map(([key, { values, days }]) => ({
       date: `${key}T00:00:00.000Z`,
       value: Number(
         (aggregate === 'sum'
@@ -279,5 +306,6 @@ export function bucketWeekly(
           : mean(values)
         ).toFixed(decimals),
       ),
+      days: days.size,
     }));
 }

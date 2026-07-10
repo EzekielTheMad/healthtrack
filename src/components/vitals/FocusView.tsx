@@ -14,6 +14,7 @@ import {
 } from '@/lib/metrics/focus';
 import { DAY_MS } from '@/lib/metrics/aggregate';
 import { bucketWeekly, shouldBucketWeekly, type ChartPoint } from '@/lib/metrics/vitals-view';
+import { formatDuration, formatMetricValue, isDurationMetric } from '@/lib/metrics/format';
 import { getMetric } from '@/lib/metrics/registry';
 import { getVitalRange } from '@/lib/reference-ranges';
 import type { Vital } from '@/lib/types';
@@ -133,7 +134,7 @@ function ApneaStrip({ nights }: { nights: ApneaNight[] }) {
             opacity={night.used ? 0.85 : 0.45}
           >
             <title>
-              {`${night.dayKey}: ${night.ahi !== null ? `AHI ${night.ahi}` : 'no AHI reading'}${night.used ? '' : ' · no CPAP use'}`}
+              {`${night.dayKey}: ${night.ahi !== null ? `AHI ${formatMetricValue(night.ahi, 1)}` : 'no AHI reading'}${night.used ? '' : ' · no CPAP use'}`}
             </title>
           </rect>
         );
@@ -190,8 +191,14 @@ function PanelCharts({ panel, byMetric, userAge, userSex, weeklyBars }: PanelCha
               <BarChart
                 data={points.map((p) => ({ ...p, label }))}
                 height={200}
-                refLow={weeklyBars && metric!.aggregate === 'sum' ? undefined : range?.low}
+                refLow={
+                  weeklyBars && metric!.aggregate === 'sum'
+                    ? undefined
+                    : (range?.low ?? undefined)
+                }
                 refHigh={weeklyBars && metric!.aggregate === 'sum' ? undefined : range?.high}
+                decimals={metric!.decimals ?? 0}
+                formatValue={isDurationMetric(metric) ? formatDuration : undefined}
               />
             </div>
           );
@@ -203,7 +210,7 @@ function PanelCharts({ panel, byMetric, userAge, userSex, weeklyBars }: PanelCha
             data={data.map((v) => ({ value: v.value, recorded_at: v.recorded_at }))}
             metricKey={key}
             label={label}
-            refLow={range?.low}
+            refLow={range?.low ?? undefined}
             refHigh={range?.high}
             unit={data[0]?.unit ?? metric?.unit ?? ''}
           />
@@ -396,29 +403,32 @@ export default function FocusView({ userAge, userSex, onAddManual }: FocusViewPr
     );
   }
 
+  // A failed fetch is not "no device data yet" — show only the error, not
+  // the empty state the panel list would render under it.
+  if (error) {
+    return (
+      <div
+        className="rounded-lg border px-4 py-3 text-sm"
+        style={{
+          backgroundColor: 'rgba(224, 122, 95, 0.12)',
+          borderColor: 'var(--color-terracotta)',
+          color: 'var(--color-terracotta)',
+        }}
+        role="alert"
+      >
+        {error}
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      {error && (
-        <div
-          className="rounded-lg border px-4 py-3 text-sm"
-          style={{
-            backgroundColor: 'rgba(224, 122, 95, 0.12)',
-            borderColor: 'var(--color-terracotta)',
-            color: 'var(--color-terracotta)',
-          }}
-          role="alert"
-        >
-          {error}
-        </div>
-      )}
-      <FocusPanelList
-        panels={panels}
-        vitals={vitals}
-        userAge={userAge}
-        userSex={userSex}
-        weeklyBars={weeklyBars}
-        onAddManual={onAddManual}
-      />
-    </div>
+    <FocusPanelList
+      panels={panels}
+      vitals={vitals}
+      userAge={userAge}
+      userSex={userSex}
+      weeklyBars={weeklyBars}
+      onAddManual={onAddManual}
+    />
   );
 }

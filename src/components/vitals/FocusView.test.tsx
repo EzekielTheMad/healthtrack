@@ -1,13 +1,17 @@
 /**
  * FocusPanelList — presentational goal panels: verdict badges, stat grids,
  * apnea evidence strip, inline chart expansion (one panel at a time), and
- * the no-device-data empty state.
+ * the no-device-data empty state. Plus the FocusView wrapper's fetch-error
+ * state (error only — no empty state beneath it).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { FocusPanelList } from './FocusView';
+import FocusView, { FocusPanelList } from './FocusView';
+import { useVitals } from '@/hooks/useVitals';
 import { buildFocusPanels } from '@/lib/metrics/focus';
 import type { Vital } from '@/lib/types';
+
+vi.mock('@/hooks/useVitals', () => ({ useVitals: vi.fn() }));
 
 const NOW = new Date('2026-07-10T12:00:00Z');
 
@@ -102,6 +106,17 @@ describe('FocusPanelList', () => {
     // Hide affordance collapses the open panel.
     fireEvent.click(screen.getByRole('button', { name: 'Hide charts' }));
     expect(screen.queryByRole('region')).not.toBeInTheDocument();
+  });
+
+  it('shows only the error state when the fetch fails — no empty state below', () => {
+    vi.mocked(useVitals).mockReturnValue({
+      vitals: [],
+      loading: false,
+      error: 'Failed to load vitals',
+    } as unknown as ReturnType<typeof useVitals>);
+    render(<FocusView userAge={35} userSex="male" />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Failed to load vitals');
+    expect(screen.queryByText('No device data yet')).not.toBeInTheDocument();
   });
 
   it('shows the empty state with API docs pointer and manual-entry action', () => {

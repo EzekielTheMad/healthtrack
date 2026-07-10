@@ -42,15 +42,16 @@ export const CHART_DEFAULTS = {
 } as const;
 
 /**
- * Returns a dot color based on vital range status.
+ * Returns a dot color based on vital range status. One-sided ranges (no
+ * refLow — "below refHigh is normal") only flag high values.
  */
 export function getVitalDotColor(
   value: number,
   refLow?: number,
   refHigh?: number,
 ): string {
-  if (refLow === undefined || refHigh === undefined) return CHART_COLORS.sage;
-  if (value < refLow) return CHART_COLORS.warning;
+  if (refHigh === undefined) return CHART_COLORS.sage;
+  if (refLow !== undefined && value < refLow) return CHART_COLORS.warning;
   if (value > refHigh) return CHART_COLORS.terracotta;
   return CHART_COLORS.sage;
 }

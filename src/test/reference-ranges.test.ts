@@ -7,7 +7,7 @@ describe('getVitalRange', () => {
     const range = getVitalRange('resting_hr', 30, 'male');
     expect(range).not.toBeNull();
     expect(range!.low).toBeGreaterThan(0);
-    expect(range!.high).toBeGreaterThan(range!.low);
+    expect(range!.high).toBeGreaterThan(range!.low!);
     expect(range!.unit).toBe('bpm');
   });
 
@@ -25,11 +25,16 @@ describe('getVitalRange', () => {
     expect(range!.unit).toBe('%');
   });
 
-  it('returns AHI range', () => {
+  it('returns AHI range with an honest one-sided lower bound', () => {
     const range = getVitalRange('ahi', 50, 'male');
     expect(range).not.toBeNull();
-    expect(range!.low).toBe(0);
+    expect(range!.low).toBeNull(); // "normal is < 5" — no fabricated 0 bound
     expect(range!.high).toBe(4.9);
+  });
+
+  it('returns one-sided BP systolic and diastolic normal ranges', () => {
+    expect(getVitalRange('bp_systolic', 40, 'male')).toMatchObject({ low: null, high: 119 });
+    expect(getVitalRange('bp_diastolic', 40, 'female')).toMatchObject({ low: null, high: 79 });
   });
 
   it('returns sleep duration range', () => {

@@ -2,11 +2,15 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { formatUtcDay } from '@/lib/dates';
+import { formatMetricValue } from '@/lib/metrics/format';
 
 interface BarChartDataPoint {
   value: number;
   date: string;
   label?: string;
+  /** Weekly buckets: distinct days of data aggregated into this bar —
+      surfaced in the tooltip so partial edge weeks read honestly. */
+  days?: number;
 }
 
 interface BarChartProps {
@@ -15,6 +19,10 @@ interface BarChartProps {
   height?: number;
   refLow?: number;
   refHigh?: number;
+  /** Registry decimals for tooltip values and Y-axis tick precision. */
+  decimals?: number;
+  /** Custom value formatter (durations); overrides `decimals` for tooltips. */
+  formatValue?: (value: number) => string;
 }
 
 // Bar-bucket metrics are all day-normalized (never intraday) — axis labels
@@ -23,11 +31,12 @@ function abbreviateDate(dateStr: string): string {
   return formatUtcDay(dateStr);
 }
 
+// One-sided ranges (no refLow — "below refHigh is normal") only flag highs.
 function getBarColor(value: number, refLow?: number, refHigh?: number): string {
-  if (refLow == null || refHigh == null) return 'var(--color-sage)'; // sage default
-  if (value >= refLow && value <= refHigh) return 'var(--color-sage)'; // green in range
-  if (value < refLow) return 'var(--color-warning)'; // yellow low
-  return 'var(--color-terracotta)'; // red high
+  if (refHigh == null) return 'var(--color-sage)'; // sage default
+  if (refLow != null && value < refLow) return 'var(--color-warning)'; // yellow low
+  if (value > refHigh) return 'var(--color-terracotta)'; // red high
+  return 'var(--color-sage)'; // green in range
 }
 
 export default function BarChart({
@@ -36,6 +45,8 @@ export default function BarChart({
   height = 200,
   refLow,
   refHigh,
+  decimals = 0,
+  formatValue,
 }: BarChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
@@ -59,6 +70,16 @@ export default function BarChart({
     const range = hi - lo || 1;
     return { maxVal: hi + range * 0.1, minVal: Math.max(0, lo - range * 0.1) };
   }, [sorted, refLow, refHigh]);
+
+  // Y-axis ticks need enough precision to stay distinct on small-range
+  // metrics — start from the registry decimals and add digits until the
+  // tick step resolves (Math.round alone produced duplicate labels).
+  const tickDecimals = useMemo(() => {
+    const step = (maxVal - minVal) / 4;
+    let d = decimals;
+    while (d < 3 && step > 0 && step < 10 ** -d) d += 1;
+    return d;
+  }, [maxVal, minVal, decimals]);
 
   if (sorted.length === 0) {
     return (
@@ -88,10 +109,18 @@ export default function BarChart({
     return paddingTop + chartHeight * (1 - ratio);
   }
 
-  // Reference band
+  /** Tooltip text: formatted value + day-count for partial weekly buckets. */
+  function tooltipText(d: BarChartDataPoint): string {
+    const base = formatValue ? formatValue(d.value) : formatMetricValue(d.value, decimals);
+    return d.days != null && d.days < 7 ? `${base} · ${d.days}d` : base;
+  }
+
+  // Reference band: one-sided ranges shade everything below refHigh.
   const refBandY = refHigh != null ? yPos(refHigh) : 0;
   const refBandHeight =
-    refLow != null && refHigh != null ? yPos(refLow) - yPos(refHigh) : 0;
+    refHigh != null
+      ? (refLow != null ? yPos(refLow) : paddingTop + chartHeight) - refBandY
+      : 0;
 
   return (
     <div ref={containerRef} className="w-full">
@@ -104,7 +133,7 @@ export default function BarChart({
         style={{ display: 'block' }}
       >
         {/* Reference range band */}
-        {refLow != null && refHigh != null && refBandHeight > 0 && (
+        {refHigh != null && refBandHeight > 0 && (
           <rect
             x={paddingLeft}
             y={refBandY}
@@ -138,7 +167,7 @@ export default function BarChart({
                 fontSize={9}
                 fontFamily="monospace"
               >
-                {Math.round(val)}
+                {formatMetricValue(val, tickDecimals)}
               </text>
             </g>
           );
@@ -152,6 +181,10 @@ export default function BarChart({
           const barColor = color ?? getBarColor(d.value, refLow, refHigh);
           const isHovered = hoveredIndex === i;
           const radius = Math.min(barWidth / 2, 4);
+          const tip = tooltipText(d);
+          // Monospace at fontSize 10 runs ≈6px/char; size the box to content
+          // (fixed 40px overflowed on 5–6 digit weekly totals).
+          const tipWidth = Math.max(40, tip.length * 6 + 14);
 
           return (
             <g
@@ -159,7 +192,7 @@ export default function BarChart({
               onMouseEnter={() => setHoveredIndex(i)}
               onMouseLeave={() => setHoveredIndex(null)}
               role="graphics-symbol"
-              aria-label={`${d.label ?? abbreviateDate(d.date)}: ${d.value}`}
+              aria-label={`${d.label ?? abbreviateDate(d.date)}: ${tip}`}
             >
               {/* Bar with rounded top via clipPath trick */}
               <rect
@@ -190,9 +223,12 @@ export default function BarChart({
               {isHovered && (
                 <>
                   <rect
-                    x={x + barWidth / 2 - 20}
+                    x={Math.min(
+                      Math.max(paddingLeft, x + barWidth / 2 - tipWidth / 2),
+                      viewBoxWidth - paddingRight - tipWidth,
+                    )}
                     y={y - 22}
-                    width={40}
+                    width={tipWidth}
                     height={18}
                     rx={4}
                     fill="var(--bg-primary)"
@@ -200,7 +236,12 @@ export default function BarChart({
                     strokeWidth={1}
                   />
                   <text
-                    x={x + barWidth / 2}
+                    x={
+                      Math.min(
+                        Math.max(paddingLeft, x + barWidth / 2 - tipWidth / 2),
+                        viewBoxWidth - paddingRight - tipWidth,
+                      ) + tipWidth / 2
+                    }
                     y={y - 10}
                     textAnchor="middle"
                     fill="var(--color-text-primary)"
@@ -208,7 +249,7 @@ export default function BarChart({
                     fontFamily="monospace"
                     fontWeight={600}
                   >
-                    {d.value}
+                    {tip}
                   </text>
                 </>
               )}
@@ -241,7 +282,7 @@ export default function BarChart({
             fontFamily="monospace"
             opacity={0.6}
           >
-            {refHigh}
+            {refLow == null ? `≤ ${refHigh}` : refHigh}
           </text>
         )}
         {refLow != null && (
