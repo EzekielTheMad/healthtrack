@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { useVitals } from '@/hooks/useVitals';
+import { useActiveGoals } from '@/hooks/useActiveGoals';
 import { useProfile } from '@/hooks/useProfile';
 import { useDateRangeContext } from '@/components/shared/DateRangeContext';
 import type { Vital } from '@/lib/types';
@@ -54,6 +55,9 @@ export default function VitalsPage() {
     endDate: dateRange.end ?? undefined,
   });
   const { profile, loading: profileLoading } = useProfile();
+  // Active goals, fetched once per page — the single seam for goal-aware
+  // coloring; each view receives them as props.
+  const { metricGoals, frequencyGoals, loading: goalsLoading } = useActiveGoals();
   const [showForm, setShowForm] = useState(false);
   const [view, setView] = useState<'focus' | 'daily' | 'trends'>('focus');
 
@@ -199,7 +203,7 @@ export default function VitalsPage() {
       )}
 
       {/* Loading state */}
-      {loading || profileLoading ? (
+      {loading || profileLoading || goalsLoading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Skeleton variant="card" />
@@ -218,10 +222,12 @@ export default function VitalsPage() {
         <FocusView
           userAge={userAge}
           userSex={userSex}
+          metricGoals={metricGoals}
+          frequencyGoals={frequencyGoals}
           onAddManual={() => setShowForm(true)}
         />
       ) : view === 'daily' ? (
-        <DailyVitalsView initialDay={initialDay} />
+        <DailyVitalsView initialDay={initialDay} metricGoals={metricGoals} />
       ) : !hasAnyData ? (
         /* Empty state */
         <div
@@ -260,6 +266,7 @@ export default function VitalsPage() {
           userSex={userSex}
           rangeFrom={filterValue.from}
           rangeTo={filterValue.to}
+          metricGoals={metricGoals}
         />
       )}
     </div>

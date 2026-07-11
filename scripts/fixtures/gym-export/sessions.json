@@ -1,0 +1,91 @@
+[
+  {
+    "notionId": "398723e3-652a-8103-ad41-f921257181c7",
+    "notionUrl": "https://app.notion.com/398723e3652a8103ad41f921257181c7",
+    "createdTime": "2026-07-09 00:44:41Z",
+    "Session": "Day A - 2026-07-08",
+    "Date": {
+      "start": "2026-07-09 00:40:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Duration (min)": null,
+    "Energy": "5 - great",
+    "Notes": "Completed session. Clean sets across all lifts.",
+    "Exercise log": [
+      "398723e3-652a-8190-8e26-e513187e50ce",
+      "398723e3-652a-8167-bb38-d634b3958e1c",
+      "398723e3-652a-81f4-8fc2-edc98254a93c",
+      "398723e3-652a-81da-a395-fa4714c1bc47",
+      "398723e3-652a-818f-a39f-dc66b2f59a61",
+      "398723e3-652a-81c3-93d2-f536a86b6534"
+    ],
+    "Week": [
+      "397723e3-652a-81b2-b9b6-f4f20313a384"
+    ]
+  },
+  {
+    "notionId": "387723e3-652a-81fb-8b74-c69f5783bc27",
+    "notionUrl": "https://app.notion.com/387723e3652a81fb8b74c69f5783bc27",
+    "createdTime": "2026-06-22 21:56:35Z",
+    "Session": "Day A - 2026-06-22",
+    "Date": {
+      "start": "2026-06-22 21:46:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Duration (min)": 60,
+    "Energy": "3 - normal",
+    "Notes": "Completed session. Clean sets across all lifts. Optional accessories completed.",
+    "Exercise log": [
+      "387723e3-652a-816f-96f9-d1e5eee31627",
+      "387723e3-652a-81ea-8d42-c1bb8ec2cf6a",
+      "387723e3-652a-816e-b83c-cfe1f93dd130"
+    ],
+    "Week": [
+      "387723e3-652a-81c1-b15d-e4f8cf5d61b7"
+    ]
+  },
+  {
+    "notionId": "369723e3-652a-810f-8188-d9e16e26717e",
+    "notionUrl": "https://app.notion.com/369723e3652a810f8188d9e16e26717e",
+    "createdTime": "2026-05-23 17:32:01Z",
+    "Session": "Day A - 2026-05-23",
+    "Date": {
+      "start": "2026-05-23 17:25:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Duration (min)": 45,
+    "Energy": "5 - great",
+    "Notes": "Completed session. Clean sets across all lifts.",
+    "Exercise log": [
+      "369723e3-652a-813f-b050-e42db7bba330"
+    ],
+    "Week": [
+      "364723e3-652a-8122-9d7e-e13d90a270b7"
+    ]
+  },
+  {
+    "notionId": "397723e3-652a-81cc-8b75-c914378f6133",
+    "notionUrl": "https://app.notion.com/397723e3652a81cc8b75c914378f6133",
+    "createdTime": "2026-07-08 04:24:28Z",
+    "Session": "Cardio - 2026-07-07",
+    "Date": {
+      "start": "2026-07-08 02:26:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "Cardio",
+    "Duration (min)": 43,
+    "Energy": "3 - normal",
+    "Notes": "Treadmill walk. Treadmill walk. 42:47, 0.22 mi, avg speed 0.3 mph, avg HR 106 bpm, 222 Cal, avg cadence 12 spm, 543 steps.",
+    "Exercise log": [],
+    "Week": [
+      "397723e3-652a-81b2-b9b6-f4f20313a384"
+    ]
+  }
+]

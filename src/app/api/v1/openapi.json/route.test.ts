@@ -17,13 +17,15 @@ import { OPENAPI_DOCUMENT } from '@/lib/api/openapi';
 const V1_DIR = path.join(process.cwd(), 'src', 'app', 'api', 'v1');
 const DRIFT_EXEMPT = new Set(['/api/v1/metrics', '/api/v1/openapi.json']);
 
-/** All /api/v1 paths that have a route.ts on disk. */
+/** All /api/v1 paths that have a route.ts on disk. Dynamic segments use
+    OpenAPI style: the `[id]` directory documents as `{id}`. */
 function routePathsOnDisk(): string[] {
   const paths: string[] = [];
   const walk = (dir: string, urlPath: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (entry.isDirectory()) {
-        walk(path.join(dir, entry.name), `${urlPath}/${entry.name}`);
+        const segment = entry.name.replace(/^\[(.+)\]$/, '{$1}');
+        walk(path.join(dir, entry.name), `${urlPath}/${segment}`);
       } else if (entry.name === 'route.ts') {
         paths.push(urlPath);
       }
@@ -47,8 +49,34 @@ describe('GET /api/v1/openapi.json', () => {
     const scheme = OPENAPI_DOCUMENT.components.securitySchemes.bearerAuth;
     expect(scheme.type).toBe('http');
     expect(scheme.scheme).toBe('bearer');
-    for (const scope of ['read:all', 'write:all', 'read:vitals', 'write:vitals']) {
+    for (const scope of [
+      'read:all',
+      'write:all',
+      'read:vitals',
+      'write:vitals',
+      'read:fitness',
+      'write:fitness',
+    ]) {
       expect(scheme.description).toContain(scope);
+    }
+  });
+
+  it('describes the fitness surface (workouts 409 contract, week rollup, goals)', () => {
+    const paths = OPENAPI_DOCUMENT.paths;
+    expect(
+      paths['/api/v1/workouts'].post.requestBody.content['application/json'].schema.$ref,
+    ).toBe('#/components/schemas/WorkoutWrite');
+    expect(paths['/api/v1/workouts'].post.responses['409']).toBeDefined();
+    expect(paths['/api/v1/workouts/{id}'].patch).toBeDefined();
+    expect(paths['/api/v1/workouts/{id}'].delete).toBeDefined();
+    expect(paths['/api/v1/exercises/{id}/history'].get).toBeDefined();
+    expect(paths['/api/v1/checkins/{weekStart}'].put).toBeDefined();
+    expect(paths['/api/v1/weeks/{weekStart}'].get.responses['200']).toBeDefined();
+    expect(paths['/api/v1/goals'].post.responses['409']).toBeDefined();
+    expect(paths['/api/v1/vitals/latest'].get).toBeDefined();
+    const schemas = OPENAPI_DOCUMENT.components.schemas;
+    for (const name of ['Workout', 'WorkoutWrite', 'Exercise', 'Checkin', 'Goal', 'WeekRollup']) {
+      expect(schemas[name as keyof typeof schemas], `missing schema: ${name}`).toBeDefined();
     }
   });
 

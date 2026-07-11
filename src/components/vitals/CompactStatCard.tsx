@@ -4,6 +4,7 @@ import React from 'react';
 import SourceBadge from '@/components/shared/SourceBadge';
 import RangeIndicator from '@/components/shared/RangeIndicator';
 import { formatVitalDate } from '@/lib/dates';
+import type { EffectiveGoalDirection } from '@/lib/fitness/goal-direction';
 import { getMetric } from '@/lib/metrics/registry';
 import {
   displayUnit,
@@ -31,6 +32,12 @@ interface CompactStatCardProps {
   timestamp: string;
   /** Registry key — drives date/value formatting and trend direction. */
   metricKey: string;
+  /**
+   * Effective goal direction (active metric goal resolved upstream via
+   * resolveGoalDirection). Falls back to the registry goalDirection when
+   * omitted, so callers without goal data keep today's behavior.
+   */
+  goalDirection?: EffectiveGoalDirection;
   /** Rendered instead of the numeric value (ordinal metrics show their label text). */
   displayValue?: string;
   sparklineData?: SparklinePoint[];
@@ -44,9 +51,12 @@ interface CompactStatCardProps {
 function Sparkline({
   data,
   goalDirection,
+  flatBand,
 }: {
   data: SparklinePoint[];
-  goalDirection?: 'higher' | 'lower';
+  goalDirection?: EffectiveGoalDirection;
+  /** Display-precision half-step — the `maintain` "holding steady" band. */
+  flatBand: number;
 }) {
   if (data.length < 2) return null;
 
@@ -73,13 +83,18 @@ function Sparkline({
     })
     .join(' ');
 
-  // Trend color from last vs first, judged by the metric's goalDirection —
-  // for lower-is-better metrics a falling line is the good direction.
-  // Metrics without a direction stay neutral.
+  // Trend color from last vs first, judged by the EFFECTIVE goal direction
+  // (active metric goal over registry default) — for lower-is-better metrics
+  // a falling line is the good direction; a `maintain` goal reads a line
+  // inside the display-precision flat band as good (sage) and any real move
+  // as a caution (amber). Metrics without a direction stay neutral.
   const first = values[0];
   const last = values[values.length - 1];
   let strokeColor = 'var(--color-text-muted)'; // neutral
-  if (goalDirection !== undefined && last !== first) {
+  if (goalDirection === 'maintain') {
+    strokeColor =
+      Math.abs(last - first) < flatBand ? 'var(--color-sage)' : 'var(--color-warning)';
+  } else if (goalDirection !== undefined && last !== first) {
     const improved = (last > first) === (goalDirection === 'higher');
     strokeColor = improved ? 'var(--color-sage)' : 'var(--color-terracotta)';
   }
@@ -120,6 +135,7 @@ export default function CompactStatCard({
   source,
   timestamp,
   metricKey,
+  goalDirection,
   displayValue,
   sparklineData,
   rangeInfo,
@@ -127,6 +143,7 @@ export default function CompactStatCard({
   expanded,
 }: CompactStatCardProps) {
   const metric = getMetric(metricKey);
+  const effectiveDirection = goalDirection ?? metric?.goalDirection;
   const duration = isDurationMetric(metric);
   // Clamp raw stored floats to the registry decimals; minute-based sleep
   // metrics render as h/m durations (with the unit folded into the text).
@@ -190,7 +207,11 @@ export default function CompactStatCard({
           </span>
         </div>
         {sparklineData && sparklineData.length >= 2 && (
-          <Sparkline data={sparklineData} goalDirection={metric?.goalDirection} />
+          <Sparkline
+            data={sparklineData}
+            goalDirection={effectiveDirection}
+            flatBand={0.5 * 10 ** -(metric?.decimals ?? 1)}
+          />
         )}
       </div>
 

@@ -10,6 +10,12 @@ import {
   formatAggregatesForPrompt,
   formatIntradayReadings,
 } from '@/lib/metrics/aggregate';
+import {
+  formatGoalsForPrompt,
+  formatRecentTrainingForPrompt,
+} from '@/lib/claude/fitness-context';
+import { listGoals } from '@/lib/repos/goals';
+import { listWorkouts } from '@/lib/repos/workouts';
 import { getProfile } from '@/lib/repos/profiles';
 import { listMedications } from '@/lib/repos/medications';
 import { listLabVisitsWithResults } from '@/lib/repos/labs';
@@ -111,6 +117,11 @@ export async function POST(request: Request) {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
+    // Recent-training block covers the trailing 14 days (spec §AI #1).
+    const fourteenDaysAgo = new Date();
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+    const fourteenDaysAgoISO = fourteenDaysAgo.toISOString();
+
     const now = new Date().toISOString();
 
     const [
@@ -121,6 +132,8 @@ export async function POST(request: Request) {
       allConditions,
       allNotes,
       allAppointments,
+      activeGoals,
+      recentWorkouts,
     ] = await Promise.all([
       getProfile(userId, userId),
       // Active medications, name asc
@@ -132,6 +145,10 @@ export async function POST(request: Request) {
       listConditions(userId, scope),
       listNotes(userId, scope),
       listAppointments(userId, scope),
+      // Fitness context is owner-scoped like the vitals aggregates: goals
+      // are strictly per-user, and sessions read owner rows only.
+      listGoals(userId, userId, { active: true }),
+      listWorkouts(userId, ownVitalsScope, { from: fourteenDaysAgoISO }),
     ]);
 
     // Recent lab visits (last 2) with results, test_name asc within a visit
@@ -141,7 +158,11 @@ export async function POST(request: Request) {
         a.testName.localeCompare(b.testName),
       ),
     }));
-    const labResultsData = labVisits.flatMap((v) => v.labResults);
+    // Each result carries its visit's draw date so lab-derived findings can
+    // be date-framed (spec §AI #2).
+    const labResultsData = labVisits.flatMap((v) =>
+      v.labResults.map((r) => ({ ...r, visitDate: v.visitDate })),
+    );
 
     // Active conditions, name asc (legacy: status in (...), order name)
     const conditions = allConditions
@@ -207,7 +228,7 @@ export async function POST(request: Request) {
     const flaggedLabsStr = flaggedLabs
       .map(
         (r) =>
-          `- LAB: ${r.testName}: ${r.value} ${r.unit ?? ''} [${(r.flag ?? '').toUpperCase()}]${r.referenceRangeText ? ` (ref: ${r.referenceRangeText})` : ''}`
+          `- LAB: ${r.testName}: ${r.value} ${r.unit ?? ''} [${(r.flag ?? '').toUpperCase()}]${r.referenceRangeText ? ` (ref: ${r.referenceRangeText})` : ''} — drawn ${r.visitDate}`
       )
       .join('\n');
     const flaggedStr = flaggedLabsStr || '';
@@ -236,6 +257,15 @@ export async function POST(request: Request) {
       )
       .join('\n');
 
+    // Fitness: active goals + compact recent-training block. Both formatters
+    // return '' when empty, so the prompt falls back to its placeholder.
+    const fitnessStr = [
+      formatGoalsForPrompt(activeGoals),
+      formatRecentTrainingForPrompt(recentWorkouts, activeGoals),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
     const healthContext: HealthContext = {
       profile_data: profileStr,
       medications_data: medicationsStr,
@@ -245,6 +275,7 @@ export async function POST(request: Request) {
       conditions_data: conditionsStr,
       recent_notes: notesStr,
       appointments_data: appointmentsStr,
+      fitness_data: fitnessStr,
     };
 
     // ------------------------------------------------------------------

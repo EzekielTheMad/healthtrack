@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
 import { db } from '@/db';
 import { bodyToCamel } from '@/lib/api/snake';
+import { inclusiveDayUpperBound } from '@/lib/api/v1-fitness';
 import {
   findOwnVital,
   listVitals,
@@ -34,12 +35,22 @@ export async function GET(request: NextRequest) {
   const rawLimit = parseInt(searchParams.get('limit') ?? '', 10);
   const limit = Math.min(Math.max(1, Number.isNaN(rawLimit) ? 100 : rawLimit), 1000);
 
+  // Explicit series window (fitness-domain read API): inclusive ISO day or
+  // datetime bounds. `from` wins over the legacy `days` shorthand.
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
+
   let startDate: string | undefined;
-  if (days && days > 0) {
+  if (from) {
+    startDate = from;
+  } else if (days && days > 0) {
     const since = new Date();
     since.setDate(since.getDate() - days);
     startDate = since.toISOString();
   }
+  // A plain-day `to` means "through the end of that day" against the
+  // ISO-timestamp recorded_at column.
+  const endDate = to ? inclusiveDayUpperBound(to) : undefined;
 
   try {
     // PAT scope: the key owner's own data, dependent_id NULL, recorded_at
@@ -47,7 +58,7 @@ export async function GET(request: NextRequest) {
     const rows = await listVitals(
       ctx.userId,
       { ownerId: ctx.userId, dependentId: null },
-      { metricKey: metric ?? undefined, startDate, limit },
+      { metricKey: metric ?? undefined, startDate, endDate, limit },
     );
 
     // Response shape byte-identical to the legacy PostgREST select: same fields,

@@ -3,9 +3,12 @@
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useVitals } from '@/hooks/useVitals';
+import { useRecentWorkouts } from '@/hooks/useRecentWorkouts';
 import {
   buildFocusPanels,
   type ApneaNight,
+  type FocusFrequencyGoal,
+  type FocusMetricGoal,
   type FocusPanel,
   type FocusPanelId,
   type FocusStat,
@@ -377,22 +380,56 @@ export function FocusPanelList({
 interface FocusViewProps {
   userAge: number;
   userSex: 'male' | 'female' | 'prefer_not_to_say';
+  /** Active metric goals — override registry directions in panel tones. */
+  metricGoals?: readonly FocusMetricGoal[];
+  /** Active frequency goals — drive the activity panel's week progress. */
+  frequencyGoals?: readonly FocusFrequencyGoal[];
   /** Opens the manual-entry form (empty-state affordance). */
   onAddManual?: () => void;
 }
 
+const NO_METRIC_GOALS: readonly FocusMetricGoal[] = [];
+const NO_FREQUENCY_GOALS: readonly FocusFrequencyGoal[] = [];
+
 /**
  * Data-fetching wrapper: pulls a fixed 90-day window (independent of the
- * page's DateRangeContext) and builds the goal panels from it.
+ * page's DateRangeContext) and builds the goal panels from it. When active
+ * frequency goals exist it also pulls the last 8 days of workout sessions —
+ * enough to cover the current Monday-anchored week in any timezone.
  */
-export default function FocusView({ userAge, userSex, onAddManual }: FocusViewProps) {
+export default function FocusView({
+  userAge,
+  userSex,
+  metricGoals = NO_METRIC_GOALS,
+  frequencyGoals = NO_FREQUENCY_GOALS,
+  onAddManual,
+}: FocusViewProps) {
   // Captured once per mount so the fetch effect doesn't re-run every render.
   const [startDate] = useState(() =>
     new Date(Date.now() - FOCUS_WINDOW_DAYS * DAY_MS).toISOString(),
   );
   const { vitals, loading, error } = useVitals({ startDate });
 
-  const panels = useMemo(() => buildFocusPanels(vitals), [vitals]);
+  const [workoutsFrom] = useState(() =>
+    new Date(Date.now() - 8 * DAY_MS).toISOString(),
+  );
+  const { sessions } = useRecentWorkouts({
+    from: workoutsFrom,
+    enabled: frequencyGoals.length > 0,
+  });
+
+  const panels = useMemo(
+    () =>
+      buildFocusPanels(vitals, new Date(), {
+        metricGoals,
+        frequencyGoals,
+        weekSessions: sessions,
+        // The viewer's timezone — for the owner this is the owner-local
+        // Monday week the fitness spec's weekly convention describes.
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    [vitals, metricGoals, frequencyGoals, sessions],
+  );
   const weeklyBars = shouldBucketWeekly(new Date(startDate), new Date());
 
   if (loading) {

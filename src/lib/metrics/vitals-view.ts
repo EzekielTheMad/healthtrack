@@ -8,6 +8,12 @@
 // ---------------------------------------------------------------------------
 
 import { getVitalDayKey, shiftDayKey } from '../dates';
+import {
+  deltaTone,
+  resolveGoalDirection,
+  type ActiveMetricGoal,
+  type EffectiveGoalDirection,
+} from '../fitness/goal-direction';
 import { formatDuration, isDurationMetric } from './format';
 import {
   CATEGORY_ORDER,
@@ -42,10 +48,12 @@ export interface DailyDelta {
   /** |amount| formatted at display precision (ordinals: 1 decimal). */
   display: string;
   /**
-   * Whether the move reads as an improvement, from the registry
-   * goalDirection; metrics without a direction (and flat deltas) stay neutral.
+   * Whether the move reads as an improvement, from the EFFECTIVE goal
+   * direction (active metric goal over the registry goalDirection); metrics
+   * without a direction (and flat deltas) stay neutral. A `maintain` goal
+   * inverts the band: flat reads good, movement either way reads warn.
    */
-  tone: 'good' | 'bad' | 'neutral';
+  tone: 'good' | 'warn' | 'bad' | 'neutral';
 }
 
 export interface DailyEntry {
@@ -119,16 +127,18 @@ function buildDelta(
   dayValue: number,
   baseline: number | null,
   decimals: number,
-  goalDirection: MetricDef['goalDirection'],
+  direction: EffectiveGoalDirection | undefined,
 ): DailyDelta | null {
   if (baseline === null) return null;
   const amount = dayValue - baseline;
-  // Deltas that round to zero at display precision read as "no change".
-  const flat = Math.abs(amount) < 0.5 * 10 ** -decimals;
-  let tone: DailyDelta['tone'] = 'neutral';
-  if (!flat && goalDirection !== undefined) {
-    tone = (amount > 0) === (goalDirection === 'higher') ? 'good' : 'bad';
-  }
+  // Deltas that round to zero at display precision read as "no change" —
+  // the same flat band deltaTone uses (display half-step).
+  const band = 0.5 * 10 ** -decimals;
+  const flat = Math.abs(amount) < band;
+  const raw = deltaTone(amount, direction, band);
+  // Maintain drift is a caution, not a failure — map 'bad' to the warn tone.
+  const tone: DailyDelta['tone'] =
+    raw === 'bad' && direction === 'maintain' ? 'warn' : raw;
   return {
     direction: flat ? 'flat' : amount > 0 ? 'up' : 'down',
     amount,
@@ -140,11 +150,14 @@ function buildDelta(
 /**
  * One section per registry category with data on `dayKey`, in CATEGORY_ORDER;
  * entries follow registry declaration order (unknown keys append under
- * cardiovascular, matching the trends view fallback).
+ * cardiovascular, matching the trends view fallback). `activeMetricGoals`
+ * override the registry goalDirection in delta tones; without goals the
+ * registry-default behavior is unchanged.
  */
 export function buildDailySections(
   rows: ViewVitalRow[],
   dayKey: string,
+  activeMetricGoals: readonly ActiveMetricGoal[] = [],
 ): DailySection[] {
   // Trailing 7-day baseline window: dayKey-7 .. dayKey-1 inclusive.
   const windowStart = shiftDayKey(dayKey, -7);
@@ -220,7 +233,12 @@ export function buildDailySections(
       aggregate,
       readings,
       dayValue,
-      delta: buildDelta(dayValue, baseline, decimals, metric?.goalDirection),
+      delta: buildDelta(
+        dayValue,
+        baseline,
+        decimals,
+        resolveGoalDirection(key, metric?.goalDirection, activeMetricGoals),
+      ),
     };
 
     const category = metric?.category ?? 'cardiovascular';

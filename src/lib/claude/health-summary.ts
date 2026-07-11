@@ -2,6 +2,13 @@ import Anthropic from '@anthropic-ai/sdk';
 import { reasoningModel } from './model';
 import { createMessage } from './call';
 import { aggregateVitals, formatAggregatesForPrompt } from '@/lib/metrics/aggregate';
+import {
+  formatGoalsForPrompt,
+  formatRecentTrainingForPrompt,
+  type PromptGoal,
+  type PromptWorkoutSession,
+} from './fitness-context';
+import { attachLabProvenance } from './lab-warnings';
 
 export interface HealthSummaryInput {
   medications: Array<{ name: string; dosage: string | null; frequency: string | null }>;
@@ -13,6 +20,8 @@ export interface HealthSummaryInput {
     flag: string;
     reference_range_low: number | null;
     reference_range_high: number | null;
+    /** Visit (draw) date, YYYY-MM-DD — lab findings must be date-framed. */
+    visit_date: string;
   }>;
   /** 30-day window of rows — aggregated into per-metric trend lines. */
   vitals: Array<{
@@ -27,14 +36,26 @@ export interface HealthSummaryInput {
     alert_text: string;
     severity: string;
   }>;
+  /** Active goals (fitness domain) — optional; absent reads like today. */
+  goals?: PromptGoal[];
+  /** Workout sessions in the trailing 14 days — optional. */
+  recentWorkouts?: PromptWorkoutSession[];
+}
+
+export interface HealthSummaryHighlight {
+  type: 'positive' | 'attention' | 'action';
+  text: string;
+  /** Lab test names the highlight derives from — model-tagged, then
+      validated against the prompt's flags (see lab-warnings.ts). */
+  labTests?: string[];
+  /** Draw date (YYYY-MM-DD), attached server-side from the DB — the card
+      renders this rather than trusting the prose. */
+  labAsOf?: string;
 }
 
 export interface HealthSummary {
   summary: string;
-  highlights: Array<{
-    type: 'positive' | 'attention' | 'action';
-    text: string;
-  }>;
+  highlights: HealthSummaryHighlight[];
 }
 
 const SYSTEM_PROMPT = `You are a health summary assistant. Given a patient's health data, produce a brief, friendly overview and key highlights.
@@ -45,7 +66,8 @@ Return ONLY valid JSON with this exact shape:
   "highlights": [
     {
       "type": "positive" | "attention" | "action",
-      "text": "One short sentence per highlight."
+      "text": "One short sentence per highlight.",
+      "labTests": ["Exact Test Name"]
     }
   ]
 }
@@ -55,6 +77,9 @@ Rules:
 - "attention": Things to be aware of (flagged labs, interactions).
 - "action": Suggested next steps (follow up on a flag, schedule a check-up).
 - Limit to 3-5 highlights total. Keep each highlight under 20 words.
+- Lab results carry draw dates and may be months old. Date-frame every lab-derived statement (e.g., "as of your May 26 draw") — never present an old draw as current.
+- Include "labTests" ONLY on highlights derived from flagged lab results, listing the exact test name(s) as given in the data. Omit the field everywhere else.
+- If active goals are listed, relate relevant highlights to them (progress or gaps), without inventing data.
 - Do NOT give medical diagnoses or treatment recommendations.
 - Use plain language a patient can understand.
 - If there is very little data, say so and encourage them to add more.
@@ -84,11 +109,11 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
 
   if (input.recentLabFlags.length > 0) {
     parts.push(
-      'Flagged lab results:\n' +
+      'Flagged lab results (with draw dates — date-frame these):\n' +
         input.recentLabFlags
           .map(
             (r) =>
-              `- ${r.test_name}: ${r.value} ${r.unit ?? ''} (${r.flag}${r.reference_range_low != null && r.reference_range_high != null ? `, ref: ${r.reference_range_low}-${r.reference_range_high}` : ''})`,
+              `- ${r.test_name}: ${r.value} ${r.unit ?? ''} (${r.flag}${r.reference_range_low != null && r.reference_range_high != null ? `, ref: ${r.reference_range_low}-${r.reference_range_high}` : ''}) — drawn ${r.visit_date}`,
           )
           .join('\n'),
     );
@@ -118,6 +143,17 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
         input.interactionAlerts.map((a) => `- [${a.severity}] ${a.alert_text}`).join('\n'),
     );
   }
+
+  // Fitness context (spec §AI integration #1) — both blocks format to ''
+  // when there is nothing to say, so the prompt reads like today.
+  const goalsBlock = formatGoalsForPrompt(input.goals ?? []);
+  if (goalsBlock) parts.push(goalsBlock);
+  const trainingBlock = formatRecentTrainingForPrompt(
+    input.recentWorkouts ?? [],
+    input.goals ?? [],
+    now,
+  );
+  if (trainingBlock) parts.push(trainingBlock);
 
   return parts.join('\n\n');
 }
@@ -171,5 +207,13 @@ export async function generateHealthSummary(
     throw new Error('Invalid health summary structure');
   }
 
-  return parsed;
+  // Validate model-tagged lab provenance against the flags actually sent and
+  // attach the draw date from the DB — the card renders labAsOf, never prose.
+  return {
+    ...parsed,
+    highlights: attachLabProvenance(
+      parsed.highlights,
+      input.recentLabFlags.map((f) => ({ testName: f.test_name, visitDate: f.visit_date })),
+    ),
+  };
 }

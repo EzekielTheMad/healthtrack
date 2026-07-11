@@ -11,6 +11,8 @@ export const AVAILABLE_SCOPES = [
   { value: 'read:allergies', label: 'Read Allergies', description: 'Read allergies' },
   { value: 'read:vitals', label: 'Read Vitals', description: 'Read vital signs and trends' },
   { value: 'write:vitals', label: 'Write Vitals', description: 'Write vitals & device metrics' },
+  { value: 'read:fitness', label: 'Read Fitness', description: 'Read workouts, exercises, check-ins & goals' },
+  { value: 'write:fitness', label: 'Write Fitness', description: 'Write workouts, exercises, check-ins & goals' },
   { value: 'read:labs', label: 'Read Labs', description: 'Read lab results' },
   { value: 'read:procedures', label: 'Read Procedures', description: 'Read procedures history' },
   { value: 'read:vaccines', label: 'Read Vaccines', description: 'Read vaccine records' },

@@ -20,9 +20,26 @@ const ENDPOINTS: Array<{ method: string; path: string; scope: string; descriptio
   { method: 'GET', path: '/api/v1', scope: '(none)', description: 'API index — endpoints and scopes' },
   { method: 'GET', path: '/api/v1/metrics', scope: '(none)', description: 'Metric registry as JSON (machine-readable)' },
   { method: 'GET', path: '/api/v1/openapi.json', scope: '(none)', description: 'OpenAPI 3.1 document' },
-  { method: 'GET', path: '/api/v1/vitals', scope: 'read:vitals', description: 'List vitals (?metric=, ?days=, ?limit=)' },
+  { method: 'GET', path: '/api/v1/vitals', scope: 'read:vitals', description: 'List vitals (?metric=, ?days=, ?from=, ?to=, ?limit=)' },
+  { method: 'GET', path: '/api/v1/vitals/latest', scope: 'read:vitals', description: 'Latest reading per metric (?metrics=a,b,c)' },
   { method: 'POST', path: '/api/v1/vitals', scope: 'write:vitals', description: 'Upsert one vital record' },
   { method: 'POST', path: '/api/v1/vitals/batch', scope: 'write:vitals', description: 'Upsert up to 500 records in one transaction' },
+  { method: 'GET', path: '/api/v1/workouts', scope: 'read:fitness', description: 'List workout sessions (?from=, ?to=, ?type=, ?label=, ?limit=)' },
+  { method: 'POST', path: '/api/v1/workouts', scope: 'write:fitness', description: 'Create a session + entries (409 = already logged)' },
+  { method: 'GET', path: '/api/v1/workouts/{id}', scope: 'read:fitness', description: 'One session with entries and derived stats' },
+  { method: 'PATCH', path: '/api/v1/workouts/{id}', scope: 'write:fitness', description: 'Correct a session (entries = full replacement)' },
+  { method: 'DELETE', path: '/api/v1/workouts/{id}', scope: 'write:fitness', description: 'Delete a session' },
+  { method: 'GET', path: '/api/v1/exercises', scope: 'read:fitness', description: 'Exercise catalog (?review_status=unreviewed for drift cleanup)' },
+  { method: 'POST', path: '/api/v1/exercises', scope: 'write:fitness', description: 'Create a catalog entry' },
+  { method: 'PATCH', path: '/api/v1/exercises/{id}', scope: 'write:fitness', description: 'Rename / alias / confirm a catalog entry' },
+  { method: 'GET', path: '/api/v1/exercises/{id}/history', scope: 'read:fitness', description: 'Recent entries for one exercise (?limit=)' },
+  { method: 'GET', path: '/api/v1/checkins', scope: 'read:fitness', description: 'List weekly check-ins (?from=, ?to=)' },
+  { method: 'GET', path: '/api/v1/checkins/{weekStart}', scope: 'read:fitness', description: "One week's check-in (Monday YYYY-MM-DD key)" },
+  { method: 'PUT', path: '/api/v1/checkins/{weekStart}', scope: 'write:fitness', description: 'Upsert the manual check-in fields' },
+  { method: 'GET', path: '/api/v1/weeks/{weekStart}', scope: 'read:fitness', description: 'Computed weekly rollup (sessions, body, recovery, goals, deltas)' },
+  { method: 'GET', path: '/api/v1/goals', scope: 'read:fitness', description: 'List goals (?active=, ?kind=)' },
+  { method: 'POST', path: '/api/v1/goals', scope: 'write:fitness', description: 'Create a metric or frequency goal' },
+  { method: 'PATCH', path: '/api/v1/goals/{id}', scope: 'write:fitness', description: 'Edit a goal (kind immutable)' },
   { method: 'GET', path: '/api/v1/medications', scope: 'read:medications', description: 'List medications (?include_inactive=)' },
   { method: 'GET', path: '/api/v1/conditions', scope: 'read:conditions', description: 'List medical conditions' },
   { method: 'GET', path: '/api/v1/allergies', scope: 'read:allergies', description: 'List allergies' },
@@ -240,9 +257,74 @@ export default function ApiDocsPage() {
             <CodeBlock>{`{ "metric_key": "resilience", "value_label": "solid", "recorded_at": "2026-07-09", "source": "oura" }`}</CodeBlock>
           </section>
 
-          {/* 4. Upsert semantics */}
+          {/* 4. Fitness domain */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">4. Upsert semantics</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">4. Fitness: workouts, check-ins &amp; goals</h2>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              The fitness endpoints are API-first: an agent structures the owner&apos;s shorthand
+              and writes a session with nested entries in one call. Exercise names resolve
+              case-insensitively against the catalog (names + aliases); unknown names
+              auto-create <code>unreviewed</code> catalog entries instead of bouncing the write.
+              The original shorthand can be preserved verbatim in <code>raw_sets</code>.
+            </p>
+            <CodeBlock>{`curl -X POST https://your-instance/api/v1/workouts \\
+  -H "Authorization: Bearer ohts_pat_..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "type": "strength",
+    "label": "Day A",
+    "started_at": "2026-07-09T17:30:00-07:00",
+    "duration_min": 55,
+    "energy": 4,
+    "entries": [
+      {
+        "exercise_name": "Chest press",
+        "raw_sets": "130x10 x3",
+        "sets": [
+          { "weight": 130, "reps": 10 },
+          { "weight": 130, "reps": 10 },
+          { "weight": 130, "reps": 10 }
+        ]
+      },
+      {
+        "exercise_name": "Plank",
+        "raw_sets": "75s",
+        "sets": [{ "seconds": 75 }]
+      }
+    ]
+  }'
+# 201 -> the created workout (entries carry derived working_weight / top_reps)
+# 409 -> already logged at that started_at; body carries the EXISTING workout`}</CodeBlock>
+            <ul className="list-disc list-inside space-y-2 mt-4" style={{ color: 'var(--color-text-muted)' }}>
+              <li>
+                Creating a second session at the same <code>started_at</code> returns{' '}
+                <code>409</code> with the existing workout as the body — agents treat that as
+                &quot;already logged&quot;, so re-running a logging job is safe.
+              </li>
+              <li>
+                Weeks are Monday-anchored <code>YYYY-MM-DD</code> keys in the owner&apos;s
+                timezone. <code>GET /api/v1/weeks/{'{weekStart}'}</code> computes the weekly
+                rollup on the fly: sessions by type, weigh-in and body-composition averages,
+                recovery averages, latest neck/waist, frequency-goal progress, the check-in
+                row, and prior-week deltas. A non-Monday key is a 400.
+              </li>
+              <li>
+                <code>PUT /api/v1/checkins/{'{weekStart}'}</code> replaces all manual fields;{' '}
+                <code>neck_in</code>/<code>waist_in</code> are written through to vitals
+                (metrics <code>neck</code>/<code>waist</code>, source <code>manual</code>) and
+                read back by rollups like any other measurement.
+              </li>
+              <li>
+                Goals: <code>{`{ "kind": "metric", "metric_key": "weight", "direction": "decrease", "target_value": 199 }`}</code>{' '}
+                or <code>{`{ "kind": "frequency", "session_type": "strength", "per_week": 3 }`}</code>.
+                At most one active goal per metric / session type (409 otherwise).
+              </li>
+            </ul>
+          </section>
+
+          {/* 5. Upsert semantics */}
+          <section>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">5. Vitals upsert semantics</h2>
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               Writes are idempotent on <code>(metric_key, recorded_at, source)</code> per user.
               Re-posting the same tuple <em>updates</em> the existing row instead of duplicating
@@ -265,9 +347,9 @@ export default function ApiDocsPage() {
             </ul>
           </section>
 
-          {/* 5. Metric registry */}
+          {/* 6. Metric registry */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">5. Metric registry</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">6. Metric registry</h2>
             <p className="leading-relaxed mb-4" style={{ color: 'var(--color-text-muted)' }}>
               Every metric the write endpoints accept, with its canonical stored unit. Also
               available as JSON at{' '}
@@ -315,9 +397,9 @@ export default function ApiDocsPage() {
             })}
           </section>
 
-          {/* 6. Backfill */}
+          {/* 7. Backfill */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">6. Backfilling history</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">7. Backfilling history</h2>
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               To seed an instance with historical data, prepare a JSON <em>array</em> of the
               same record objects the write endpoints take and push it in chunks of up to 500

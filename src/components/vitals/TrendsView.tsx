@@ -14,6 +14,10 @@ import {
   type ChartPoint,
 } from '@/lib/metrics/vitals-view';
 import { formatDuration, isDurationMetric } from '@/lib/metrics/format';
+import {
+  resolveGoalDirection,
+  type ActiveMetricGoal,
+} from '@/lib/fitness/goal-direction';
 import { getVitalDayKey, shiftDayKey } from '@/lib/dates';
 import { getVitalRange } from '@/lib/reference-ranges';
 import type { Vital } from '@/lib/types';
@@ -52,6 +56,8 @@ interface TrendsViewProps {
   /** Visible range bounds — drive weekly bar aggregation for long ranges. */
   rangeFrom: Date;
   rangeTo: Date;
+  /** Active metric goals — override registry directions in sparkline tones. */
+  metricGoals?: readonly ActiveMetricGoal[];
 }
 
 function metricLabel(key: string): string {
@@ -72,6 +78,7 @@ export default function TrendsView({
   userSex,
   rangeFrom,
   rangeTo,
+  metricGoals = [],
 }: TrendsViewProps) {
   /** Metric key of the single expanded card, or null. */
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -225,6 +232,11 @@ export default function TrendsView({
                   <CompactStatCard
                     key={card.key}
                     metricKey={card.key}
+                    goalDirection={resolveGoalDirection(
+                      card.key,
+                      getMetric(card.key)?.goalDirection,
+                      metricGoals,
+                    )}
                     label={metricLabel(card.key)}
                     value={card.latest.value}
                     displayValue={card.displayValue}

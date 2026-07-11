@@ -1,8 +1,9 @@
 /**
  * Focus view panel math — verdict thresholds (each band + boundaries), CPAP
  * adherence (unused nights, first-record window start, 90d cap), weight rate
- * from 7d rolling averages, fat-free steady band, panel presence gating, and
- * delta tone direction including lower-is-better metrics.
+ * from 7d rolling averages, fat-free steady band, panel presence gating,
+ * delta tone direction including lower-is-better metrics, and the goal
+ * overrides (metric-goal direction/target, frequency-goal week progress).
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -11,25 +12,28 @@ import {
   bodyVerdict,
   cpapAdherence,
   weightTrend,
+  frequencyVerdict,
   buildFocusPanels,
+  type FocusGoalContext,
   type FocusVitalRow,
 } from './focus';
 
-/** Fixed "now" — all windows in these tests hang off this instant. */
+/** Fixed "now" — all windows in these tests hang off this instant.
+    (2026-07-10 is a Friday; its UTC Monday week starts 2026-07-06.) */
 const NOW = new Date('2026-07-10T12:00:00Z');
 
 function row(metric_key: string, value: number, day: string): FocusVitalRow {
   return { metric_key, value, recorded_at: `${day}T00:00:00.000Z` };
 }
 
-function panel(rows: FocusVitalRow[], id: string) {
-  const found = buildFocusPanels(rows, NOW).find((p) => p.id === id);
+function panel(rows: FocusVitalRow[], id: string, goals?: FocusGoalContext) {
+  const found = buildFocusPanels(rows, NOW, goals).find((p) => p.id === id);
   if (!found) throw new Error(`panel ${id} not built`);
   return found;
 }
 
-function stat(rows: FocusVitalRow[], panelId: string, key: string) {
-  const s = panel(rows, panelId).stats.find((st) => st.key === key);
+function stat(rows: FocusVitalRow[], panelId: string, key: string, goals?: FocusGoalContext) {
+  const s = panel(rows, panelId, goals).stats.find((st) => st.key === key);
   if (!s) throw new Error(`stat ${key} missing from ${panelId}`);
   return s;
 }
@@ -78,7 +82,7 @@ describe('recoveryVerdict', () => {
 });
 
 describe('bodyVerdict', () => {
-  it('maps the weekly rate bands with boundaries', () => {
+  it('maps the weekly rate bands with boundaries (default: decrease)', () => {
     expect(bodyVerdict(-0.2)).toEqual({ label: 'Trending down', tone: 'success' });
     expect(bodyVerdict(0.2)).toEqual({ label: 'Trending up', tone: 'warning' });
     expect(bodyVerdict(-0.19)).toEqual({ label: 'Holding steady', tone: 'neutral' });
@@ -86,6 +90,88 @@ describe('bodyVerdict', () => {
   });
   it('is Not enough data without a rate', () => {
     expect(bodyVerdict(null)).toEqual({ label: 'Not enough data', tone: 'neutral' });
+  });
+  it('mirrors the bands for an increase goal', () => {
+    expect(bodyVerdict(0.2, 'increase')).toEqual({ label: 'Trending up', tone: 'success' });
+    expect(bodyVerdict(-0.2, 'increase')).toEqual({ label: 'Trending down', tone: 'warning' });
+    expect(bodyVerdict(0.1, 'increase')).toEqual({ label: 'Holding steady', tone: 'neutral' });
+  });
+  it('maintain: in-band steady is the success state, either trend warns', () => {
+    expect(bodyVerdict(0, 'maintain')).toEqual({ label: 'Holding steady', tone: 'success' });
+    expect(bodyVerdict(0.19, 'maintain')).toEqual({ label: 'Holding steady', tone: 'success' });
+    expect(bodyVerdict(0.2, 'maintain')).toEqual({ label: 'Trending up', tone: 'warning' });
+    expect(bodyVerdict(-0.2, 'maintain')).toEqual({ label: 'Trending down', tone: 'warning' });
+  });
+});
+
+describe('frequencyVerdict', () => {
+  const session = (type: string, iso: string) => ({ type, startedAt: iso });
+
+  it('is null without active frequency goals', () => {
+    expect(frequencyVerdict([], [session('strength', '2026-07-09T17:00:00Z')], NOW, 'UTC')).toBeNull();
+  });
+
+  it('counts only this Monday-anchored week and labels per goal in type order', () => {
+    const goals = [
+      { sessionType: 'cardio', perWeek: 2 },
+      { sessionType: 'strength', perWeek: 3 },
+    ];
+    const sessions = [
+      session('strength', '2026-07-06T17:00:00Z'), // Mon this week
+      session('strength', '2026-07-08T17:00:00Z'),
+      session('cardio', '2026-07-09T17:00:00Z'),
+      session('strength', '2026-07-05T17:00:00Z'), // Sunday — prior week
+      session('mobility', '2026-07-08T17:00:00Z'), // no goal for this type
+    ];
+    const v = frequencyVerdict(goals, sessions, NOW, 'UTC');
+    expect(v).toEqual({ label: '2/3 lifts · 1/2 cardio this week', tone: 'success' });
+  });
+
+  it('buckets sessions into weeks by the given timezone, not UTC', () => {
+    // 2026-07-06T02:00Z is Sunday Jul 5 in Phoenix (UTC-7) → prior week there.
+    const goals = [{ sessionType: 'strength', perWeek: 2 }];
+    const sessions = [session('strength', '2026-07-06T02:00:00Z')];
+    expect(frequencyVerdict(goals, sessions, NOW, 'UTC')!.label).toBe(
+      '1/2 lifts this week',
+    );
+    expect(frequencyVerdict(goals, sessions, NOW, 'America/Phoenix')!.label).toBe(
+      '0/2 lifts this week',
+    );
+  });
+
+  it('stays on pace while the remaining sessions fit in the days left (today included)', () => {
+    // Friday: 3 days left in the week (Fri, Sat, Sun).
+    const goals = [{ sessionType: 'strength', perWeek: 3 }];
+    expect(frequencyVerdict(goals, [], NOW, 'UTC')!.tone).toBe('success'); // 3 ≤ 3
+  });
+
+  it('warns when the week is mostly elapsed and a goal cannot fit anymore', () => {
+    const goals = [{ sessionType: 'strength', perWeek: 5 }];
+    const sessions = [session('strength', '2026-07-06T17:00:00Z')];
+    // Friday, 1/5 done → 4 remaining > 3 days left → behind.
+    expect(frequencyVerdict(goals, sessions, NOW, 'UTC')).toEqual({
+      label: '1/5 lifts this week',
+      tone: 'warning',
+    });
+  });
+
+  it('reads success when all goals are already met, even late in the week', () => {
+    const sunday = new Date('2026-07-12T12:00:00Z');
+    const goals = [{ sessionType: 'cardio', perWeek: 2 }];
+    const sessions = [
+      session('cardio', '2026-07-07T17:00:00Z'),
+      session('cardio', '2026-07-10T17:00:00Z'),
+    ];
+    expect(frequencyVerdict(goals, sessions, sunday, 'UTC')).toEqual({
+      label: '2/2 cardio this week',
+      tone: 'success',
+    });
+  });
+
+  it('ignores sessions with unparseable timestamps', () => {
+    const goals = [{ sessionType: 'strength', perWeek: 2 }];
+    const v = frequencyVerdict(goals, [session('strength', 'not-a-date')], NOW, 'UTC');
+    expect(v!.label).toBe('0/2 lifts this week');
   });
 });
 
@@ -574,6 +660,197 @@ describe('body panel', () => {
       row('fat_free_mass', 149.0, '2026-07-05'),
     ];
     expect(stat(down, 'body', 'fat_free_mass').tone).toBe('bad');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Goal overrides (metric goals over registry defaults; empty ctx = fallback)
+// ---------------------------------------------------------------------------
+
+describe('goal overrides', () => {
+  function goalBodyRows(): FocusVitalRow[] {
+    return [
+      // last 7 days avg 210; prior 7 days avg 211 → rate −1 lbs/wk
+      row('weight', 210, '2026-07-04'),
+      row('weight', 211, '2026-07-06'),
+      row('weight', 209, '2026-07-10'),
+      row('weight', 211, '2026-06-28'),
+      row('weight', 211, '2026-07-01'),
+      row('weight', 211, '2026-07-03'),
+    ];
+  }
+
+  it('an empty goal context reproduces the no-goals panels exactly', () => {
+    const rows = [
+      ...goalBodyRows(),
+      row('steps', 5000, '2026-07-10'),
+      row('readiness_score', 88, '2026-07-10'),
+      row('ahi', 3, '2026-07-10'),
+    ];
+    expect(buildFocusPanels(rows, NOW, {})).toEqual(buildFocusPanels(rows, NOW));
+    expect(
+      buildFocusPanels(rows, NOW, { metricGoals: [], frequencyGoals: [], weekSessions: [] }),
+    ).toEqual(buildFocusPanels(rows, NOW));
+  });
+
+  it('an increase weight goal mirrors the body verdict and weight tone', () => {
+    const goals: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'weight', direction: 'increase' }],
+    };
+    expect(panel(goalBodyRows(), 'body', goals).verdict).toEqual({
+      label: 'Trending down',
+      tone: 'warning',
+    });
+    const s = stat(goalBodyRows(), 'body', 'weight', goals);
+    expect(s.sub).toBe('-1 lbs/wk');
+    expect(s.tone).toBe('bad');
+  });
+
+  it('a maintain weight goal makes in-band steady read good and trends warn', () => {
+    const goals: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'weight', direction: 'maintain' }],
+    };
+    // Trending down 1 lb/wk → off the maintenance band.
+    expect(panel(goalBodyRows(), 'body', goals).verdict).toEqual({
+      label: 'Trending down',
+      tone: 'warning',
+    });
+    expect(stat(goalBodyRows(), 'body', 'weight', goals).tone).toBe('warn');
+
+    // Steady rows: identical weekly averages → rate 0.
+    const steady = [
+      row('weight', 210, '2026-07-08'),
+      row('weight', 210, '2026-07-01'),
+    ];
+    expect(panel(steady, 'body', goals).verdict).toEqual({
+      label: 'Holding steady',
+      tone: 'success',
+    });
+    expect(stat(steady, 'body', 'weight', goals).tone).toBe('good');
+  });
+
+  it('shows target progress when the active weight goal has a targetValue', () => {
+    const goals: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'weight', direction: 'decrease', targetValue: 200 }],
+    };
+    const s = stat(goalBodyRows(), 'body', 'weight_goal', goals);
+    expect(s.label).toBe('Goal');
+    expect(s.value).toBe('200');
+    expect(s.unit).toBe('lbs');
+    expect(s.sub).toBe('10 lbs to go'); // 7d avg 210 → 200
+    expect(s.tone).toBe('neutral');
+  });
+
+  it('marks a reached decrease target and an on-target maintain goal good', () => {
+    const reached: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'weight', direction: 'decrease', targetValue: 215 }],
+    };
+    expect(stat(goalBodyRows(), 'body', 'weight_goal', reached)).toMatchObject({
+      sub: 'reached',
+      tone: 'good',
+    });
+    const maintain: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'weight', direction: 'maintain', targetValue: 210.1 }],
+    };
+    expect(stat(goalBodyRows(), 'body', 'weight_goal', maintain)).toMatchObject({
+      sub: 'on target',
+      tone: 'good',
+    });
+    const off: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'weight', direction: 'maintain', targetValue: 205 }],
+    };
+    expect(stat(goalBodyRows(), 'body', 'weight_goal', off)).toMatchObject({
+      sub: '+5 lbs vs target',
+      tone: 'warn',
+    });
+  });
+
+  it('omits the goal stat without a targetValue', () => {
+    const goals: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'weight', direction: 'decrease' }],
+    };
+    expect(
+      panel(goalBodyRows(), 'body', goals).stats.find((s) => s.key === 'weight_goal'),
+    ).toBeUndefined();
+  });
+
+  it('overrides recovery delta tones (goal beats the registry direction)', () => {
+    const rows = [
+      row('readiness_score', 80, '2026-07-10'),
+      row('resting_hr', 65, '2026-07-10'),
+      row('resting_hr', 60, '2026-06-30'),
+    ];
+    // Registry: resting_hr lower-is-better → +5 is bad.
+    expect(stat(rows, 'recovery', 'resting_hr').tone).toBe('bad');
+    // Goal says increase → the same +5 reads good.
+    const goals: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'resting_hr', direction: 'increase' }],
+    };
+    expect(stat(rows, 'recovery', 'resting_hr', goals).tone).toBe('good');
+  });
+
+  it('maintain goals tone recovery deltas: no change good, movement warns', () => {
+    const goals: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'readiness_score', direction: 'maintain' }],
+    };
+    const flat = [
+      row('readiness_score', 80, '2026-07-10'),
+      row('readiness_score', 80, '2026-07-01'),
+    ];
+    expect(stat(flat, 'recovery', 'readiness_score', goals)).toMatchObject({
+      sub: 'no change vs 30d avg',
+      tone: 'good',
+    });
+    const moved = [
+      row('readiness_score', 88, '2026-07-10'),
+      row('readiness_score', 80, '2026-07-01'),
+    ];
+    expect(stat(moved, 'recovery', 'readiness_score', goals)).toMatchObject({
+      sub: '+4 vs 30d avg',
+      tone: 'warn',
+    });
+  });
+
+  it('a maintain fat_free_mass goal makes steady read good and moves warn', () => {
+    const goals: FocusGoalContext = {
+      metricGoals: [{ metricKey: 'fat_free_mass', direction: 'maintain' }],
+    };
+    const steady = [
+      ...goalBodyRows(),
+      row('fat_free_mass', 150.0, '2026-07-10'),
+      row('fat_free_mass', 149.6, '2026-07-05'),
+    ];
+    expect(stat(steady, 'body', 'fat_free_mass', goals)).toMatchObject({
+      sub: 'steady',
+      tone: 'good',
+    });
+    const moved = [
+      ...goalBodyRows(),
+      row('fat_free_mass', 151.0, '2026-07-10'),
+      row('fat_free_mass', 149.0, '2026-07-05'),
+    ];
+    expect(stat(moved, 'body', 'fat_free_mass', goals).tone).toBe('warn');
+  });
+
+  it('threads frequency goals into the activity verdict', () => {
+    const rows = [row('steps', 5000, '2026-07-10')];
+    const goals: FocusGoalContext = {
+      frequencyGoals: [{ sessionType: 'strength', perWeek: 3 }],
+      weekSessions: [
+        { type: 'strength', startedAt: '2026-07-07T17:00:00Z' },
+        { type: 'strength', startedAt: '2026-07-09T17:00:00Z' },
+      ],
+      timeZone: 'UTC',
+    };
+    expect(panel(rows, 'activity', goals).verdict).toEqual({
+      label: '2/3 lifts this week',
+      tone: 'success',
+    });
+    // Without frequency goals the static badge is untouched.
+    expect(panel(rows, 'activity', { metricGoals: [] }).verdict).toEqual({
+      label: 'This week',
+      tone: 'neutral',
+    });
   });
 });
 

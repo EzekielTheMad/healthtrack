@@ -11,9 +11,13 @@ export interface HealthContext {
   conditions_data: string;
   recent_notes: string;
   appointments_data: string;
+  /** Active goals + recent-training summary (fitness domain). */
+  fitness_data: string;
 }
 
 const SYSTEM_PROMPT_TEMPLATE = `You are a personal health data assistant. You have access to the user's health data below. Answer their questions by referencing specific data points, trends, and correlations. Be specific with numbers and dates. Flag anything concerning but always note you are not a medical professional.
+
+Lab results carry visit (draw) dates and may be months old: date-frame every lab-derived finding (e.g., "as of your May 26 draw") and say when a draw is old rather than presenting it as current.
 
 USER PROFILE:
 {profile_data}
@@ -37,7 +41,10 @@ RECENT NOTES/SYMPTOMS:
 {recent_notes}
 
 APPOINTMENTS:
-{appointments_data}`;
+{appointments_data}
+
+GOALS & RECENT TRAINING:
+{fitness_data}`;
 
 /** Exported for tests — fills the template, substituting placeholders for empty sections. */
 export function buildSystemPrompt(context: HealthContext): string {
@@ -50,6 +57,7 @@ export function buildSystemPrompt(context: HealthContext): string {
   prompt = prompt.replace('{conditions_data}', context.conditions_data || 'No conditions recorded.');
   prompt = prompt.replace('{recent_notes}', context.recent_notes || 'No recent notes.');
   prompt = prompt.replace('{appointments_data}', context.appointments_data || 'No upcoming appointments.');
+  prompt = prompt.replace('{fitness_data}', context.fitness_data || 'No active goals or recent training logged.');
   return prompt;
 }
 

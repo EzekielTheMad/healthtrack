@@ -54,6 +54,35 @@ export async function setupRepoDb(prefix: string): Promise<RepoTestDb> {
   };
 }
 
+/**
+ * Mint a personal access token for v1 API contract tests. Token format and
+ * sha256-hex hashing mirror src/lib/api-auth.ts generateApiKey/hashToken
+ * (that contract is pinned by the vitals write tests); generating here keeps
+ * the harness free of module-load-order coupling with api-auth.
+ */
+export function mintApiToken(
+  sqlite: Database.Database,
+  userId: string,
+  scopes: string[],
+): string {
+  const token = `ohts_pat_${crypto.randomBytes(36).toString('base64url')}`;
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  sqlite
+    .prepare(
+      `insert into api_keys (id, user_id, name, token_hash, prefix, scopes, created_at)
+       values (?, ?, 'test key', ?, ?, ?, ?)`,
+    )
+    .run(
+      crypto.randomUUID(),
+      userId,
+      hash,
+      token.slice(0, 16),
+      JSON.stringify(scopes),
+      new Date().toISOString(),
+    );
+  return token;
+}
+
 export function insertUser(sqlite: Database.Database, id: string, email?: string) {
   sqlite
     .prepare(

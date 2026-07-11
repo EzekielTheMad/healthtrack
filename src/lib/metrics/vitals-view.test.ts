@@ -207,6 +207,46 @@ describe('buildDailySections', () => {
     expect(deep.duration).toBe(true);
     expect(deep.readings[0].display).toBe('7h 42m');
   });
+
+  describe('active metric goals override the registry direction', () => {
+    const build = (
+      key: string,
+      today: number,
+      prior: number,
+      goals: Parameters<typeof buildDailySections>[2],
+    ) => {
+      const sections = buildDailySections(
+        [row(key, today, day('2026-07-08')), row(key, prior, day('2026-07-07'))],
+        '2026-07-08',
+        goals,
+      );
+      return sections.flatMap((s) => s.entries).find((e) => e.key === key)!.delta!;
+    };
+
+    it('an increase goal flips a lower-is-better registry tone', () => {
+      const goals = [{ metricKey: 'resting_hr', direction: 'increase' as const }];
+      expect(build('resting_hr', 65, 60, goals)).toMatchObject({ direction: 'up', tone: 'good' });
+      expect(build('resting_hr', 55, 60, goals)).toMatchObject({ direction: 'down', tone: 'bad' });
+    });
+
+    it('a goal gives directionless metrics a direction', () => {
+      const goals = [{ metricKey: 'body_temp', direction: 'decrease' as const }];
+      expect(build('body_temp', 97.8, 98.9, goals)).toMatchObject({ tone: 'good' });
+    });
+
+    it('maintain: flat reads good, movement either way reads warn', () => {
+      const goals = [{ metricKey: 'weight', direction: 'maintain' as const }];
+      expect(build('weight', 210, 210, goals)).toMatchObject({ direction: 'flat', tone: 'good' });
+      expect(build('weight', 212, 210, goals)).toMatchObject({ direction: 'up', tone: 'warn' });
+      expect(build('weight', 208, 210, goals)).toMatchObject({ direction: 'down', tone: 'warn' });
+    });
+
+    it('goals for other metrics leave registry tones untouched', () => {
+      const goals = [{ metricKey: 'weight', direction: 'increase' as const }];
+      expect(build('resting_hr', 55, 60, goals)).toMatchObject({ tone: 'good' });
+      expect(build('body_temp', 98.9, 97.8, goals)).toMatchObject({ tone: 'neutral' });
+    });
+  });
 });
 
 describe('shouldBucketWeekly', () => {

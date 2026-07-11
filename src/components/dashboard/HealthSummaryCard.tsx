@@ -1,9 +1,21 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { HealthSummary } from '@/lib/claude/health-summary';
+import type { HealthSummary, HealthSummaryHighlight } from '@/lib/claude/health-summary';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+/** `2026-05-26` → `May 26, 2026` — split manually to avoid TZ day-shift. */
+function formatDrawDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  if (!y || !m || !d || m < 1 || m > 12) return isoDate;
+  return `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
+}
 
 const HIGHLIGHT_STYLES: Record<string, { bg: string; border: string; icon: string }> = {
   positive: {
@@ -29,6 +41,36 @@ export default function HealthSummaryCard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+
+  const [dismissingIndex, setDismissingIndex] = useState<number | null>(null);
+
+  // Dismiss-until-new-labs: persist the dismissal (keyed server-side to the
+  // latest lab visit date) and drop the card locally. Failures are soft —
+  // the card simply stays, matching the card's overall soft-fail posture.
+  const dismissHighlight = useCallback(
+    async (index: number, highlight: HealthSummaryHighlight) => {
+      if (!highlight.labTests || highlight.labTests.length === 0) return;
+      setDismissingIndex(index);
+      try {
+        const res = await fetch('/api/lab-warning-dismissals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tests: highlight.labTests }),
+        });
+        if (!res.ok) throw new Error('Failed to dismiss');
+        setData((prev) =>
+          prev
+            ? { ...prev, highlights: prev.highlights.filter((_, i) => i !== index) }
+            : prev,
+        );
+      } catch {
+        // Leave the card in place; the user can retry.
+      } finally {
+        setDismissingIndex(null);
+      }
+    },
+    [],
+  );
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
@@ -120,6 +162,7 @@ export default function HealthSummaryCard() {
             <div className="space-y-2">
               {data.highlights.map((h, i) => {
                 const style = HIGHLIGHT_STYLES[h.type] ?? HIGHLIGHT_STYLES.action;
+                const isLabDerived = Boolean(h.labTests && h.labTests.length > 0);
                 return (
                   <div
                     key={i}
@@ -130,7 +173,30 @@ export default function HealthSummaryCard() {
                     }}
                   >
                     <span className="shrink-0 text-xs mt-0.5">{style.icon}</span>
-                    <span style={{ color: 'var(--color-text-primary)' }}>{h.text}</span>
+                    <span className="flex-1" style={{ color: 'var(--color-text-primary)' }}>
+                      {h.text}
+                      {h.labAsOf && (
+                        <span
+                          className="block text-xs mt-0.5"
+                          style={{ color: 'var(--color-text-muted)' }}
+                        >
+                          As of your {formatDrawDate(h.labAsOf)} lab draw
+                        </span>
+                      )}
+                    </span>
+                    {isLabDerived && (
+                      <button
+                        type="button"
+                        onClick={() => dismissHighlight(i, h)}
+                        disabled={dismissingIndex === i}
+                        aria-label="Dismiss until new lab results"
+                        title="Dismiss until new lab results"
+                        className="shrink-0 text-xs mt-0.5 cursor-pointer leading-none disabled:opacity-50"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 );
               })}

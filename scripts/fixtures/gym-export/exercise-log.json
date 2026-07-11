@@ -1,0 +1,222 @@
+[
+  {
+    "notionId": "398723e3-652a-8190-8e26-e513187e50ce",
+    "notionUrl": "https://app.notion.com/398723e3652a81908e26e513187e50ce",
+    "createdTime": "2026-07-09 00:44:59Z",
+    "Exercise": "Leg press",
+    "Date": {
+      "start": "2026-07-09 00:40:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Variant": null,
+    "Working weight (lbs)": 460,
+    "Top reps": 10,
+    "All sets": "460x10 / 460x10 / 460x10",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "398723e3-652a-8103-ad41-f921257181c7"
+    ]
+  },
+  {
+    "notionId": "398723e3-652a-8167-bb38-d634b3958e1c",
+    "notionUrl": "https://app.notion.com/398723e3652a8167bb38d634b3958e1c",
+    "createdTime": "2026-07-09 00:45:01Z",
+    "Exercise": "Triceps pressdown",
+    "Date": {
+      "start": "2026-07-09 00:40:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Variant": "Machine",
+    "Working weight (lbs)": 40,
+    "Top reps": 40,
+    "All sets": "40x40 / 40x40 / 40x40",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "398723e3-652a-8103-ad41-f921257181c7"
+    ]
+  },
+  {
+    "notionId": "398723e3-652a-81f4-8fc2-edc98254a93c",
+    "notionUrl": "https://app.notion.com/398723e3652a81f48fc2edc98254a93c",
+    "createdTime": "2026-07-09 00:45:02Z",
+    "Exercise": "Chest-supported row",
+    "Date": {
+      "start": "2026-07-09 00:40:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Variant": "Hammer high",
+    "Working weight (lbs)": 50,
+    "Top reps": 12,
+    "All sets": "50/arm x12 / 50/arm x12 / 50/arm x12",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "398723e3-652a-8103-ad41-f921257181c7"
+    ]
+  },
+  {
+    "notionId": "398723e3-652a-81da-a395-fa4714c1bc47",
+    "notionUrl": "https://app.notion.com/398723e3652a81daa395fa4714c1bc47",
+    "createdTime": "2026-07-09 00:45:17Z",
+    "Exercise": "Incline DB press (machine)",
+    "Date": {
+      "start": "2026-07-09 00:40:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Variant": "Machine",
+    "Working weight (lbs)": 130,
+    "Top reps": 12,
+    "All sets": "130x12 / 130x12 / 130x8",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "398723e3-652a-8103-ad41-f921257181c7"
+    ]
+  },
+  {
+    "notionId": "398723e3-652a-818f-a39f-dc66b2f59a61",
+    "notionUrl": "https://app.notion.com/398723e3652a818fa39fdc66b2f59a61",
+    "createdTime": "2026-07-09 00:45:19Z",
+    "Exercise": "Lateral raises",
+    "Date": {
+      "start": "2026-07-09 00:40:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Variant": null,
+    "Working weight (lbs)": 50,
+    "Top reps": 12,
+    "All sets": "50x12 / 50x12 / 50x12",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "398723e3-652a-8103-ad41-f921257181c7"
+    ]
+  },
+  {
+    "notionId": "398723e3-652a-81c3-93d2-f536a86b6534",
+    "notionUrl": "https://app.notion.com/398723e3652a81c393d2f536a86b6534",
+    "createdTime": "2026-07-09 00:45:21Z",
+    "Exercise": "Plank",
+    "Date": {
+      "start": "2026-07-09 00:40:00Z",
+      "end": null,
+      "is_datetime": true
+    },
+    "Day": "A",
+    "Variant": null,
+    "Working weight (lbs)": null,
+    "Top reps": null,
+    "All sets": "75s / 75s / 75s",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "398723e3-652a-8103-ad41-f921257181c7"
+    ]
+  },
+  {
+    "notionId": "387723e3-652a-816f-96f9-d1e5eee31627",
+    "notionUrl": "https://app.notion.com/387723e3652a816f96f9d1e5eee31627",
+    "createdTime": "2026-06-22 21:57:04Z",
+    "Exercise": "Leg press",
+    "Date": {
+      "start": "2026-06-22",
+      "end": null,
+      "is_datetime": false
+    },
+    "Day": "A",
+    "Variant": null,
+    "Working weight (lbs)": 330,
+    "Top reps": 12,
+    "All sets": "200x12 warmup / 330x12 / 330x12 / 330x12",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "387723e3-652a-81fb-8b74-c69f5783bc27"
+    ]
+  },
+  {
+    "notionId": "387723e3-652a-81ea-8d42-c1bb8ec2cf6a",
+    "notionUrl": "https://app.notion.com/387723e3652a81ea8d42c1bb8ec2cf6a",
+    "createdTime": "2026-06-22 21:57:07Z",
+    "Exercise": "Tricep extension",
+    "Date": {
+      "start": "2026-06-22",
+      "end": null,
+      "is_datetime": false
+    },
+    "Day": "A",
+    "Variant": null,
+    "Working weight (lbs)": 65,
+    "Top reps": 15,
+    "All sets": "65x15 / 65x15 / 65x15",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "387723e3-652a-81fb-8b74-c69f5783bc27"
+    ]
+  },
+  {
+    "notionId": "387723e3-652a-816e-b83c-cfe1f93dd130",
+    "notionUrl": "https://app.notion.com/387723e3652a816eb83ccfe1f93dd130",
+    "createdTime": "2026-06-22 21:57:12Z",
+    "Exercise": "Plank",
+    "Date": {
+      "start": "2026-06-22",
+      "end": null,
+      "is_datetime": false
+    },
+    "Day": "A",
+    "Variant": null,
+    "Working weight (lbs)": null,
+    "Top reps": null,
+    "All sets": "75 sec",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "387723e3-652a-81fb-8b74-c69f5783bc27"
+    ]
+  },
+  {
+    "notionId": "fixture-x3-0000-0000-000000000001",
+    "notionUrl": "https://app.notion.com/fixturex3",
+    "createdTime": "2026-06-22 21:57:20Z",
+    "Exercise": "Face pulls",
+    "Date": {
+      "start": "2026-06-22",
+      "end": null,
+      "is_datetime": false
+    },
+    "Day": "A",
+    "Variant": null,
+    "Working weight (lbs)": 47.5,
+    "Top reps": 15,
+    "All sets": "47.5x15 x3",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "387723e3-652a-81fb-8b74-c69f5783bc27"
+    ]
+  },
+  {
+    "notionId": "369723e3-652a-813f-b050-e42db7bba330",
+    "notionUrl": "https://app.notion.com/369723e3652a813fb050e42db7bba330",
+    "createdTime": "2026-05-23 17:32:30Z",
+    "Exercise": "Leg press",
+    "Date": {
+      "start": "2026-05-23",
+      "end": null,
+      "is_datetime": false
+    },
+    "Day": "A",
+    "Variant": "Linear stack",
+    "Working weight (lbs)": 333,
+    "Top reps": 10,
+    "All sets": "303x10, 333x10, 373x1 (failed)",
+    "Notes": "Solid set quality. Hold weight next session.",
+    "Workout session": [
+      "369723e3-652a-810f-8188-d9e16e26717e"
+    ]
+  }
+]

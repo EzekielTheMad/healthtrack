@@ -8,6 +8,7 @@ import {
   type DailyEntry,
 } from '@/lib/metrics/vitals-view';
 import { CATEGORY_LABELS } from '@/lib/metrics/registry';
+import type { ActiveMetricGoal } from '@/lib/fitness/goal-direction';
 import { displayUnit } from '@/lib/metrics/format';
 import { dayKeyToUtcIso, formatLocalTime, localDayKey, shiftDayKey } from '@/lib/dates';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -22,6 +23,8 @@ import LoadingSpinner from '@/components/shared/LoadingSpinner';
 interface DailyVitalsViewProps {
   /** Initial day (YYYY-MM-DD) — the most recent day with data, or today. */
   initialDay: string;
+  /** Active metric goals — override registry directions in delta tones. */
+  metricGoals?: readonly ActiveMetricGoal[];
 }
 
 /** `2026-07-08` → `Wednesday, Jul 8, 2026` (parsed as local midnight — safe). */
@@ -45,14 +48,17 @@ function DeltaCell({ entry }: { entry: DailyEntry }) {
   }
 
   const arrow = delta.direction === 'up' ? '▲' : delta.direction === 'down' ? '▼' : '—';
-  // Judged by the registry goalDirection — a falling resting HR is good, a
-  // falling step count is not, and directionless metrics stay muted.
+  // Judged by the effective goal direction (active metric goal over the
+  // registry default) — a falling resting HR is good, a falling step count is
+  // not, drifting off a maintain goal warns, directionless metrics stay muted.
   const color =
     delta.tone === 'good'
       ? 'var(--color-sage)'
-      : delta.tone === 'bad'
-        ? 'var(--color-terracotta)'
-        : 'var(--color-text-muted)';
+      : delta.tone === 'warn'
+        ? 'var(--color-warning)'
+        : delta.tone === 'bad'
+          ? 'var(--color-terracotta)'
+          : 'var(--color-text-muted)';
   const baselineLabel = entry.aggregate === 'sum' ? 'vs 7d daily avg' : 'vs 7d avg';
 
   return (
@@ -161,7 +167,7 @@ export function DailyTable({ sections }: { sections: DailySection[] }) {
   );
 }
 
-export default function DailyVitalsView({ initialDay }: DailyVitalsViewProps) {
+export default function DailyVitalsView({ initialDay, metricGoals = [] }: DailyVitalsViewProps) {
   const [selectedDay, setSelectedDay] = useState(initialDay);
   const today = localDayKey();
 
@@ -173,8 +179,8 @@ export default function DailyVitalsView({ initialDay }: DailyVitalsViewProps) {
   const { vitals, loading, error } = useVitals({ startDate, endDate });
 
   const sections = useMemo(
-    () => buildDailySections(vitals, selectedDay),
-    [vitals, selectedDay],
+    () => buildDailySections(vitals, selectedDay, metricGoals),
+    [vitals, selectedDay, metricGoals],
   );
 
   const navButtonStyle: React.CSSProperties = {

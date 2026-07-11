@@ -4,11 +4,18 @@ import { apiError } from '@/lib/api-error';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
 import { safeError } from '@/lib/safe-log';
 import { generateHealthSummary, type HealthSummaryInput } from '@/lib/claude/health-summary';
+import { filterDismissedLabHighlights } from '@/lib/claude/lab-warnings';
 import { listMedications } from '@/lib/repos/medications';
 import { listConditions } from '@/lib/repos/conditions';
 import { listLabResults } from '@/lib/repos/labs';
 import { listVitals } from '@/lib/repos/vitals';
 import { listActiveInteractionAlerts } from '@/lib/repos/interaction-alerts';
+import { listGoals } from '@/lib/repos/goals';
+import { listWorkouts } from '@/lib/repos/workouts';
+import {
+  listLabWarningDismissals,
+  latestLabVisitDate,
+} from '@/lib/repos/lab-warning-dismissals';
 
 export async function GET() {
   let userId: string;
@@ -38,6 +45,11 @@ export async function GET() {
     vitalsCutoff.setDate(vitalsCutoff.getDate() - 30);
     const vitalsCutoffISO = vitalsCutoff.toISOString();
 
+    // Recent-training block covers the trailing 14 days (spec §AI #1).
+    const workoutsCutoff = new Date();
+    workoutsCutoff.setDate(workoutsCutoff.getDate() - 14);
+    const workoutsCutoffISO = workoutsCutoff.toISOString();
+
     // The legacy queries filtered on user_id only — scope 'all' preserves that.
     const scope = { ownerId: userId, dependentId: 'all' as const };
     // VITALS are the exception: aggregates present per-metric stats as ONE
@@ -45,15 +57,21 @@ export async function GET() {
     // averages would be clinically wrong. Owner rows only (dependent IS NULL).
     const ownVitalsScope = { ownerId: userId, dependentId: null };
 
-    const [meds, conditions, allLabResults, vitals, alerts] = await Promise.all([
-      listMedications(userId, scope, { active: true }),
-      listConditions(userId, scope),
-      // flagged results in the last year, created_at desc, limit 10 —
-      // filtered below (repo returns created_at desc already)
-      listLabResults(userId, scope),
-      listVitals(userId, ownVitalsScope, { startDate: vitalsCutoffISO, limit: 2000 }),
-      listActiveInteractionAlerts(userId, scope),
-    ]);
+    const [meds, conditions, allLabResults, vitals, alerts, activeGoals, recentWorkouts, dismissals] =
+      await Promise.all([
+        listMedications(userId, scope, { active: true }),
+        listConditions(userId, scope),
+        // flagged results in the last year, created_at desc, limit 10 —
+        // filtered below (repo returns created_at desc already)
+        listLabResults(userId, scope),
+        listVitals(userId, ownVitalsScope, { startDate: vitalsCutoffISO, limit: 2000 }),
+        listActiveInteractionAlerts(userId, scope),
+        // Fitness context is owner-scoped like the vitals aggregates: goals
+        // are strictly per-user, and sessions read owner rows only.
+        listGoals(userId, userId, { active: true }),
+        listWorkouts(userId, ownVitalsScope, { from: workoutsCutoffISO }),
+        listLabWarningDismissals(userId),
+      ]);
 
     const recentLabFlags = allLabResults
       .filter(
@@ -78,6 +96,7 @@ export async function GET() {
         flag: r.flag ?? 'normal',
         reference_range_low: r.referenceRangeLow,
         reference_range_high: r.referenceRangeHigh,
+        visit_date: r.visitDate,
       })),
       vitals: vitals.map((v) => ({
         metric_key: v.metricKey,
@@ -89,6 +108,20 @@ export async function GET() {
       interactionAlerts: alerts.map((a) => ({
         alert_text: a.alertText,
         severity: a.severity,
+      })),
+      goals: activeGoals.map((g) => ({
+        kind: g.kind,
+        metricKey: g.metricKey,
+        direction: g.direction,
+        targetValue: g.targetValue,
+        targetDate: g.targetDate,
+        sessionType: g.sessionType,
+        perWeek: g.perWeek,
+      })),
+      recentWorkouts: recentWorkouts.map((w) => ({
+        type: w.type,
+        label: w.label,
+        startedAt: w.startedAt,
       })),
     };
 
@@ -113,7 +146,15 @@ export async function GET() {
     }
 
     const summary = await generateHealthSummary(input);
-    return NextResponse.json(summary);
+
+    // Dismiss-until-new-labs: hide lab-derived warnings the user dismissed
+    // while their dismissal stamp is still current; a newer lab visit makes
+    // the stamp stale and the warning surfaces again automatically.
+    const latestDraw = await latestLabVisitDate(userId);
+    return NextResponse.json({
+      ...summary,
+      highlights: filterDismissedLabHighlights(summary.highlights, dismissals, latestDraw),
+    });
   } catch (err) {
     safeError('Health summary error', err);
     return apiError(500, 'internal_error', 'Failed to generate health summary');

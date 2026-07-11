@@ -119,6 +119,45 @@ describe('TrendsView', () => {
     expect(screen.queryByText('hours')).not.toBeInTheDocument();
   });
 
+  it('colors sparklines by the effective goal direction (goal over registry)', () => {
+    // Weight rising 210 → 212. Registry says lower-is-better → terracotta.
+    const rising = [
+      vital('weight', 212, '2026-07-08T00:00:00Z'),
+      vital('weight', 210, '2026-07-07T00:00:00Z'),
+    ];
+    const { container, rerender } = render(<TrendsView vitals={rising} {...baseProps} />);
+    expect(container.querySelector('polyline')).toHaveAttribute(
+      'stroke',
+      'var(--color-terracotta)',
+    );
+
+    // An active increase goal flips the same line to sage.
+    rerender(
+      <TrendsView
+        vitals={rising}
+        {...baseProps}
+        metricGoals={[{ metricKey: 'weight', direction: 'increase' }]}
+      />,
+    );
+    expect(container.querySelector('polyline')).toHaveAttribute(
+      'stroke',
+      'var(--color-sage)',
+    );
+
+    // A maintain goal reads any real move as a warning (amber).
+    rerender(
+      <TrendsView
+        vitals={rising}
+        {...baseProps}
+        metricGoals={[{ metricKey: 'weight', direction: 'maintain' }]}
+      />,
+    );
+    expect(container.querySelector('polyline')).toHaveAttribute(
+      'stroke',
+      'var(--color-warning)',
+    );
+  });
+
   it('labels long-range bar panels as weekly aggregates', () => {
     render(
       <TrendsView

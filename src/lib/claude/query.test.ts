@@ -10,6 +10,7 @@ const emptyContext: HealthContext = {
   conditions_data: '',
   recent_notes: '',
   appointments_data: '',
+  fitness_data: '',
 };
 
 describe('buildSystemPrompt', () => {
@@ -29,6 +30,25 @@ describe('buildSystemPrompt', () => {
     const prompt = buildSystemPrompt(emptyContext);
     expect(prompt).toContain('No vitals data available.');
     expect(prompt).toContain('No medication data available.');
+    expect(prompt).toContain('No active goals or recent training logged.');
     expect(prompt).not.toContain('{vitals_data}');
+    expect(prompt).not.toContain('{fitness_data}');
+  });
+
+  it('presents goals + recent training under the fitness header (spec §AI #1)', () => {
+    const prompt = buildSystemPrompt({
+      ...emptyContext,
+      fitness_data:
+        'Active goals:\n- Weight: decrease (target 175 lbs)\n\nRecent training (last 14 days, 2 sessions):\n- strength: 2 (Upper A — Jul 1, Jul 8)',
+    });
+    expect(prompt).toContain('GOALS & RECENT TRAINING:');
+    expect(prompt).toContain('- Weight: decrease (target 175 lbs)');
+    expect(prompt).toContain('- strength: 2 (Upper A — Jul 1, Jul 8)');
+  });
+
+  it('instructs the model to date-frame lab-derived findings (spec §AI #2)', () => {
+    const prompt = buildSystemPrompt(emptyContext);
+    expect(prompt).toContain('date-frame every lab-derived finding');
+    expect(prompt).toContain('as of your May 26 draw');
   });
 });

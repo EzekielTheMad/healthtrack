@@ -55,7 +55,8 @@ export type Section =
   | 'appointments'
   | 'notes'
   | 'providers'
-  | 'profile';
+  | 'profile'
+  | 'fitness';
 
 export interface AuthzScope {
   /** The user whose data is being accessed (row user_id / profiles.id). */
@@ -76,6 +77,10 @@ export const ALL_SECTIONS: readonly Section[] = [
   'notes',
   'providers',
   'profile',
+  // 'fitness' (workouts/exercises/check-ins/goals) is a NEW domain with no
+  // legacy RLS policy — conservative grants: owner full; delegates read-only
+  // (not in the writable/deletable sets); not shareable.
+  'fitness',
 ];
 
 /** Sections with a has_health_share() SELECT policy (003/005/008/014). */

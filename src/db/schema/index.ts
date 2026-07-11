@@ -10,10 +10,12 @@
  * Better Auth tables: `user` below is a minimal placeholder; Phase 2 adds
  * session/account/verification via `npx @better-auth/cli generate`.
  */
+export * from './ai';
 export * from './auth';
 export * from './users';
 export * from './clinical';
 export * from './vitals';
+export * from './fitness';
 export * from './sharing';
 export * from './integrations';
 export * from './system';

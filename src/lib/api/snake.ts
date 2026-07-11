@@ -30,3 +30,36 @@ export function bodyToCamel(body: unknown): Record<string, unknown> {
   for (const [k, v] of Object.entries(body)) out[snakeToCamelKey(k)] = v;
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// Deep variants — fitness-domain payloads only.
+//
+// Workout writes nest entries and set arrays ({ per_side, warmup }), and the
+// read shapes nest resolved exercises, so the fitness v1 routes need recursive
+// key conversion. Vitals keeps the SHALLOW converters above on purpose: its
+// `metadata` object carries free-form client keys that must never be rewritten.
+// The fitness schemas have no free-form object fields, so deep conversion is
+// lossless there.
+// ---------------------------------------------------------------------------
+
+/** Drizzle/repo value (camelCase keys) → API JSON (snake_case keys), recursive. */
+export function deepToSnake(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(deepToSnake);
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[camelToSnakeKey(k)] = deepToSnake(v);
+    return out;
+  }
+  return value;
+}
+
+/** Request JSON (snake_case keys) → repo input (camelCase keys), recursive. */
+export function deepBodyToCamel(body: unknown): unknown {
+  if (Array.isArray(body)) return body.map(deepBodyToCamel);
+  if (body !== null && typeof body === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(body)) out[snakeToCamelKey(k)] = deepBodyToCamel(v);
+    return out;
+  }
+  return body;
+}

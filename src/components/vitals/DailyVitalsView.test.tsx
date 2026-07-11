@@ -84,4 +84,19 @@ describe('DailyTable', () => {
     render(<DailyTable sections={sections} />);
     expect(screen.getByText('good')).toBeInTheDocument();
   });
+
+  it('tints maintain-goal drift with the warn color', () => {
+    const sections = buildDailySections(
+      [
+        row('weight', 212, '2026-07-08T00:00:00Z'),
+        row('weight', 210, '2026-07-07T00:00:00Z'),
+      ],
+      '2026-07-08',
+      [{ metricKey: 'weight', direction: 'maintain' }],
+    );
+    render(<DailyTable sections={sections} />);
+    const delta = screen.getByText(/2 lbs vs 7d avg/).closest('span[title]');
+    expect(delta).not.toBeNull();
+    expect((delta as HTMLElement).style.color).toBe('var(--color-warning)');
+  });
 });

@@ -10,10 +10,24 @@
 // All math takes rows + an injectable `now`. Window helpers are shared with
 // aggregate.ts (DAY_MS / windowValue); day bucketing uses the UTC day keys
 // from src/lib/dates.ts (non-intraday rows are day-normalized).
+//
+// Goal semantics (fitness-domain design §goals): an active metric goal
+// overrides the registry goalDirection in every delta tone here and drives
+// the body verdict; active frequency goals replace the activity panel's
+// static badge with week progress. Passing no goal context reproduces the
+// registry-default behavior exactly.
 // ---------------------------------------------------------------------------
 
 import { DAY_MS, windowValue } from './aggregate';
 import { formatUtcDay, getVitalDayKey, shiftDayKey } from '../dates';
+import {
+  deltaTone,
+  resolveGoalDirection,
+  type ActiveMetricGoal,
+  type DeltaTone,
+  type EffectiveGoalDirection,
+} from '../fitness/goal-direction';
+import { dayKeyInTz, weekStartOfDayKey } from '../fitness/weeks';
 import { formatMetricValue } from './format';
 import { getMetric } from './registry';
 
@@ -56,6 +70,39 @@ export interface ApneaNight {
 }
 
 export type FocusPanelId = 'apnea' | 'recovery' | 'body' | 'activity';
+
+// ---------------------------------------------------------------------------
+// Goal context (all optional — an empty context is the no-goals experience)
+// ---------------------------------------------------------------------------
+
+/** Active metric-kind goal slice the panels need (+ optional target). */
+export interface FocusMetricGoal extends ActiveMetricGoal {
+  targetValue?: number | null;
+}
+
+/** Active frequency-kind goal: N sessions of a type per week. */
+export interface FocusFrequencyGoal {
+  sessionType: string;
+  perWeek: number;
+}
+
+/** Workout session slice for weekly frequency counting. */
+export interface FocusWeekSession {
+  type: string;
+  /** Real timestamp (ISO) — bucketed into Monday weeks in `timeZone`. */
+  startedAt: string;
+}
+
+export interface FocusGoalContext {
+  metricGoals?: readonly FocusMetricGoal[];
+  frequencyGoals?: readonly FocusFrequencyGoal[];
+  /** Recent workout sessions; only the current week's are counted. */
+  weekSessions?: readonly FocusWeekSession[];
+  /** IANA timezone for Monday-anchored weeks (viewer-local; default UTC). */
+  timeZone?: string;
+}
+
+const NO_GOALS: readonly FocusMetricGoal[] = [];
 
 export interface FocusPanel {
   id: FocusPanelId;
@@ -157,34 +204,62 @@ function utcDayKey(now: Date): string {
 }
 
 /**
- * Delta sub line vs a baseline: signed amount + suffix, tone by direction
- * (`lowerIsBetter` flips it). Deltas that round to zero at `decimals` read
- * as "no change" and stay neutral — same flat band as the daily view.
+ * deltaTone → StatTone: drifting off a `maintain` goal reads as a caution
+ * (amber warn), not a failure — the app's warn tone is the vocabulary for
+ * "off the maintenance band" (spec §goals maintain semantics).
+ */
+function goalStatTone(
+  tone: DeltaTone,
+  direction: EffectiveGoalDirection | undefined,
+): StatTone {
+  return tone === 'bad' && direction === 'maintain' ? 'warn' : tone;
+}
+
+/**
+ * Delta sub line vs a baseline: signed amount + suffix, toned against the
+ * EFFECTIVE goal direction (active metric goal over registry default).
+ * Deltas that round to zero at `decimals` read as "no change" — neutral for
+ * higher/lower, positive (good) for `maintain`, where holding steady is the
+ * goal; out-of-band maintain moves warn.
  */
 function deltaSub(
   delta: number,
   decimals: number,
-  lowerIsBetter: boolean,
+  direction: EffectiveGoalDirection | undefined,
   suffix: string,
 ): { sub: string; tone: StatTone } {
-  if (Math.abs(delta) < 0.5 * 10 ** -decimals) {
-    return { sub: `no change ${suffix}`, tone: 'neutral' };
+  const band = 0.5 * 10 ** -decimals;
+  const tone = goalStatTone(deltaTone(delta, direction, band), direction);
+  if (Math.abs(delta) < band) {
+    return { sub: `no change ${suffix}`, tone };
   }
-  const improved = lowerIsBetter ? delta < 0 : delta > 0;
-  return { sub: `${signed(delta, decimals)} ${suffix}`, tone: improved ? 'good' : 'bad' };
+  return { sub: `${signed(delta, decimals)} ${suffix}`, tone };
 }
 
-/** Percent-delta variant of deltaSub (whole-percent precision). */
+/** Percent-delta variant of deltaSub (whole-percent precision — a band of 1
+    makes deltaTone's in-band check exactly "rounds to 0%"). */
 function pctDeltaSub(
   latest: number,
   baseline: number,
-  lowerIsBetter: boolean,
+  direction: EffectiveGoalDirection | undefined,
   suffix: string,
 ): { sub: string; tone: StatTone } {
   const pct = Math.round(((latest - baseline) / Math.abs(baseline)) * 100);
-  if (pct === 0) return { sub: `no change ${suffix}`, tone: 'neutral' };
-  const improved = lowerIsBetter ? pct < 0 : pct > 0;
-  return { sub: `${pct > 0 ? '+' : ''}${pct}% ${suffix}`, tone: improved ? 'good' : 'bad' };
+  const tone = goalStatTone(deltaTone(pct, direction, 1), direction);
+  if (pct === 0) return { sub: `no change ${suffix}`, tone };
+  return { sub: `${pct > 0 ? '+' : ''}${pct}% ${suffix}`, tone };
+}
+
+/**
+ * Effective direction for a stat delta: active metric goal wins, then the
+ * registry default. `?? 'higher'` preserves the pre-goals behavior for
+ * direction-less metrics (they were toned as higher-is-better here).
+ */
+function statDirection(
+  key: string,
+  metricGoals: readonly FocusMetricGoal[],
+): EffectiveGoalDirection {
+  return resolveGoalDirection(key, getMetric(key)?.goalDirection, metricGoals) ?? 'higher';
 }
 
 // ---------------------------------------------------------------------------
@@ -228,16 +303,100 @@ export function recoveryVerdict(
   return NOT_ENOUGH_DATA;
 }
 
+/** Weekly rate outside ±0.2 lbs/wk reads as a real trend (shared band). */
+const WEIGHT_RATE_BAND = 0.2;
+
 /**
  * Body-composition verdict from the weekly rate of the 7d rolling weight
- * average: ≤−0.2 lbs/wk trending down (success — weight-loss context),
- * ≥+0.2 trending up (warning), otherwise holding steady.
+ * average, judged against the active weight goal's direction:
+ *  - decrease (default — the pre-goals weight-loss behavior): ≤−0.2 lbs/wk
+ *    trending down (success), ≥+0.2 trending up (warning), else neutral;
+ *  - increase: exact mirror;
+ *  - maintain: inside the ±0.2 band "Holding steady" is the SUCCESS state,
+ *    and either trend direction warns.
  */
-export function bodyVerdict(ratePerWeek: number | null): Verdict {
+export function bodyVerdict(
+  ratePerWeek: number | null,
+  direction: ActiveMetricGoal['direction'] = 'decrease',
+): Verdict {
   if (ratePerWeek === null) return NOT_ENOUGH_DATA;
-  if (ratePerWeek <= -0.2) return { label: 'Trending down', tone: 'success' };
-  if (ratePerWeek >= 0.2) return { label: 'Trending up', tone: 'warning' };
-  return { label: 'Holding steady', tone: 'neutral' };
+  const down = ratePerWeek <= -WEIGHT_RATE_BAND;
+  const up = ratePerWeek >= WEIGHT_RATE_BAND;
+  if (!down && !up) {
+    return {
+      label: 'Holding steady',
+      tone: direction === 'maintain' ? 'success' : 'neutral',
+    };
+  }
+  const label = down ? 'Trending down' : 'Trending up';
+  if (direction === 'maintain') return { label, tone: 'warning' };
+  const wanted = direction === 'decrease' ? down : up;
+  return { label, tone: wanted ? 'success' : 'warning' };
+}
+
+// ---------------------------------------------------------------------------
+// Frequency-goal week progress (activity panel verdict)
+// ---------------------------------------------------------------------------
+
+/** Display order + badge nouns for session types (schema SESSION_TYPES). */
+const SESSION_TYPE_ORDER = ['strength', 'cardio', 'mobility', 'other'] as const;
+const SESSION_TYPE_NOUNS: Record<string, string> = {
+  strength: 'lifts',
+  cardio: 'cardio',
+  mobility: 'mobility',
+  other: 'other',
+};
+
+/**
+ * Activity verdict from active frequency goals vs this week's sessions
+ * (Monday-anchored week in `timeZone`, per the fitness weeks convention).
+ * Label: "2/3 lifts · 1/2 cardio this week". Null without active goals —
+ * the caller keeps the neutral "This week" badge.
+ *
+ * On-pace heuristic (deliberately simple): assume at most one session of a
+ * given type per remaining day, today included. If every goal's remaining
+ * count still fits in the days left, the week is winnable → success (also
+ * covers "all done"); otherwise the week is mostly elapsed for that goal →
+ * warning. E.g. 0/3 lifts warns from Saturday (2 days left), not before.
+ */
+export function frequencyVerdict(
+  frequencyGoals: readonly FocusFrequencyGoal[],
+  weekSessions: readonly FocusWeekSession[],
+  now: Date,
+  timeZone: string,
+): Verdict | null {
+  if (frequencyGoals.length === 0) return null;
+
+  const todayKey = dayKeyInTz(now, timeZone);
+  const weekStart = weekStartOfDayKey(todayKey);
+
+  const counts = new Map<string, number>();
+  for (const s of weekSessions) {
+    if (Number.isNaN(Date.parse(s.startedAt))) continue;
+    const sessionWeek = weekStartOfDayKey(dayKeyInTz(new Date(s.startedAt), timeZone));
+    if (sessionWeek !== weekStart) continue;
+    counts.set(s.type, (counts.get(s.type) ?? 0) + 1);
+  }
+
+  const ordered = [...frequencyGoals].sort(
+    (a, b) =>
+      SESSION_TYPE_ORDER.indexOf(a.sessionType as (typeof SESSION_TYPE_ORDER)[number]) -
+      SESSION_TYPE_ORDER.indexOf(b.sessionType as (typeof SESSION_TYPE_ORDER)[number]),
+  );
+  const label = `${ordered
+    .map(
+      (g) =>
+        `${counts.get(g.sessionType) ?? 0}/${g.perWeek} ${
+          SESSION_TYPE_NOUNS[g.sessionType] ?? g.sessionType
+        }`,
+    )
+    .join(' · ')} this week`;
+
+  const daysLeftInclToday = 7 - diffDays(weekStart, todayKey); // Mon → 7 … Sun → 1
+  const onPace = ordered.every(
+    (g) => Math.max(0, g.perWeek - (counts.get(g.sessionType) ?? 0)) <= daysLeftInclToday,
+  );
+  return { label, tone: onPace ? 'success' : 'warning' };
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +603,11 @@ function buildApneaPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
   };
 }
 
-function buildRecoveryPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
+function buildRecoveryPanel(
+  rows: FocusVitalRow[],
+  now: Date,
+  metricGoals: readonly FocusMetricGoal[],
+): FocusPanel | null {
   const readinessRows = rowsFor(rows, 'readiness_score');
   const hrvRows = rowsFor(rows, 'hrv_rmssd');
   if (readinessRows.length === 0 && hrvRows.length === 0) return null;
@@ -490,15 +653,15 @@ function buildRecoveryPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
     percent: boolean,
   ) => {
     if (metricRows.length === 0) return;
-    const lowerIsBetter = getMetric(key)?.goalDirection === 'lower';
+    const direction = statDirection(key, metricGoals);
     const latest = latestOf(metricRows).value;
     const mean30 = windowValue('mean', dailyValuesInWindow(metricRows, key, todayKey, 30));
     let sub: string | null = null;
     let tone: StatTone = 'neutral';
     if (mean30 !== null) {
       const d = percent
-        ? pctDeltaSub(latest, mean30, lowerIsBetter, 'vs 30d avg')
-        : deltaSub(latest - mean30, decimals, lowerIsBetter, 'vs 30d avg');
+        ? pctDeltaSub(latest, mean30, direction, 'vs 30d avg')
+        : deltaSub(latest - mean30, decimals, direction, 'vs 30d avg');
       sub = d.sub;
       tone = d.tone;
     }
@@ -541,28 +704,69 @@ function buildRecoveryPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
   };
 }
 
-function buildBodyPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
+function buildBodyPanel(
+  rows: FocusVitalRow[],
+  now: Date,
+  metricGoals: readonly FocusMetricGoal[],
+): FocusPanel | null {
   const weightRows = rowsFor(rows, 'weight');
   if (weightRows.length === 0) return null;
 
   const { avg7, ratePerWeek } = weightTrend(rows, now);
-  const verdict = bodyVerdict(ratePerWeek);
+  // The active weight goal drives the verdict; without one the pre-goals
+  // weight-loss framing (decrease) applies unchanged.
+  const weightGoal = metricGoals.find((g) => g.metricKey === 'weight');
+  const goalDirection = weightGoal?.direction ?? 'decrease';
+  const verdict = bodyVerdict(ratePerWeek, goalDirection);
 
   const stats: FocusStat[] = [];
   let weightSub: string | null = null;
   let weightTone: StatTone = 'neutral';
   if (ratePerWeek !== null) {
     weightSub = `${signed(ratePerWeek, 1)} lbs/wk`;
-    weightTone = ratePerWeek <= -0.2 ? 'good' : ratePerWeek >= 0.2 ? 'bad' : 'neutral';
+    const down = ratePerWeek <= -WEIGHT_RATE_BAND;
+    const up = ratePerWeek >= WEIGHT_RATE_BAND;
+    if (goalDirection === 'maintain') weightTone = down || up ? 'warn' : 'good';
+    else if (down || up) {
+      weightTone = (goalDirection === 'decrease') === down ? 'good' : 'bad';
+    }
   }
+  const currentWeight = avg7 ?? latestOf(weightRows).value;
   stats.push({
     key: 'weight',
     label: avg7 !== null ? 'Weight (7d avg)' : 'Weight (latest)',
-    value: fmtNum(avg7 ?? latestOf(weightRows).value, 1),
+    value: fmtNum(currentWeight, 1),
     unit: 'lbs',
     sub: weightSub,
     tone: weightTone,
   });
+
+  // Target progress when the active weight goal carries a targetValue —
+  // rendered as a stat cell in the panel's existing grid style.
+  if (weightGoal?.targetValue != null) {
+    const target = weightGoal.targetValue;
+    const diff = currentWeight - target;
+    let sub: string;
+    let tone: StatTone;
+    if (weightGoal.direction === 'maintain') {
+      const onTarget = Math.abs(diff) < WEIGHT_RATE_BAND;
+      sub = onTarget ? 'on target' : `${signed(diff, 1)} lbs vs target`;
+      tone = onTarget ? 'good' : 'warn';
+    } else {
+      const reached =
+        weightGoal.direction === 'decrease' ? currentWeight <= target : currentWeight >= target;
+      sub = reached ? 'reached' : `${fmtNum(Math.abs(diff), 1)} lbs to go`;
+      tone = reached ? 'good' : 'neutral';
+    }
+    stats.push({
+      key: 'weight_goal',
+      label: 'Goal',
+      value: fmtNum(target, 1),
+      unit: 'lbs',
+      sub,
+      tone,
+    });
+  }
 
   /** Latest + previous reading of a metric, by recorded_at. */
   const lastTwo = (key: string): [FocusVitalRow, FocusVitalRow | null] | null => {
@@ -578,7 +782,12 @@ function buildBodyPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
     let sub: string | null = null;
     let tone: StatTone = 'neutral';
     if (prev) {
-      const d = deltaSub(latest.value - prev.value, 1, true, 'vs prior reading');
+      const d = deltaSub(
+        latest.value - prev.value,
+        1,
+        statDirection('body_fat_pct', metricGoals), // registry: lower
+        'vs prior reading',
+      );
       sub = d.sub;
       tone = d.tone;
     }
@@ -599,11 +808,21 @@ function buildBodyPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
     let tone: StatTone = 'neutral';
     if (prev) {
       const diff = latest.value - prev.value;
+      // Registry default 'higher' — keeping lean mass is the goal; an active
+      // fat_free_mass goal (e.g. maintain) overrides. The bespoke ±0.5 lb
+      // "steady" band is wider than a display half-step, so it stays local.
+      const direction = statDirection('fat_free_mass', metricGoals);
       if (Math.abs(diff) <= 0.5) {
         sub = 'steady';
+        tone = direction === 'maintain' ? 'good' : 'neutral';
       } else {
         sub = `${signed(diff, 1)} vs prior reading`;
-        tone = diff > 0 ? 'good' : 'bad'; // keeping lean mass is the goal
+        tone =
+          direction === 'maintain'
+            ? 'warn'
+            : (diff > 0) === (direction === 'higher')
+              ? 'good'
+              : 'bad';
       }
     }
     stats.push({
@@ -627,9 +846,15 @@ function buildBodyPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
   };
 }
 
-function buildActivityPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
+function buildActivityPanel(
+  rows: FocusVitalRow[],
+  now: Date,
+  goals: FocusGoalContext,
+): FocusPanel | null {
   const stepsRows = rowsFor(rows, 'steps');
   if (stepsRows.length === 0) return null;
+
+  const metricGoals = goals.metricGoals ?? NO_GOALS;
 
   const todayKey = utcDayKey(now);
   const stats: FocusStat[] = [];
@@ -657,7 +882,7 @@ function buildActivityPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
     let sub: string | null = null;
     let tone: StatTone = 'neutral';
     if (avg30 > 0) {
-      const d = pctDeltaSub(avg7, avg30, false, 'vs 30d avg');
+      const d = pctDeltaSub(avg7, avg30, statDirection(key, metricGoals), 'vs 30d avg');
       sub = d.sub;
       tone = d.tone;
     }
@@ -672,10 +897,20 @@ function buildActivityPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
     'kcal',
   );
 
+  // Frequency-goal week progress replaces the static badge when active
+  // frequency goals exist; otherwise the pre-goals neutral badge stays.
+  const verdict =
+    frequencyVerdict(
+      goals.frequencyGoals ?? [],
+      goals.weekSessions ?? [],
+      now,
+      goals.timeZone ?? 'UTC',
+    ) ?? { label: 'This week', tone: 'neutral' };
+
   return {
     id: 'activity',
     title: 'Activity',
-    verdict: { label: 'This week', tone: 'neutral' },
+    verdict,
     stats,
     caption: null,
     nights: null,
@@ -686,19 +921,26 @@ function buildActivityPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null
 /**
  * Build the ordered Focus panels (apnea, recovery, body, activity) from raw
  * vitals rows. Ordinal and registry-unknown metrics are ignored; panels whose
- * required metrics have no data are omitted entirely.
+ * required metrics have no data are omitted entirely. `goals` threads the
+ * user's active goals into delta tones and verdicts — omitting it (or passing
+ * an empty context) reproduces the registry-default behavior exactly.
  */
-export function buildFocusPanels(rows: FocusVitalRow[], now: Date = new Date()): FocusPanel[] {
+export function buildFocusPanels(
+  rows: FocusVitalRow[],
+  now: Date = new Date(),
+  goals: FocusGoalContext = {},
+): FocusPanel[] {
   const numeric = rows.filter((r) => {
     const metric = getMetric(r.metric_key);
     return metric !== undefined && metric.valueType !== 'ordinal';
   });
 
+  const metricGoals = goals.metricGoals ?? NO_GOALS;
   const panels = [
     buildApneaPanel(numeric, now),
-    buildRecoveryPanel(numeric, now),
-    buildBodyPanel(numeric, now),
-    buildActivityPanel(numeric, now),
+    buildRecoveryPanel(numeric, now, metricGoals),
+    buildBodyPanel(numeric, now, metricGoals),
+    buildActivityPanel(numeric, now, goals),
   ];
   return panels.filter((p): p is FocusPanel => p !== null);
 }
