@@ -158,6 +158,36 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
   return parts.join('\n\n');
 }
 
+/**
+ * Recover the summary JSON from a model response that may be pure JSON, fenced
+ * in a ```json block, or wrapped in a stray caveat sentence (which Opus can add
+ * on dense medical snapshots despite the "ONLY JSON" instruction). Returns
+ * undefined when no valid object can be recovered. Exported for tests.
+ */
+export function extractSummaryJson(responseText: string): HealthSummary | undefined {
+  let jsonText = responseText.trim();
+  const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) {
+    jsonText = fenceMatch[1].trim();
+  }
+  const tryParse = (s: string): HealthSummary | undefined => {
+    try {
+      return JSON.parse(s) as HealthSummary;
+    } catch {
+      return undefined;
+    }
+  };
+  const direct = tryParse(jsonText);
+  if (direct) return direct;
+  // Fall back to the outermost {...} span, dropping any surrounding prose.
+  const first = jsonText.indexOf('{');
+  const last = jsonText.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    return tryParse(jsonText.slice(first, last + 1));
+  }
+  return undefined;
+}
+
 export async function generateHealthSummary(
   input: HealthSummaryInput,
 ): Promise<HealthSummary> {
@@ -173,7 +203,7 @@ export async function generateHealthSummary(
   const message = await createMessage(client, {
     model: reasoningModel(),
     thinking: { type: 'disabled' },
-    max_tokens: 1024,
+    max_tokens: 1536,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -190,16 +220,12 @@ export async function generateHealthSummary(
     throw new Error('No text response from Claude');
   }
 
-  let jsonText = responseText.trim();
-  const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    jsonText = fenceMatch[1].trim();
-  }
-
-  let parsed: HealthSummary;
-  try {
-    parsed = JSON.parse(jsonText) as HealthSummary;
-  } catch {
+  const parsed = extractSummaryJson(responseText);
+  if (!parsed) {
+    console.error(
+      'Health summary parse failed. Raw response (first 800 chars):',
+      responseText.slice(0, 800),
+    );
     throw new Error('Failed to parse health summary response');
   }
 

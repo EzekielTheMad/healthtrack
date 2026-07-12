@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { buildHealthSnapshot, type HealthSummaryInput } from './health-summary';
+import {
+  buildHealthSnapshot,
+  extractSummaryJson,
+  type HealthSummaryInput,
+} from './health-summary';
 
 // Fixed clock for deterministic aggregate windows/dates.
 const NOW = new Date('2026-07-09T12:00:00Z');
@@ -130,5 +134,32 @@ describe('buildHealthSnapshot', () => {
 
   it('states when no medications are recorded', () => {
     expect(buildHealthSnapshot(emptyInput, NOW)).toContain('No active medications recorded.');
+  });
+});
+
+describe('extractSummaryJson', () => {
+  const obj = { summary: 'ok', highlights: [{ type: 'positive', text: 'good' }] };
+  const json = JSON.stringify(obj);
+
+  it('parses a pure JSON response', () => {
+    expect(extractSummaryJson(json)).toEqual(obj);
+  });
+
+  it('parses JSON inside a ```json fence', () => {
+    expect(extractSummaryJson('```json\n' + json + '\n```')).toEqual(obj);
+  });
+
+  it('recovers JSON wrapped in a leading caveat sentence (the v0.3.0 regression)', () => {
+    expect(
+      extractSummaryJson("I'm not a doctor, but here is the summary:\n" + json),
+    ).toEqual(obj);
+  });
+
+  it('recovers JSON with trailing prose', () => {
+    expect(extractSummaryJson(json + '\n\nLet me know if you want more detail.')).toEqual(obj);
+  });
+
+  it('returns undefined when there is no JSON object at all', () => {
+    expect(extractSummaryJson('Sorry, I cannot help with that.')).toBeUndefined();
   });
 });
