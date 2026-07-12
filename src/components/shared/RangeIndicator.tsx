@@ -64,28 +64,33 @@ export default function RangeIndicator({
         </span>
       </div>
 
-      <div
-        className="relative w-full h-3 rounded-full overflow-hidden"
-        style={{ backgroundColor: 'var(--color-cream)' }}
-      >
-        {/* Normal range zone */}
+      <div className="relative w-full h-3">
+        {/* Track + normal-range zone (clipped to the rounded track) */}
         <div
-          className="absolute top-0 h-full rounded-full"
-          style={{
-            left: `${normalStart}%`,
-            width: `${normalWidth}%`,
-            background: 'linear-gradient(90deg, var(--color-sage-light), var(--color-sage))',
-            opacity: 0.3,
-          }}
-        />
+          className="absolute inset-0 rounded-full overflow-hidden"
+          style={{ backgroundColor: 'rgba(201, 169, 135, 0.3)' }}
+        >
+          {/* Normal range zone */}
+          <div
+            className="absolute top-0 h-full rounded-full"
+            style={{
+              left: `${normalStart}%`,
+              width: `${normalWidth}%`,
+              background: 'linear-gradient(90deg, var(--color-sage-light), var(--color-sage))',
+              opacity: 0.55,
+            }}
+          />
+        </div>
 
-        {/* Value indicator */}
+        {/* Value indicator — sits above the clipped track so its ring/shadow
+            stay visible against both the track and the sage band. */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2"
+          className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2"
           style={{
-            left: `calc(${position}% - 6px)`,
+            left: `calc(${position}% - 7px)`,
             backgroundColor: indicatorColor,
-            borderColor: 'var(--bg-primary)',
+            borderColor: 'var(--bg-card)',
+            boxShadow: '0 0 0 1px rgba(107, 91, 79, 0.35)',
           }}
         />
       </div>

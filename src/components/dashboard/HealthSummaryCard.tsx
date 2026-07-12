@@ -5,6 +5,13 @@ import type { HealthSummary, HealthSummaryHighlight } from '@/lib/claude/health-
 import { useCapabilities } from '@/hooks/useCapabilities';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 
+/** Server adds cache metadata alongside the HealthSummary payload. */
+type SummaryResponse = HealthSummary & {
+  cached?: boolean;
+  stale?: boolean;
+  generated_at?: string | null;
+};
+
 const MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -15,6 +22,23 @@ function formatDrawDate(isoDate: string): string {
   const [y, m, d] = isoDate.split('-').map(Number);
   if (!y || !m || !d || m < 1 || m > 12) return isoDate;
   return `${MONTH_NAMES[m - 1]} ${d}, ${y}`;
+}
+
+// Collapse choice is persisted for the current local day only: the stored value
+// IS the day it applies to, so a stale key from a previous day is simply
+// ignored (and never needs cleanup — it's overwritten or falls out of use).
+const COLLAPSE_KEY = 'ht:health-overview-collapsed';
+
+function localDayKey(d: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** First clause of the summary — the teaser shown while collapsed. */
+function firstClause(summary: string): string {
+  const trimmed = summary.trim();
+  const match = trimmed.match(/^.*?[.!?](\s|$)/);
+  return (match ? match[0] : trimmed).trim();
 }
 
 const HIGHLIGHT_STYLES: Record<string, { bg: string; border: string; icon: string }> = {
@@ -37,12 +61,38 @@ const HIGHLIGHT_STYLES: Record<string, { bg: string; border: string; icon: strin
 
 export default function HealthSummaryCard() {
   const { capabilities } = useCapabilities();
-  const [data, setData] = useState<HealthSummary | null>(null);
+  const [data, setData] = useState<SummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const [dismissingIndex, setDismissingIndex] = useState<number | null>(null);
+
+  // Restore today's collapse choice (ignore a key stored on a previous day).
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(COLLAPSE_KEY) === localDayKey()) {
+        setCollapsed(true);
+      }
+    } catch {
+      // localStorage unavailable (SSR / privacy mode) — default to expanded.
+    }
+  }, []);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        if (next) localStorage.setItem(COLLAPSE_KEY, localDayKey());
+        else localStorage.removeItem(COLLAPSE_KEY);
+      } catch {
+        // Non-fatal — the toggle still works for this session.
+      }
+      return next;
+    });
+  }, []);
 
   // Dismiss-until-new-labs: persist the dismissal (keyed server-side to the
   // latest lab visit date) and drop the card locally. Failures are soft —
@@ -72,19 +122,23 @@ export default function HealthSummaryCard() {
     [],
   );
 
-  const fetchSummary = useCallback(async () => {
-    setLoading(true);
+  const fetchSummary = useCallback(async (isRefresh: boolean) => {
     setError(null);
+    // Only the very first load shows the full-card spinner; a manual refresh
+    // keeps the existing summary visible and shows a subtle "updating…".
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
     try {
-      const res = await fetch('/api/health-summary');
+      const res = await fetch(isRefresh ? '/api/health-summary?refresh=1' : '/api/health-summary');
       if (!res.ok) throw new Error('Failed to load summary');
-      const json = (await res.json()) as HealthSummary;
+      const json = (await res.json()) as SummaryResponse;
       setData(json);
       setHasLoaded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -92,12 +146,17 @@ export default function HealthSummaryCard() {
   // instance has AI configured (avoids a guaranteed 501).
   useEffect(() => {
     if (capabilities?.ai && !hasLoaded) {
-      fetchSummary();
+      fetchSummary(false);
     }
   }, [capabilities?.ai, hasLoaded, fetchSummary]);
 
   // AI not configured on this instance — the card has nothing to offer.
   if (!capabilities?.ai) return null;
+
+  // "updating…" affordance: a background regeneration is in flight (server
+  // served a stale row) or the user just triggered a manual refresh.
+  const updating = refreshing || Boolean(data?.stale);
+  const showInitialSpinner = loading && !data;
 
   return (
     <section
@@ -105,14 +164,51 @@ export default function HealthSummaryCard() {
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
     >
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-          Health Overview
-        </h2>
-        {hasLoaded && !loading && (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={fetchSummary}
-            className="text-xs font-medium cursor-pointer flex items-center gap-1"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-controls="health-overview-body"
+            className="flex items-center gap-2 cursor-pointer"
+            title={collapsed ? 'Expand health overview' : 'Collapse health overview'}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4 transition-transform"
+              style={{
+                color: 'var(--color-text-muted)',
+                transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+              }}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+              aria-hidden="true"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+              Health Overview
+            </h2>
+          </button>
+          {updating && data && (
+            <span
+              className="text-xs font-medium"
+              style={{ color: 'var(--color-text-muted)' }}
+              aria-live="polite"
+            >
+              updating…
+            </span>
+          )}
+        </div>
+
+        {hasLoaded && !showInitialSpinner && (
+          <button
+            type="button"
+            onClick={() => fetchSummary(true)}
+            disabled={refreshing}
+            className="text-xs font-medium cursor-pointer flex items-center gap-1 disabled:opacity-50"
             style={{ color: 'var(--color-sage)' }}
           >
             <svg
@@ -134,7 +230,7 @@ export default function HealthSummaryCard() {
         )}
       </div>
 
-      {loading && (
+      {showInitialSpinner && (
         <div className="flex items-center gap-3 py-4">
           <LoadingSpinner size="sm" />
           <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
@@ -143,7 +239,7 @@ export default function HealthSummaryCard() {
         </div>
       )}
 
-      {error && !loading && (
+      {error && !loading && !data && (
         // AI is configured (we only fetch when capabilities.ai) but the call
         // failed at runtime. Keep it calm and non-alarming — this is an
         // optional enhancement, not a broken page.
@@ -152,8 +248,20 @@ export default function HealthSummaryCard() {
         </p>
       )}
 
-      {data && !loading && (
-        <div className="space-y-4">
+      {data && !showInitialSpinner && collapsed && (
+        // Collapsed for the day: keep a one-line teaser so it's not fully
+        // hidden; the header chevron re-expands it.
+        <p
+          id="health-overview-body"
+          className="text-sm leading-relaxed truncate"
+          style={{ color: 'var(--color-text-muted)' }}
+        >
+          {firstClause(data.summary)}
+        </p>
+      )}
+
+      {data && !showInitialSpinner && !collapsed && (
+        <div id="health-overview-body" className="space-y-4">
           <p className="text-sm leading-relaxed" style={{ color: 'var(--color-text-secondary)' }}>
             {data.summary}
           </p>
@@ -204,8 +312,8 @@ export default function HealthSummaryCard() {
           )}
 
           <p
-            className="text-[10px] italic pt-1"
-            style={{ color: 'var(--color-text-muted)', opacity: 0.6 }}
+            className="text-xs italic pt-1"
+            style={{ color: 'var(--color-text-muted)' }}
           >
             AI-generated overview — not medical advice. Always consult your healthcare provider.
           </p>

@@ -1,23 +1,66 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
 import { safeError } from '@/lib/safe-log';
-import { generateHealthSummary, type HealthSummaryInput } from '@/lib/claude/health-summary';
+import type { HealthSummary } from '@/lib/claude/health-summary';
 import { filterDismissedLabHighlights } from '@/lib/claude/lab-warnings';
-import { listMedications } from '@/lib/repos/medications';
-import { listConditions } from '@/lib/repos/conditions';
-import { listLabResults } from '@/lib/repos/labs';
-import { listVitals } from '@/lib/repos/vitals';
-import { listActiveInteractionAlerts } from '@/lib/repos/interaction-alerts';
-import { listGoals } from '@/lib/repos/goals';
-import { listWorkouts } from '@/lib/repos/workouts';
+import {
+  generateAndCacheSummary,
+  ownerLocalDayKey,
+} from '@/lib/claude/summary-cache';
+import {
+  getCachedSummary,
+  getLatestCachedSummary,
+  parseCachedSummary,
+} from '@/lib/repos/daily-summaries';
+import { scheduleAfterResponse } from '@/lib/api/after';
 import {
   listLabWarningDismissals,
   latestLabVisitDate,
 } from '@/lib/repos/lab-warning-dismissals';
 
-export async function GET() {
+interface SummaryMeta {
+  cached: boolean;
+  stale: boolean;
+  generatedAt: string | null;
+}
+
+/**
+ * Serialize a summary for the client: apply dismiss-until-new-labs filtering
+ * at read time (cheap DB reads — never a model call) so dismissals stay live
+ * against a cached row, and attach the cache metadata (cached/stale/generated).
+ */
+async function buildResponse(
+  userId: string,
+  summary: HealthSummary,
+  meta: SummaryMeta,
+): Promise<NextResponse> {
+  const [dismissals, latestDraw] = await Promise.all([
+    listLabWarningDismissals(userId),
+    latestLabVisitDate(userId),
+  ]);
+  return NextResponse.json({
+    ...summary,
+    highlights: filterDismissedLabHighlights(summary.highlights, dismissals, latestDraw),
+    cached: meta.cached,
+    stale: meta.stale,
+    generated_at: meta.generatedAt,
+  });
+}
+
+/**
+ * GET /api/health-summary — cache-first read of the dashboard AI Health
+ * Overview. Never spins when any cache exists:
+ *   1. `?refresh=1` → regenerate synchronously (the card's manual Refresh).
+ *   2. Today's owner-local row exists → return it instantly (no model call).
+ *   3. Else an older row exists → return it as `stale`, and fire-and-forget a
+ *      background regeneration for today (the user sees the last good summary
+ *      immediately; a failed regen never overwrites the good row).
+ *   4. Else (no cache at all — first ever) → generate synchronously, cache,
+ *      and return. This is the only blocking path, and happens once.
+ */
+export async function GET(request: NextRequest) {
   let userId: string;
   try {
     userId = (await requireUser()).id;
@@ -33,127 +76,47 @@ export async function GET() {
     return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
   }
 
+  const force = request.nextUrl.searchParams.get('refresh') === '1';
+
   try {
-    // Only consider data from the last 12 months for the summary
-    const cutoff = new Date();
-    cutoff.setFullYear(cutoff.getFullYear() - 1);
-    const cutoffISO = cutoff.toISOString();
-
-    // Vitals use a 30-day window with a high row cap so the per-metric
-    // aggregates (7d/30d averages, trends) are computed over real data.
-    const vitalsCutoff = new Date();
-    vitalsCutoff.setDate(vitalsCutoff.getDate() - 30);
-    const vitalsCutoffISO = vitalsCutoff.toISOString();
-
-    // Recent-training block covers the trailing 14 days (spec §AI #1).
-    const workoutsCutoff = new Date();
-    workoutsCutoff.setDate(workoutsCutoff.getDate() - 14);
-    const workoutsCutoffISO = workoutsCutoff.toISOString();
-
-    // The legacy queries filtered on user_id only — scope 'all' preserves that.
-    const scope = { ownerId: userId, dependentId: 'all' as const };
-    // VITALS are the exception: aggregates present per-metric stats as ONE
-    // person's trends, so blending a dependent's readings into the owner's
-    // averages would be clinically wrong. Owner rows only (dependent IS NULL).
-    const ownVitalsScope = { ownerId: userId, dependentId: null };
-
-    const [meds, conditions, allLabResults, vitals, alerts, activeGoals, recentWorkouts, dismissals] =
-      await Promise.all([
-        listMedications(userId, scope, { active: true }),
-        listConditions(userId, scope),
-        // flagged results in the last year, created_at desc, limit 10 —
-        // filtered below (repo returns created_at desc already)
-        listLabResults(userId, scope),
-        listVitals(userId, ownVitalsScope, { startDate: vitalsCutoffISO, limit: 2000 }),
-        listActiveInteractionAlerts(userId, scope),
-        // Fitness context is owner-scoped like the vitals aggregates: goals
-        // are strictly per-user, and sessions read owner rows only.
-        listGoals(userId, userId, { active: true }),
-        listWorkouts(userId, ownVitalsScope, { from: workoutsCutoffISO }),
-        listLabWarningDismissals(userId),
-      ]);
-
-    const recentLabFlags = allLabResults
-      .filter(
-        (r) =>
-          r.flag !== null &&
-          ['high', 'low', 'critical'].includes(r.flag) &&
-          r.createdAt >= cutoffISO,
-      )
-      .slice(0, 10);
-
-    const input: HealthSummaryInput = {
-      medications: meds.map((m) => ({
-        name: m.name,
-        dosage: m.dosage,
-        frequency: m.frequency,
-      })),
-      conditions: conditions.map((c) => ({ name: c.name })),
-      recentLabFlags: recentLabFlags.map((r) => ({
-        test_name: r.testName,
-        value: r.value,
-        unit: r.unit,
-        flag: r.flag ?? 'normal',
-        reference_range_low: r.referenceRangeLow,
-        reference_range_high: r.referenceRangeHigh,
-        visit_date: r.visitDate,
-      })),
-      vitals: vitals.map((v) => ({
-        metric_key: v.metricKey,
-        value: v.value,
-        unit: v.unit ?? '',
-        recorded_at: v.recordedAt,
-        metadata: v.metadata,
-      })),
-      interactionAlerts: alerts.map((a) => ({
-        alert_text: a.alertText,
-        severity: a.severity,
-      })),
-      goals: activeGoals.map((g) => ({
-        kind: g.kind,
-        metricKey: g.metricKey,
-        direction: g.direction,
-        targetValue: g.targetValue,
-        targetDate: g.targetDate,
-        sessionType: g.sessionType,
-        perWeek: g.perWeek,
-      })),
-      recentWorkouts: recentWorkouts.map((w) => ({
-        type: w.type,
-        label: w.label,
-        startedAt: w.startedAt,
-      })),
-    };
-
-    // Skip AI call if there's essentially no data to summarize
-    const hasData =
-      input.medications.length > 0 ||
-      input.conditions.length > 0 ||
-      input.recentLabFlags.length > 0 ||
-      input.vitals.length > 0;
-
-    if (!hasData) {
-      return NextResponse.json({
-        summary:
-          'Welcome! Start by adding your medications, conditions, or uploading lab results to get a personalized health overview.',
-        highlights: [
-          {
-            type: 'action' as const,
-            text: 'Add your first health record to unlock AI-powered insights.',
-          },
-        ],
+    // Manual refresh: regenerate now (blocking) and serve the fresh summary.
+    if (force) {
+      const { summary } = await generateAndCacheSummary(userId);
+      return buildResponse(userId, summary, {
+        cached: false,
+        stale: false,
+        generatedAt: new Date().toISOString(),
       });
     }
 
-    const summary = await generateHealthSummary(input);
+    const today = ownerLocalDayKey();
+    const todayRow = await getCachedSummary(userId, today);
+    if (todayRow) {
+      return buildResponse(userId, parseCachedSummary(todayRow), {
+        cached: true,
+        stale: false,
+        generatedAt: todayRow.generatedAt,
+      });
+    }
 
-    // Dismiss-until-new-labs: hide lab-derived warnings the user dismissed
-    // while their dismissal stamp is still current; a newer lab visit makes
-    // the stamp stale and the warning surfaces again automatically.
-    const latestDraw = await latestLabVisitDate(userId);
-    return NextResponse.json({
-      ...summary,
-      highlights: filterDismissedLabHighlights(summary.highlights, dismissals, latestDraw),
+    // No row for today — serve the last good row (if any) instantly and warm
+    // today's cache in the background. Nothing is overwritten if regen fails.
+    const latest = await getLatestCachedSummary(userId);
+    if (latest) {
+      scheduleAfterResponse(() => generateAndCacheSummary(userId));
+      return buildResponse(userId, parseCachedSummary(latest), {
+        cached: true,
+        stale: true,
+        generatedAt: latest.generatedAt,
+      });
+    }
+
+    // First ever — nothing cached at all. Generate synchronously (blocks once).
+    const { summary } = await generateAndCacheSummary(userId);
+    return buildResponse(userId, summary, {
+      cached: false,
+      stale: false,
+      generatedAt: new Date().toISOString(),
     });
   } catch (err) {
     safeError('Health summary error', err);

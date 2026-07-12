@@ -87,7 +87,7 @@ async function expect501(res: Response, message: string) {
 describe('AI routes return 501 without ANTHROPIC_API_KEY', () => {
   it('GET /api/health-summary', async () => {
     const { GET } = await import('@/app/api/health-summary/route');
-    await expect501(await GET(), AI_MSG);
+    await expect501(await GET(new NextRequest('http://localhost/api/health-summary')), AI_MSG);
   });
 
   it('POST /api/health-query', async () => {
@@ -113,7 +113,7 @@ describe('AI routes return 501 without ANTHROPIC_API_KEY', () => {
   it('auth still comes first: unauthenticated callers get 401, not 501', async () => {
     authState.userId = null;
     const { GET } = await import('@/app/api/health-summary/route');
-    expect((await GET()).status).toBe(401);
+    expect((await GET(new NextRequest('http://localhost/api/health-summary'))).status).toBe(401);
   });
 });
 

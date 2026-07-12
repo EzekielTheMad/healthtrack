@@ -36,6 +36,13 @@
       "when": 1783725853299,
       "tag": "0004_lab-warning-dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1783867626802,
+      "tag": "0005_daily-summaries",
+      "breakpoints": true
     }
   ]
 }

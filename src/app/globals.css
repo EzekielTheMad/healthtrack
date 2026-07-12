@@ -17,7 +17,8 @@
   /* Text */
   --color-text-primary: #3D3D3D;
   --color-text-secondary: #6B6B6B;
-  --color-text-muted: #9B9B9B;
+  /* Sage-tinted gray — 5.57:1 on white (WCAG AA), up from #9B9B9B (~2.8:1). */
+  --color-text-muted: #5F6B64;
 
   /* Functional (warm) */
   --color-success: #81B29A;
@@ -29,7 +30,8 @@
   --bg-primary: var(--color-warm-white);
   --bg-card: #FFFFFF;
   --bg-subtle: var(--color-cream);
-  --border-card: rgba(201, 169, 135, 0.15);
+  /* Clay border strengthened 0.15 → 0.35 so white cards separate from cream. */
+  --border-card: rgba(201, 169, 135, 0.35);
 
   /* Legacy accent mappings (used by components) */
   --accent-green: var(--color-sage);

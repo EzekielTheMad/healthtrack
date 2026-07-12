@@ -1032,6 +1032,34 @@ export const OPENAPI_DOCUMENT = {
         },
       },
     },
+    '/api/v1/health-summary/refresh': {
+      post: {
+        summary: 'Warm the dashboard AI Health Overview cache',
+        description:
+          'Requires a broad scope (`write:all` or `read:all`). Regenerates the ' +
+          "owner's AI Health Overview and upserts today's (owner-local, " +
+          'America/Phoenix) cache row so the dashboard renders instantly. ' +
+          'Intended for a daily cron; running it again simply refreshes. ' +
+          '`generated` is false only when the owner has no data to summarize ' +
+          'yet (the welcome message is never cached). 501 when AI is not ' +
+          'configured on the instance.',
+        responses: {
+          '200': jsonResponse('Cache warmed', {
+            type: 'object',
+            properties: {
+              generated: { type: 'boolean' },
+              date: { type: 'string', description: 'Owner-local day, YYYY-MM-DD' },
+            },
+            required: ['generated', 'date'],
+          }),
+          ...AUTH_ERRORS,
+          '501': {
+            description: 'AI features not configured on this instance',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+        },
+      },
+    },
     '/api/v1/metrics': {
       get: {
         summary: 'Metric registry (public, no auth)',

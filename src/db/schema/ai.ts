@@ -15,6 +15,42 @@ import { sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
 import { user } from './auth';
 import { uuidPk, timestampNow } from './_shared';
 
+/**
+ * daily_summaries — precomputed cache for the dashboard AI Health Overview.
+ *
+ * The overview used to call the reasoning model on every dashboard load
+ * (visible spinner each time). Instead we cache one serialized HealthSummary
+ * per owner per LOCAL day (America/Phoenix — the owner-timezone convention,
+ * see src/lib/claude/summary-cache.ts) and serve it instantly. A daily cron
+ * (POST /api/v1/health-summary/refresh) warms tomorrow's row; the read path
+ * lazily fills or refreshes in the background.
+ *
+ * summary_json is the serialized HealthSummary (RAW model output with lab
+ * provenance attached) — dismiss-until-new-labs filtering is applied at read
+ * time, never baked into the cache, so dismissals stay live without a
+ * regeneration.
+ *
+ * Owner-scoped like the other AI tables (no dependent/delegate surface).
+ */
+export const dailySummaries = sqliteTable(
+  'daily_summaries',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Owner-local calendar day the summary describes (YYYY-MM-DD). */
+    summaryDate: text('summary_date').notNull(),
+    /** Serialized HealthSummary ({ summary, highlights }). */
+    summaryJson: text('summary_json').notNull(),
+    /** ISO-8601 timestamp the summary was generated at. */
+    generatedAt: text('generated_at').notNull(),
+    /** Reasoning model id used to generate it. */
+    model: text('model').notNull(),
+  },
+  (t) => [unique('daily_summaries_user_date_unique').on(t.userId, t.summaryDate)],
+);
+
 export const aiLabWarningDismissals = sqliteTable(
   'ai_lab_warning_dismissals',
   {
