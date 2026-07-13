@@ -11,6 +11,21 @@
   <Project>https://github.com/EzekielTheMad/healthtrack</Project>
   <Overview>Self-hosted personal health tracker. Track medications, conditions, allergies, labs, vitals, procedures, vaccines, appointments and notes for yourself and your dependents — all data stays in a single SQLite database and uploads folder under /data on your server. No cloud services required. The first registered user becomes the instance admin; set SIGNUPS_ENABLED to false afterwards to close registration. Optional integrations (each enabled only when its keys are set): Anthropic API key for AI health summaries, natural-language queries and lab/vaccine PDF parsing; Google OAuth for "Sign in with Google"; Oura for ring data sync. Back up /data to back up everything.</Overview>
   <Category>Tools: Productivity:</Category>
+  <Beta>False</Beta>
+  <Changes>
+### 0.3.2
+- UI contrast/readability pass; precomputed daily AI summary with collapse.
+### 0.3.1
+- More tolerant AI health-summary JSON parsing.
+### 0.3.0
+- Fitness domain: workout history, trends (est. 1RM, PR badges), weekly rollups, goals &amp; exercise catalog.
+### 0.2.3
+- Vitals UX audit fixes: goal-aware deltas, CPAP compliance verdict, duration/decimal formatting, focus-window corrections.
+### 0.2.0
+- Device-metric ingestion with backfilled history; device aggregates in AI context.
+### 0.1.0
+- Initial release: medications, conditions, allergies, labs, vitals, procedures, vaccines, dependents, sharing, delegates, and a scoped REST API with personal access tokens.
+  </Changes>
   <WebUI>http://[IP]:[PORT:3000]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/unraid/healthtrack.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/public/icon.png</Icon>

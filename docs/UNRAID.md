@@ -99,16 +99,27 @@ Whatever `APP_URL` you choose, it must exactly match the address you browse to
 
 ## Submitting the template to Community Applications (repo owner)
 
-CA listing is a one-time action by the repository owner:
+CA listing is a one-time action by the repository owner, via the submission
+portal at <https://ca.unraid.net/submit>. This repository already satisfies the
+prerequisites:
 
-1. Ensure the template XML is publicly reachable (this repo's
-   `unraid/healthtrack.xml` on the default branch is fine, or keep templates
-   in a dedicated `unraid-templates` repository).
-2. Review the CA application policies, then request that your template
-   repository be added to Community Applications via the official Unraid
-   forums (Community Applications board):
-   <https://forums.unraid.net/forum/94-community-applications/> — see the
-   pinned topics on application policies and adding template repositories.
-3. Once the repository is accepted into the CA feed, the app appears in the
-   Apps tab within a day or so; subsequent template updates are picked up
-   automatically from the repository.
+- **Public, active repo** ✅
+- **OSI-approved `LICENSE` at root** ✅ (MIT)
+- **`ca_profile.xml` at root** with a non-empty `<Profile>` ✅
+- **Valid Docker template XML** ✅ (`unraid/healthtrack.xml`, `<TemplateURL>` self-referencing)
+
+Steps:
+
+1. Read the submission help at <https://ca.unraid.net/submit/help>.
+2. Open <https://ca.unraid.net/submit/new>, point it at this repository, and run
+   **Validate** and **Scan**. Fix anything the scanner flags (it parses the
+   Docker entries, checks author/support metadata, checks for duplicate CA
+   listings, and generates a listing preview).
+3. (Recommended) Create a dedicated Unraid support thread and update
+   `<Forum>` in `ca_profile.xml` to point at it, so users have a stable place
+   to ask questions.
+4. Submit. Once accepted into the CA feed, the app appears in the **Apps** tab;
+   subsequent template updates are picked up automatically from the repository.
+
+> Maintainer responsibility: CA expects published apps to be kept compatible
+> with new Unraid releases and support requests answered in the forum thread.

@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!--
+  Community Applications repository profile. Required by the CA submission
+  portal (ca.unraid.net/submit): the repo must be public, carry an OSI LICENSE
+  at root (MIT, present), and expose a non-empty <Profile>. This describes the
+  repository/maintainer; the per-container template lives in unraid/healthtrack.xml.
+-->
+<CommunityApplications>
+  <Profile>
+HealthTrack — a self-hosted personal &amp; family health tracker. Track
+medications, conditions, allergies, labs, vitals, procedures, vaccines,
+appointments and notes for yourself and your dependents, all in a single Docker
+container with SQLite storage under `/data`. No cloud services required.
+
+Optional integrations each activate only when their keys are set (Anthropic API
+for AI features, Google OAuth for sign-in, Oura for ring sync). Bring-your-own
+device data via a scoped REST API (`/api/v1/...`).
+
+Support and bug reports: GitHub issues (see the link below). This repository is
+actively maintained.
+  </Profile>
+  <Icon>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/public/icon.png</Icon>
+  <WebPage>https://github.com/EzekielTheMad/healthtrack</WebPage>
+  <Forum>https://github.com/EzekielTheMad/healthtrack/issues</Forum>
+</CommunityApplications>
