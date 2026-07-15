@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useSession } from '@/lib/auth/client';
 
 /* ------------------------------------------------------------------ */
 /*  Feature data                                                       */
@@ -97,22 +95,13 @@ export default function LandingClient({
   signupPolicy: 'open' | 'invite' | 'closed';
 }) {
   const signupsOpen = signupPolicy === 'open';
-  const router = useRouter();
-  const { data: session, isPending } = useSession();
   const featuresRef = useRef<HTMLDivElement>(null);
 
-  /* Auth gate — redirect logged-in users to dashboard */
-  useEffect(() => {
-    if (!isPending && session) {
-      router.replace('/dashboard');
-    }
-  }, [isPending, session, router]);
-
-  const authChecked = !isPending && !session;
+  // Signed-in redirect happens server-side in page.tsx — no client auth gate,
+  // so the full page SSRs (content for crawlers, no spinner flash).
 
   /* Intersection-observer fade-in */
   useEffect(() => {
-    if (!authChecked) return;
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -125,24 +114,7 @@ export default function LandingClient({
     );
     document.querySelectorAll('.fade-in').forEach((el) => observer.observe(el));
     return () => observer.disconnect();
-  }, [authChecked]);
-
-  if (!authChecked) {
-    return (
-      <div
-        style={{ background: 'var(--bg-primary)', minHeight: '100vh' }}
-        className="flex items-center justify-center"
-      >
-        <div
-          className="w-8 h-8 rounded-full border-2 animate-spin"
-          style={{
-            borderColor: 'var(--border-card)',
-            borderTopColor: 'var(--color-sage)',
-          }}
-        />
-      </div>
-    );
-  }
+  }, []);
 
   return (
     <div style={{ background: 'var(--bg-primary)', color: 'var(--color-text-primary)' }}>

@@ -19,6 +19,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  // Absolute base for og:/twitter: image URLs — without it Next falls back to
+  // http://localhost:3000 in social embeds. APP_URL is this instance's origin.
+  metadataBase: new URL(process.env.APP_URL ?? 'http://localhost:3000'),
   title: 'HealthTrack',
   description: 'Personal health tracking - medical history, labs, vitals, and medications in one place.',
   manifest: '/manifest.json',
