@@ -8,19 +8,26 @@
  * domain — each pre-deduped against the chosen profile's existing records —
  * then import the approved ones (POST /api/import-medical-history).
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
 import { useDependents } from '@/hooks/useDependents';
 import type { DedupeStatus } from '@/lib/import/dedupe';
-import type { MedicalHistoryReviewItems } from '@/app/api/parse-medical-history/route';
+import type {
+  MedicalHistoryReviewItems,
+  ParseMedicalHistoryResponse,
+} from '@/app/api/parse-medical-history/route';
 import type {
   ImportDomainCounts,
   ImportMedicalHistoryResult,
 } from '@/app/api/import-medical-history/route';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_PDF_FILE_SIZE = 50 * 1024 * 1024; // large PDFs are page-chunked server-side
+const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024;
 const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
+
+/** After this long extracting, assume a large document and say so. */
+const SLOW_EXTRACTION_NOTICE_MS = 10_000;
 
 type Phase = 'select' | 'extracting' | 'review' | 'importing' | 'done';
 
@@ -148,10 +155,26 @@ export default function MedicalHistoryImport() {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<MedicalHistoryReviewItems | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [slowExtraction, setSlowExtraction] = useState(false);
   const [selection, setSelection] = useState<Set<string>>(new Set());
   const [importResult, setImportResult] = useState<ImportMedicalHistoryResult | null>(
     null,
   );
+
+  // Page count isn't known client-side, so infer "large document" from time:
+  // after a while extracting, reassure the user that sections are in progress.
+  useEffect(() => {
+    if (phase !== 'extracting') {
+      setSlowExtraction(false);
+      return;
+    }
+    const timer = setTimeout(
+      () => setSlowExtraction(true),
+      SLOW_EXTRACTION_NOTICE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [phase]);
 
   const profileName =
     profileId === ''
@@ -170,8 +193,11 @@ export default function MedicalHistoryImport() {
       setFile(null);
       return;
     }
-    if (selected.size > MAX_FILE_SIZE) {
-      setError('File size must be under 10MB.');
+    const isPdf = selected.type === 'application/pdf';
+    if (selected.size > (isPdf ? MAX_PDF_FILE_SIZE : MAX_IMAGE_FILE_SIZE)) {
+      setError(
+        isPdf ? 'PDF size must be under 50MB.' : 'Image size must be under 10MB.',
+      );
       setFile(null);
       return;
     }
@@ -196,9 +222,8 @@ export default function MedicalHistoryImport() {
         throw new Error(body?.message ?? `Extraction failed (${res.status})`);
       }
 
-      const { items: parsed } = (await res.json()) as {
-        items: MedicalHistoryReviewItems;
-      };
+      const { items: parsed, warnings: parseWarnings } =
+        (await res.json()) as ParseMedicalHistoryResponse;
 
       // Default selection: 'new' items checked; duplicates/possible unchecked.
       const initial = new Set<string>();
@@ -215,6 +240,7 @@ export default function MedicalHistoryImport() {
       });
 
       setItems(parsed);
+      setWarnings(parseWarnings ?? []);
       setSelection(initial);
       setPhase('review');
     } catch (err) {
@@ -287,6 +313,7 @@ export default function MedicalHistoryImport() {
     setPhase('select');
     setFile(null);
     setItems(null);
+    setWarnings([]);
     setSelection(new Set());
     setImportResult(null);
     setError(null);
@@ -348,7 +375,7 @@ export default function MedicalHistoryImport() {
             className="block text-xs font-medium mb-1"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            Document (PDF, PNG, JPG — up to 10MB)
+            Document (PDF up to 50MB; PNG, JPG up to 10MB)
           </label>
           <input
             ref={inputRef}
@@ -378,7 +405,9 @@ export default function MedicalHistoryImport() {
           {extracting ? (
             <span className="flex items-center gap-2">
               <LoadingSpinner size="sm" />
-              Extracting with AI…
+              {slowExtraction
+                ? 'Large document — processing in sections…'
+                : 'Extracting with AI…'}
             </span>
           ) : (
             'Extract'
@@ -510,6 +539,21 @@ export default function MedicalHistoryImport() {
         Items already on record are unchecked — tick them only if you want them
         imported anyway.
       </p>
+
+      {warnings.length > 0 && (
+        <div
+          className="rounded-lg px-4 py-2.5 text-xs space-y-0.5"
+          style={{
+            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+            border: '1px solid rgba(251, 191, 36, 0.25)',
+            color: 'var(--color-warning)',
+          }}
+        >
+          {warnings.map((w) => (
+            <p key={w}>{w}</p>
+          ))}
+        </div>
+      )}
 
       {totalExtracted === 0 ? (
         <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>

@@ -3,11 +3,17 @@
  * PDF/image into structured items across six domains, annotated with a dedupe
  * status against the target profile's existing rows.
  *
- * Multipart form: `file` (PDF/PNG/JPG ≤10MB) + optional `dependent_id`. The
- * target scope's existing rows are loaded (which also verifies the dependent
- * belongs to the caller) BEFORE the expensive AI call. Nothing is persisted —
- * the client reviews the annotated items and submits approved ones to
- * POST /api/import-medical-history.
+ * Multipart form: `file` (PDF ≤50MB, PNG/JPG ≤10MB) + optional `dependent_id`.
+ * The target scope's existing rows are loaded (which also verifies the
+ * dependent belongs to the caller) BEFORE the expensive AI call. Nothing is
+ * persisted — the client reviews the annotated items and submits approved
+ * ones to POST /api/import-medical-history.
+ *
+ * Large PDFs (> CHUNK_PAGE_THRESHOLD pages, capped at MAX_PAGES) are split
+ * into page chunks, extracted sequentially, and merged; chunks that fail to
+ * parse surface as `warnings` instead of failing the whole document (the
+ * request only fails when every chunk fails). Rate limiting stays one hit per
+ * document, not per chunk.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
@@ -35,8 +41,19 @@ import {
   dedupeLabResult,
   type DedupeStatus,
 } from '@/lib/import/dedupe';
+import {
+  CHUNK_PAGE_THRESHOLD,
+  MAX_PAGES,
+  getPdfPageCount,
+  splitPdfIntoChunks,
+} from '@/lib/import/chunk-pdf';
+import { mergeExtractions } from '@/lib/import/merge-extractions';
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+// Chunked extraction of a large PDF can take several minutes.
+export const maxDuration = 600;
+
+const MAX_PDF_FILE_SIZE = 50 * 1024 * 1024; // 50MB (page-chunked)
+const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024; // 10MB (single-shot)
 const ALLOWED_TYPES = new Set([
   'application/pdf',
   'image/png',
@@ -58,6 +75,79 @@ export interface MedicalHistoryReviewItems {
       ParsedMedicalHistory['lab_visits'][number]['results'][number]
     >[];
   }[];
+}
+
+export interface ParseMedicalHistoryResponse {
+  items: MedicalHistoryReviewItems;
+  /** Total PDF page count (absent for images). */
+  page_count?: number;
+  /** Non-fatal problems, e.g. page ranges that could not be processed. */
+  warnings?: string[];
+}
+
+const PAGES_PER_CHUNK = 25;
+
+class PdfTooLongError extends Error {
+  constructor(pageCount: number) {
+    super(
+      `This document has ${pageCount} pages — the importer supports up to ${MAX_PAGES}. Please split it and import in parts.`,
+    );
+    this.name = 'PdfTooLongError';
+  }
+}
+
+/** Human-readable label for a chunk's 1-based page range. */
+function pageRangeLabel(startPage: number, endPage: number): string {
+  return startPage === endPage
+    ? `Page ${startPage}`
+    : `Pages ${startPage}–${endPage}`;
+}
+
+/**
+ * Extract a PDF, page-chunking when it exceeds CHUNK_PAGE_THRESHOLD pages.
+ * Chunks are extracted sequentially (cost / rate-limit safety); a failed
+ * chunk becomes a warning and extraction continues. Throws only when the
+ * document is unreadable, too long, or every chunk fails.
+ */
+async function extractPdf(buffer: Buffer): Promise<{
+  parsed: ParsedMedicalHistory;
+  pageCount: number;
+  warnings: string[];
+}> {
+  const pageCount = await getPdfPageCount(buffer);
+
+  if (pageCount > MAX_PAGES) {
+    throw new PdfTooLongError(pageCount);
+  }
+
+  if (pageCount <= CHUNK_PAGE_THRESHOLD) {
+    // Small document — single-shot with the original buffer, no chunking.
+    const parsed = await parseMedicalHistory(buffer, 'application/pdf');
+    return { parsed, pageCount, warnings: [] };
+  }
+
+  const { chunks } = await splitPdfIntoChunks(buffer, PAGES_PER_CHUNK);
+  const parts: ParsedMedicalHistory[] = [];
+  const warnings: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const startPage = i * PAGES_PER_CHUNK + 1;
+    const endPage = Math.min((i + 1) * PAGES_PER_CHUNK, pageCount);
+    try {
+      parts.push(await parseMedicalHistory(chunks[i], 'application/pdf'));
+    } catch (err) {
+      safeError(
+        `Medical history chunk extraction failed (pages ${startPage}-${endPage})`,
+        err,
+      );
+      warnings.push(`${pageRangeLabel(startPage, endPage)} could not be processed`);
+    }
+  }
+
+  if (parts.length === 0) {
+    throw new Error('Failed to parse medical history document');
+  }
+
+  return { parsed: mergeExtractions(parts), pageCount, warnings };
 }
 
 export async function POST(request: NextRequest) {
@@ -89,15 +179,20 @@ export async function POST(request: NextRequest) {
       return apiError(400, 'bad_request', 'A file is required');
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      return apiError(400, 'file_too_large', 'File size must be under 10MB');
-    }
-
     if (!ALLOWED_TYPES.has(file.type)) {
       return apiError(
         400,
         'invalid_file_type',
         'Only PDF, PNG, and JPG files are accepted',
+      );
+    }
+
+    const isPdf = file.type === 'application/pdf';
+    if (file.size > (isPdf ? MAX_PDF_FILE_SIZE : MAX_IMAGE_FILE_SIZE)) {
+      return apiError(
+        400,
+        'file_too_large',
+        isPdf ? 'PDF size must be under 50MB' : 'Image size must be under 10MB',
       );
     }
 
@@ -131,11 +226,23 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Parse with Claude
+    // Parse with Claude (PDFs page-chunk when large; images are single-shot).
     let parsed: ParsedMedicalHistory;
+    let pageCount: number | undefined;
+    let warnings: string[] = [];
     try {
-      parsed = await parseMedicalHistory(buffer, file.type);
+      if (isPdf) {
+        const result = await extractPdf(buffer);
+        parsed = result.parsed;
+        pageCount = result.pageCount;
+        warnings = result.warnings;
+      } else {
+        parsed = await parseMedicalHistory(buffer, file.type);
+      }
     } catch (parseError) {
+      if (parseError instanceof PdfTooLongError) {
+        return apiError(400, 'too_many_pages', parseError.message);
+      }
       safeError('Medical history parsing error', parseError);
       const message =
         parseError instanceof Error
@@ -191,7 +298,10 @@ export async function POST(request: NextRequest) {
       })),
     };
 
-    return NextResponse.json({ items });
+    const response: ParseMedicalHistoryResponse = { items };
+    if (pageCount !== undefined) response.page_count = pageCount;
+    if (warnings.length > 0) response.warnings = warnings;
+    return NextResponse.json(response);
   } catch (err) {
     safeError('Medical history processing error', err);
     return apiError(500, 'internal_error', 'Failed to process medical history document');
