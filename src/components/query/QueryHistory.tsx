@@ -1,11 +1,73 @@
 'use client';
 
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { QueryHistoryEntry } from '@/lib/types';
 
 interface QueryHistoryProps {
   history: QueryHistoryEntry[];
   loading: boolean;
 }
+
+// The AI answer is trusted, free-form markdown (bold, lists, headings, the odd
+// table). We render it with react-markdown — no raw HTML is allowed, so this is
+// injection-safe — and style each element to the app's design system rather
+// than relying on a prose plugin (keeps it consistent with the CSS variables).
+const MARKDOWN_COMPONENTS: Components = {
+  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  h1: ({ children }) => <h3 className="text-base font-semibold mt-3 mb-1.5 first:mt-0">{children}</h3>,
+  h2: ({ children }) => <h3 className="text-base font-semibold mt-3 mb-1.5 first:mt-0">{children}</h3>,
+  h3: ({ children }) => <h4 className="text-sm font-semibold mt-3 mb-1 first:mt-0">{children}</h4>,
+  a: ({ href, children }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="underline"
+      style={{ color: 'var(--color-sage)' }}
+    >
+      {children}
+    </a>
+  ),
+  code: ({ children }) => (
+    <code
+      className="rounded px-1 py-0.5 text-[0.85em] font-mono"
+      style={{ backgroundColor: 'var(--bg-subtle)' }}
+    >
+      {children}
+    </code>
+  ),
+  blockquote: ({ children }) => (
+    <blockquote
+      className="border-l-2 pl-3 my-2 italic"
+      style={{ borderColor: 'var(--border-card)', color: 'var(--color-text-secondary)' }}
+    >
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-3" style={{ borderColor: 'var(--border-card)' }} />,
+  // Tables can be wide — let them scroll horizontally rather than break layout.
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-2">
+      <table className="text-sm border-collapse">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border px-2 py-1 text-left font-semibold" style={{ borderColor: 'var(--border-card)' }}>
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border px-2 py-1" style={{ borderColor: 'var(--border-card)' }}>
+      {children}
+    </td>
+  ),
+};
 
 function formatRelativeTime(dateStr: string): string {
   const now = Date.now();
@@ -21,25 +83,6 @@ function formatRelativeTime(dateStr: string): string {
   if (diffHr < 24) return `${diffHr} hour${diffHr !== 1 ? 's' : ''} ago`;
   if (diffDay < 30) return `${diffDay} day${diffDay !== 1 ? 's' : ''} ago`;
   return new Date(dateStr).toLocaleDateString();
-}
-
-function renderResponseText(text: string) {
-  // Split into paragraphs and render with spacing
-  const paragraphs = text.split(/\n{2,}/);
-  return paragraphs.map((para, i) => {
-    // Handle single newlines within a paragraph as line breaks
-    const lines = para.split('\n');
-    return (
-      <p key={i} className="mb-2 last:mb-0">
-        {lines.map((line, j) => (
-          <span key={j}>
-            {j > 0 && <br />}
-            {line}
-          </span>
-        ))}
-      </p>
-    );
-  });
 }
 
 export default function QueryHistory({ history, loading }: QueryHistoryProps) {
@@ -115,7 +158,9 @@ export default function QueryHistory({ history, loading }: QueryHistoryProps) {
 
           {/* Response */}
           <div className="text-sm leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
-            {renderResponseText(entry.response_text)}
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+              {entry.response_text}
+            </ReactMarkdown>
           </div>
         </div>
       ))}

@@ -3,8 +3,8 @@
   "short_name": "HealthTrack",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0B0F1A",
-  "theme_color": "#4ADE80",
+  "background_color": "#FFFBF7",
+  "theme_color": "#E07A5F",
   "icons": [
     {
       "src": "/icon-192.png",

@@ -27,6 +27,19 @@ export const metadata: Metadata = {
     statusBarStyle: 'black-translucent',
     title: 'HealthTrack',
   },
+  openGraph: {
+    title: 'HealthTrack',
+    description: 'Personal health tracking - medical history, labs, vitals, and medications in one place.',
+    siteName: 'HealthTrack',
+    type: 'website',
+    images: ['/icon-512.png'],
+  },
+  twitter: {
+    card: 'summary',
+    title: 'HealthTrack',
+    description: 'Personal health tracking - medical history, labs, vitals, and medications in one place.',
+    images: ['/icon-512.png'],
+  },
 };
 
 export const viewport: Viewport = {

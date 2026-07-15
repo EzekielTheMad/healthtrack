@@ -12,14 +12,49 @@
  *   DATA_DIR/keys (see src/lib/runtime/keys.ts).
  */
 import { betterAuth } from 'better-auth';
+import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { count } from 'drizzle-orm';
 import { db } from '@/db';
 import * as schema from '@/db/schema';
 import { getOrCreateSecret } from '@/lib/runtime/keys';
+import { consumeInvite } from '@/lib/repos/invites';
+
+async function userCount(): Promise<number> {
+  const [{ n }] = await db.select({ n: count() }).from(schema.user);
+  return n;
+}
+
+/**
+ * Registration policy (invite-only by default):
+ *  - zero users            → open (bootstrap: the first account becomes admin,
+ *                            so a fresh install is never bricked)
+ *  - SIGNUPS_ENABLED=true  → open registration (operator opt-in)
+ *  - SIGNUPS_ENABLED=false → hard closed (invites don't work either)
+ *  - otherwise (default)   → a valid single-use invite token is required
+ */
+type SignupPolicy = 'open' | 'closed' | 'invite';
+
+export async function getSignupPolicy(): Promise<SignupPolicy> {
+  if ((await userCount()) === 0) return 'open';
+  if (process.env.SIGNUPS_ENABLED === 'true') return 'open';
+  if (process.env.SIGNUPS_ENABLED === 'false') return 'closed';
+  return 'invite';
+}
 
 function buildAuth() {
   const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+  const isProd = process.env.NODE_ENV === 'production';
+
+  // Session cookies only get the Secure flag when the base URL is https. Behind
+  // a TLS-terminating proxy/tunnel that forwards plain http, an http APP_URL
+  // would ship cookies without Secure — warn loudly so operators fix it.
+  if (!appUrl.startsWith('https://') && !appUrl.startsWith('http://localhost')) {
+    console.warn(
+      '[auth] APP_URL is not https — session cookies will NOT be marked Secure. ' +
+        'Set APP_URL to your public https origin (the address behind your reverse proxy/tunnel).',
+    );
+  }
 
   const googleClientId = process.env.GOOGLE_CLIENT_ID;
   const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -31,20 +66,71 @@ function buildAuth() {
     baseURL: appUrl,
     trustedOrigins: [appUrl],
     telemetry: { enabled: false },
+    // Force the Secure cookie flag in production regardless of how the proxy
+    // presents the scheme to the app.
+    advanced: { useSecureCookies: isProd },
+    // Brute-force protection. In-memory storage is adequate for the
+    // single-container self-hosted topology (one process); stricter per-route
+    // caps on the credential endpoints blunt credential-stuffing.
+    rateLimit: {
+      enabled: true,
+      window: 60,
+      max: 100,
+      customRules: {
+        '/sign-in/email': { window: 60, max: 5 },
+        '/sign-up/email': { window: 60, max: 3 },
+        '/forget-password': { window: 60, max: 3 },
+        '/request-password-reset': { window: 60, max: 3 },
+      },
+    },
     emailAndPassword: {
       enabled: true,
-      disableSignUp: process.env.SIGNUPS_ENABLED === 'false',
+      // Signup gating happens in hooks.before / databaseHooks below (it needs
+      // the user count + invite token, which static config can't see).
+      disableSignUp: false,
     },
     socialProviders: googleConfigured
       ? {
           google: {
             clientId: googleClientId!,
             clientSecret: googleClientSecret!,
-            // Closed signups also apply to first-time Google sign-ins
-            disableImplicitSignUp: process.env.SIGNUPS_ENABLED === 'false',
+            // Implicit social signup is gated by databaseHooks.user.create
+            // below (blocked unless open policy / bootstrap), not here —
+            // a static flag can't allow the zero-users bootstrap case.
+            disableImplicitSignUp: false,
           },
         }
       : {},
+    // Invite signups are email/password; let a family member later sign in
+    // with Google on the same (verified) email without a separate account.
+    account: {
+      accountLinking: { enabled: true, trustedProviders: ['google'] },
+    },
+    hooks: {
+      // Gate email/password registration BEFORE the endpoint runs. The raw
+      // body is available here (an invite token is not a stored user field,
+      // so it must be read pre-validation).
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/sign-up/email') return;
+        const policy = await getSignupPolicy();
+        if (policy === 'open') return;
+        if (policy === 'closed') {
+          throw new APIError('FORBIDDEN', {
+            message: 'New registrations are disabled on this instance.',
+          });
+        }
+        const body = (ctx.body ?? {}) as { inviteToken?: unknown; email?: unknown };
+        const token = typeof body.inviteToken === 'string' ? body.inviteToken : '';
+        const email = typeof body.email === 'string' ? body.email : undefined;
+        // Burn-on-attempt: consuming here (not after success) closes any
+        // replay window; a failed signup just needs a fresh invite.
+        if (!token || !(await consumeInvite(token, email))) {
+          throw new APIError('FORBIDDEN', {
+            message: 'A valid invite is required to create an account on this instance.',
+          });
+        }
+      }),
+    },
     user: {
       additionalFields: {
         role: {
@@ -57,8 +143,22 @@ function buildAuth() {
     databaseHooks: {
       user: {
         create: {
-          before: async (userData) => {
-            const [{ n }] = await db.select({ n: count() }).from(schema.user);
+          before: async (userData, ctx) => {
+            const n = await userCount();
+            // Safety net for creation paths that bypass /sign-up/email — i.e.
+            // implicit signup via a social callback. Email signups were
+            // already invite-gated by hooks.before; anything else can only
+            // create an account when the policy is open (or bootstrap).
+            if (
+              n > 0 &&
+              process.env.SIGNUPS_ENABLED !== 'true' &&
+              ctx?.path !== '/sign-up/email'
+            ) {
+              throw new APIError('FORBIDDEN', {
+                message:
+                  'Sign-ups on this instance are invite-only. Ask the administrator for an invite link, then register with email and password.',
+              });
+            }
             return { data: { ...userData, role: n === 0 ? 'admin' : 'user' } };
           },
         },

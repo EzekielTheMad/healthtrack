@@ -71,6 +71,7 @@ describe('better auth server config', () => {
   });
 
   it('makes the first registered user admin, subsequent users get role user', async () => {
+    process.env.SIGNUPS_ENABLED = 'true'; // open signups; gating tested below
     const auth = await loadAuth();
     await auth.api.signUpEmail({
       body: { name: 'First', email: 'first@example.com', password: 'password123' },
@@ -88,6 +89,7 @@ describe('better auth server config', () => {
   });
 
   it('a signup request cannot set its own role', async () => {
+    process.env.SIGNUPS_ENABLED = 'true';
     const auth = await loadAuth();
     await auth.api.signUpEmail({
       body: { name: 'Root', email: 'root@example.com', password: 'password123' },
@@ -106,6 +108,68 @@ describe('better auth server config', () => {
       .prepare("select role from user where email='evil@example.com'")
       .get() as { role: string };
     expect(row.role).toBe('user');
+  });
+
+  it('default policy is invite-only: bootstrap open, then invite required', async () => {
+    // SIGNUPS_ENABLED unset → first (bootstrap) signup is allowed…
+    const auth = await loadAuth();
+    await auth.api.signUpEmail({
+      body: { name: 'Owner', email: 'owner@example.com', password: 'password123' },
+    });
+
+    // …a second signup with no invite is rejected…
+    await expect(
+      auth.api.signUpEmail({
+        body: { name: 'Rando', email: 'rando@example.com', password: 'password123' },
+      }),
+    ).rejects.toMatchObject({ status: 'FORBIDDEN' });
+
+    // …a bogus token is rejected…
+    await expect(
+      auth.api.signUpEmail({
+        body: {
+          name: 'Rando',
+          email: 'rando@example.com',
+          password: 'password123',
+          inviteToken: 'not-a-real-token',
+        } as never,
+      }),
+    ).rejects.toMatchObject({ status: 'FORBIDDEN' });
+
+    // …and a valid single-use invite admits exactly one account.
+    const { getSqlite } = await import('@/db');
+    const ownerId = (
+      getSqlite().prepare("select id from user where email='owner@example.com'").get() as {
+        id: string;
+      }
+    ).id;
+    const invites = await import('@/lib/repos/invites');
+    const invite = await invites.createInvite(ownerId);
+
+    await auth.api.signUpEmail({
+      body: {
+        name: 'Family',
+        email: 'family@example.com',
+        password: 'password123',
+        inviteToken: invite.token,
+      } as never,
+    });
+    const row = getSqlite()
+      .prepare("select role from user where email='family@example.com'")
+      .get() as { role: string };
+    expect(row.role).toBe('user');
+
+    // The invite is consumed — it can't admit a second account.
+    await expect(
+      auth.api.signUpEmail({
+        body: {
+          name: 'Reuse',
+          email: 'reuse@example.com',
+          password: 'password123',
+          inviteToken: invite.token,
+        } as never,
+      }),
+    ).rejects.toMatchObject({ status: 'FORBIDDEN' });
   });
 
   it('blocks signup when SIGNUPS_ENABLED=false, but login still works', async () => {

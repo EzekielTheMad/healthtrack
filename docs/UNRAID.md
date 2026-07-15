@@ -11,8 +11,9 @@ uploaded PDFs, auto-generated secrets) lives in one volume — back up
 3. Set **APP_URL** to the address you will browse to, e.g.
    `http://192.168.1.50:3000` (or your reverse-proxy HTTPS URL).
 4. Apply. Open the WebUI and register — the **first account becomes the
-   instance admin**. Set `SIGNUPS_ENABLED` to `false` afterwards if you don't
-   want anyone else registering.
+   instance admin**. After that, registration is invite-only by default — add
+   family via single-use links from **Settings → Invites** (or set
+   `SIGNUPS_ENABLED=true` to open registration to anyone).
 
 ## Option 2 — Manual template URL (before/without CA listing)
 

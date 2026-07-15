@@ -41,7 +41,7 @@ export default function PrivacyPolicyPage() {
       <main className="max-w-3xl mx-auto px-6 pt-32 pb-20">
         <h1 className="text-3xl md:text-4xl font-bold mb-2">Privacy Policy</h1>
         <p className="text-sm mb-12" style={{ color: 'var(--color-text-muted)' }}>
-          Effective date: March 25, 2026
+          Effective date: July 14, 2026
         </p>
 
         <div className="space-y-10">
@@ -153,9 +153,29 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
-          {/* 5. Health Data Sharing */}
+          {/* 5. Self-Hosted Operator Responsibilities */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">5. Health Data Sharing</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">5. Self-Hosted Operator Responsibilities</h2>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              HealthTrack is self-hosted software. The person or organization that deploys an
+              instance (&quot;the operator&quot;) acts as the data controller or custodian for that
+              instance. The operator is responsible for:
+            </p>
+            <ul className="list-disc list-inside space-y-2" style={{ color: 'var(--color-text-muted)' }}>
+              <li>Securing the instance, including HTTPS, access control, and backups</li>
+              <li>Complying with the privacy laws that apply to them and their users</li>
+              <li>Notifying their users in the event of a data breach</li>
+            </ul>
+            <p className="leading-relaxed mt-3" style={{ color: 'var(--color-text-muted)' }}>
+              The software ships with no telemetry. Data is sent to third parties only when the
+              operator configures those integrations — Anthropic for AI features, and Google or
+              Oura for OAuth-based sign-in and device sync.
+            </p>
+          </section>
+
+          {/* 6. Health Data Sharing */}
+          <section>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">6. Health Data Sharing</h2>
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               Your health data sharing is entirely under your control:
             </p>
@@ -167,9 +187,9 @@ export default function PrivacyPolicyPage() {
             </ul>
           </section>
 
-          {/* 6. Data Retention & Deletion */}
+          {/* 7. Data Retention & Deletion */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">6. Data Retention &amp; Deletion</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">7. Data Retention &amp; Deletion</h2>
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               We retain your data for as long as your account is active. You may at any time:
             </p>
@@ -184,9 +204,9 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
-          {/* 7. Cookies & Tracking */}
+          {/* 8. Cookies & Tracking */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">7. Cookies &amp; Tracking</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">8. Cookies &amp; Tracking</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
               HealthTrack uses minimal cookies, limited to authentication session cookies required for
               the application to function. We do not use advertising cookies, third-party tracking
@@ -194,9 +214,9 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
-          {/* 8. Children's Privacy */}
+          {/* 9. Children's Privacy */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">8. Children&apos;s Privacy</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">9. Children&apos;s Privacy</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
               HealthTrack is not intended for use by children under 13 years of age. We do not
               knowingly collect personal information from children under 13. HealthTrack does support
@@ -208,9 +228,9 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
-          {/* 9. Changes to This Policy */}
+          {/* 10. Changes to This Policy */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">9. Changes to This Policy</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">10. Changes to This Policy</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
               We may update this Privacy Policy from time to time. When we do, we will revise the
               &quot;Effective date&quot; at the top of this page. We encourage you to review this
@@ -219,9 +239,9 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
 
-          {/* 10. Contact Information */}
+          {/* 11. Contact Information */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">10. Contact Information</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">11. Contact Information</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
               If you have questions or concerns about this Privacy Policy or our data practices,
               please contact your instance administrator.

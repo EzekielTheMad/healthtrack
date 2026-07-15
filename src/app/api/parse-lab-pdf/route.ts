@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
+import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { safeError } from '@/lib/safe-log';
 import { parseLabPdf } from '@/lib/claude/parse-lab';
 import {
@@ -24,6 +25,11 @@ export async function POST(request: NextRequest) {
   // Gated after auth so unauthenticated callers can't probe instance config.
   if (!getCapabilities().ai) {
     return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
+  }
+
+  // Cap expensive document parses (shared budget with vaccine PDFs).
+  if (!checkRateLimit(`parse-pdf:${userId}`, { max: 15, windowMs: HOUR_MS })) {
+    return apiError(429, 'rate_limited', 'Too many document uploads this hour. Please try again later.');
   }
 
   try {

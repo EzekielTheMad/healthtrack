@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { HealthSummary, HealthSummaryHighlight } from '@/lib/claude/health-summary';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
 
 /** Server adds cache metadata alongside the HealthSummary payload. */
 type SummaryResponse = HealthSummary & {
@@ -315,7 +316,7 @@ export default function HealthSummaryCard() {
             className="text-xs italic pt-1"
             style={{ color: 'var(--color-text-muted)' }}
           >
-            AI-generated overview — not medical advice. Always consult your healthcare provider.
+            {AI_DISCLAIMER}
           </p>
         </div>
       )}

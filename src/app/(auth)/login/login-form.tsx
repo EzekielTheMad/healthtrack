@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { authClient } from "@/lib/auth/client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
 type AuthMode = "login" | "signup";
@@ -9,17 +10,44 @@ type AuthMode = "login" | "signup";
 interface LoginFormProps {
   /** Google OAuth is configured on the server (GOOGLE_CLIENT_ID/SECRET set). */
   googleEnabled: boolean;
-  /** New registrations are open (SIGNUPS_ENABLED !== 'false'). */
-  signupsEnabled: boolean;
+  /** Registration policy: open (bootstrap/opt-in), invite-only, or closed. */
+  signupPolicy: "open" | "invite" | "closed";
+  /** ?invite= token from an invite link, if any. */
+  inviteToken: string | null;
 }
 
-export default function LoginForm({ googleEnabled, signupsEnabled }: LoginFormProps) {
+export default function LoginForm({ googleEnabled, signupPolicy, inviteToken }: LoginFormProps) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loadingProvider, setLoadingProvider] = useState<string | null>(null);
+  // null = still checking (or no token); the invite link pre-validates so the
+  // visitor isn't asked to fill a form a dead token would reject.
+  const [inviteValid, setInviteValid] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (signupPolicy !== "invite" || !inviteToken) return;
+    let cancelled = false;
+    fetch(`/api/invites/validate?token=${encodeURIComponent(inviteToken)}`)
+      .then((res) => (res.ok ? res.json() : { valid: false }))
+      .then((body: { valid?: boolean }) => {
+        if (cancelled) return;
+        setInviteValid(Boolean(body.valid));
+        if (body.valid) setMode("signup");
+      })
+      .catch(() => {
+        if (!cancelled) setInviteValid(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [signupPolicy, inviteToken]);
+
+  // Can this visitor reach the signup form at all?
+  const signupAvailable =
+    signupPolicy === "open" || (signupPolicy === "invite" && inviteValid === true);
 
   async function handleOAuth(provider: "google") {
     setError(null);
@@ -50,11 +78,14 @@ export default function LoginForm({ googleEnabled, signupsEnabled }: LoginFormPr
         return;
       }
     } else {
+      // inviteToken rides along in the body; the server's sign-up hook
+      // validates and consumes it (see src/lib/auth/index.ts).
       const { error: signUpError } = await authClient.signUp.email({
         name: name.trim() || email.split("@")[0],
         email,
         password,
-      });
+        ...(inviteToken ? { inviteToken } : {}),
+      } as Parameters<typeof authClient.signUp.email>[0]);
       if (signUpError) {
         setError(signUpError.message ?? "Sign-up failed.");
         setLoadingProvider(null);
@@ -79,6 +110,25 @@ export default function LoginForm({ googleEnabled, signupsEnabled }: LoginFormPr
           {mode === "login" ? "Sign in to your account" : "Create a new account"}
         </p>
       </div>
+
+      {/* Invite-link status */}
+      {signupPolicy === "invite" && inviteToken && inviteValid === true && (
+        <p
+          className="rounded-[var(--radius-md)] px-4 py-3 text-center text-sm"
+          style={{ backgroundColor: "rgba(129, 178, 154, 0.1)", color: "var(--color-sage)" }}
+        >
+          You’ve been invited to this HealthTrack instance — create your account below.
+        </p>
+      )}
+      {signupPolicy === "invite" && inviteToken && inviteValid === false && (
+        <p
+          className="rounded-[var(--radius-md)] px-4 py-3 text-center text-sm"
+          style={{ backgroundColor: "rgba(224, 122, 95, 0.1)", color: "var(--color-terracotta)" }}
+        >
+          This invite link is invalid, expired, or already used. Ask the
+          administrator for a new one.
+        </p>
+      )}
 
       {/* OAuth Buttons */}
       {googleEnabled && (
@@ -173,10 +223,25 @@ export default function LoginForm({ googleEnabled, signupsEnabled }: LoginFormPr
             "Create account"
           )}
         </button>
+
+        {/* Terms acknowledgement — registration only */}
+        {mode === "signup" && (
+          <p className="text-center text-xs text-text-muted">
+            By creating an account you agree to the{" "}
+            <Link href="/terms" className="underline hover:text-text-primary">
+              Terms of Service
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="underline hover:text-text-primary">
+              Privacy Policy
+            </Link>
+            .
+          </p>
+        )}
       </form>
 
-      {/* Toggle mode — hidden when the instance owner closed signups */}
-      {signupsEnabled ? (
+      {/* Mode toggle / registration status */}
+      {signupAvailable ? (
         <p className="text-center text-sm text-text-muted">
           {mode === "login" ? "Don’t have an account?" : "Already have an account?"}{" "}
           <button
@@ -189,6 +254,10 @@ export default function LoginForm({ googleEnabled, signupsEnabled }: LoginFormPr
           >
             {mode === "login" ? "Create account" : "Sign in"}
           </button>
+        </p>
+      ) : signupPolicy === "invite" ? (
+        <p className="text-center text-sm text-text-muted">
+          New accounts require an invite from the instance administrator.
         </p>
       ) : (
         <p className="text-center text-sm text-text-muted">

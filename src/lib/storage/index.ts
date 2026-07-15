@@ -75,6 +75,28 @@ function normalizeMime(mime: string): string {
 }
 
 /**
+ * Defense-in-depth: verify the file's actual magic bytes match the declared
+ * (client-supplied) MIME, so a caller can't store arbitrary content — e.g. an
+ * HTML/script payload — under an allowed extension and have it served back.
+ */
+function bytesMatchMime(bytes: Buffer, mime: string): boolean {
+  switch (mime) {
+    case 'application/pdf':
+      // "%PDF", allowing a few leading bytes some tools prepend (BOM/whitespace)
+      return bytes.subarray(0, 8).includes(Buffer.from('%PDF'));
+    case 'image/png':
+      // Distinctive 4-byte PNG prefix (\x89 P N G).
+      return (
+        bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+      );
+    case 'image/jpeg':
+      return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    default:
+      return false;
+  }
+}
+
+/**
  * Resolve a stored relative path against the uploads root, rejecting anything
  * that would escape it. Defense in depth: segment validation first, then a
  * resolve() + prefix check.
@@ -138,6 +160,9 @@ export async function saveUpload(
   const bytes = isFile
     ? Buffer.from(await (input as File).arrayBuffer())
     : (input as Buffer);
+
+  // Reject content whose real signature doesn't match its declared type.
+  if (!bytesMatchMime(bytes, mime)) throw new UnsupportedUploadTypeError();
 
   const ext = EXT_BY_MIME[mime] ?? 'bin';
   const relPath = `${ownerId}/${randomUUID()}.${ext}`;

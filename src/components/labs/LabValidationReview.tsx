@@ -7,6 +7,7 @@ import type {
 } from '@/lib/claude/parse-lab';
 import FlagBadge from '@/components/shared/FlagBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
 import type { Flag } from '@/lib/types';
 
 interface LabValidationReviewProps {
@@ -164,6 +165,19 @@ export default function LabValidationReview({
 
   return (
     <div className="space-y-6">
+      {/* AI extraction disclaimer */}
+      <div
+        className="rounded-lg px-4 py-3 text-sm"
+        style={{
+          backgroundColor: 'rgba(233, 196, 106, 0.08)',
+          borderLeft: '3px solid var(--color-warning)',
+          color: 'var(--color-text-primary)',
+        }}
+      >
+        AI-extracted values can contain errors. Check each value against your
+        original report before saving. {AI_DISCLAIMER}
+      </div>
+
       {/* Header fields */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>

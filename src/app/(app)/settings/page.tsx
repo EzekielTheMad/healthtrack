@@ -11,7 +11,9 @@ import HealthShareManager from '@/components/settings/HealthShareManager';
 import DependentManager from '@/components/settings/DependentManager';
 import DelegateManager from '@/components/settings/DelegateManager';
 import ApiKeyManager from '@/components/settings/ApiKeyManager';
+import InviteManager from '@/components/settings/InviteManager';
 import { useCapabilities } from '@/hooks/useCapabilities';
+import { useSession } from '@/lib/auth/client';
 import { useRouter } from 'next/navigation';
 
 // ---------------------------------------------------------------------------
@@ -201,9 +203,14 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
 // ---------------------------------------------------------------------------
 function SettingsContent() {
   const { capabilities } = useCapabilities();
+  const { data: session } = useSession();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const searchParams = useSearchParams();
   const hasOuraParam = searchParams.has('oura');
+  // `role` is a server-side additional field; the client session type doesn't
+  // narrow it, hence the cast. Non-admins simply don't see the section (the
+  // API enforces 403 regardless).
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === 'admin';
 
   return (
     <div className="space-y-6">
@@ -244,6 +251,16 @@ function SettingsContent() {
           defaultOpen={hasOuraParam}
         >
           <OuraConnectCard />
+        </SettingsSection>
+      )}
+
+      {/* Invites — admin only (registration is invite-only by default) */}
+      {isAdmin && (
+        <SettingsSection
+          title="Invites"
+          description="Create single-use invite links so family members can register on this instance."
+        >
+          <InviteManager />
         </SettingsSection>
       )}
 

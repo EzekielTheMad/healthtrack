@@ -42,7 +42,7 @@ export const queryHistory = sqliteTable('query_history', {
   createdAt: timestampNow('created_at'),
 });
 
-// 001 + 004
+// 001 + 004 + 006
 export const interactionAlerts = sqliteTable(
   'interaction_alerts',
   {
@@ -58,6 +58,14 @@ export const interactionAlerts = sqliteTable(
       .notNull()
       .default('warning'),
     dismissed: integer('dismissed', { mode: 'boolean' }).notNull().default(false),
+    // 006 — temporary snooze replaces permanent dismissal. An alert is shown
+    // when snoozedUntil IS NULL or has already passed; snoozing sets it to a
+    // future instant. `dismissed` is retained (unused) to avoid a destructive
+    // column drop.
+    snoozedUntil: text('snoozed_until'),
+    // 006 — stable key for one interaction (sorted, lowercased med names), so a
+    // re-check preserves an existing alert's snooze instead of wiping/recreating.
+    signature: text('signature'),
     checkedAt: timestampNow('checked_at'),
     // jsonb not null (no default)
     medicationSnapshot: text('medication_snapshot', { mode: 'json' })
@@ -67,6 +75,40 @@ export const interactionAlerts = sqliteTable(
   },
   (t) => [index('idx_interaction_alerts_user').on(t.userId, t.dismissed, sql`${t.checkedAt} desc`)],
 );
+
+// 006 — one row per (user, dependent scope): the outcome of the most recent
+// interaction check, so the UI can persist an "✓ no interactions found" state
+// (absence of alert rows alone can't distinguish "clear" from "never checked").
+export const interactionChecks = sqliteTable(
+  'interaction_checks',
+  {
+    id: uuidPk(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    dependentId: text('dependent_id').references(() => dependents.id, { onDelete: 'cascade' }),
+    hasInteractions: integer('has_interactions', { mode: 'boolean' }).notNull().default(false),
+    checkedAt: timestampNow('checked_at'),
+  },
+  (t) => [index('idx_interaction_checks_user').on(t.userId, t.dependentId)],
+);
+
+// 007 — invite-only registration. After the first (admin) account exists,
+// new accounts require a single-use invite link unless SIGNUPS_ENABLED=true.
+// Tokens are stored plaintext: they are short-lived, single-use, and grant
+// only the ability to register — not access to any data (unlike api_keys).
+export const invites = sqliteTable('invites', {
+  id: uuidPk(),
+  token: text('token').notNull().unique(),
+  createdBy: text('created_by')
+    .notNull()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  note: text('note'),
+  expiresAt: text('expires_at').notNull(),
+  usedAt: text('used_at'),
+  usedEmail: text('used_email'),
+  createdAt: timestampNow('created_at'),
+});
 
 // 013 — personal access tokens for the /api/v1 API
 export const apiKeys = sqliteTable(

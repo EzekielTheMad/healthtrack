@@ -4,6 +4,7 @@ import { apiError } from '@/lib/api-error';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
 import { safeError } from '@/lib/safe-log';
 import { parseVaccinePdf } from '@/lib/claude/parse-vaccine-pdf';
+import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = new Set([
@@ -14,8 +15,9 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 export async function POST(request: NextRequest) {
+  let userId: string;
   try {
-    await requireUser();
+    userId = (await requireUser()).id;
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return apiError(401, 'unauthorized', 'Authentication required');
@@ -26,6 +28,11 @@ export async function POST(request: NextRequest) {
   // Gated after auth so unauthenticated callers can't probe instance config.
   if (!getCapabilities().ai) {
     return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
+  }
+
+  // Cap expensive document parses (shared budget with lab PDFs).
+  if (!checkRateLimit(`parse-pdf:${userId}`, { max: 15, windowMs: HOUR_MS })) {
+    return apiError(429, 'rate_limited', 'Too many document uploads this hour. Please try again later.');
   }
 
   try {

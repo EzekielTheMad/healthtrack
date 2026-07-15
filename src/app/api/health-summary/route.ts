@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
+import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { safeError } from '@/lib/safe-log';
 import type { HealthSummary } from '@/lib/claude/health-summary';
 import { filterDismissedLabHighlights } from '@/lib/claude/lab-warnings';
@@ -77,6 +78,12 @@ export async function GET(request: NextRequest) {
   }
 
   const force = request.nextUrl.searchParams.get('refresh') === '1';
+
+  // Only the manual-refresh path regenerates via AI; cap it (cached reads are
+  // free and unlimited).
+  if (force && !checkRateLimit(`summary-refresh:${userId}`, { max: 10, windowMs: HOUR_MS })) {
+    return apiError(429, 'rate_limited', 'Too many summary refreshes this hour. Please try again later.');
+  }
 
   try {
     // Manual refresh: regenerate now (blocking) and serve the fresh summary.

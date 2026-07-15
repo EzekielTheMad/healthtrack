@@ -76,7 +76,7 @@ const steps = [
 
 const trustItems = [
   { icon: '🔒', label: 'End-to-end encryption' },
-  { icon: '🏥', label: 'HIPAA-aware design' },
+  { icon: '🏥', label: 'Privacy-first design' },
   { icon: '🛡️', label: 'Per-user data isolation' },
   { icon: '⏱️', label: 'Auto-logout after inactivity' },
   { icon: '✅', label: 'Your data, your control' },
@@ -437,14 +437,45 @@ export default function MarketingPage() {
               Track
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-4">
             <Link href="/privacy" className="no-underline hover:underline" style={{ color: 'var(--color-text-muted)' }}>
               Privacy Policy
             </Link>
             <Link href="/terms" className="no-underline hover:underline" style={{ color: 'var(--color-text-muted)' }}>
               Terms of Service
             </Link>
+            <a
+              href="https://github.com/EzekielTheMad/healthtrack"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="no-underline hover:underline"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              GitHub
+            </a>
+            <a
+              href="https://github.com/EzekielTheMad/healthtrack/blob/main/SECURITY.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="no-underline hover:underline"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              Security
+            </a>
+            <a
+              href="https://github.com/EzekielTheMad/healthtrack/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="no-underline hover:underline"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
+              MIT License
+            </a>
           </div>
+          <p className="max-w-xl mx-auto">
+            HealthTrack helps you organize health information. It is not a medical device and does
+            not provide medical advice — always consult a qualified healthcare professional.
+          </p>
           <p>Built with privacy in mind</p>
           <p>&copy; 2026 HealthTrack. All rights reserved.</p>
         </div>

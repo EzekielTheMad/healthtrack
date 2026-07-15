@@ -41,7 +41,7 @@ export default function TermsOfServicePage() {
       <main className="max-w-3xl mx-auto px-6 pt-32 pb-20">
         <h1 className="text-3xl md:text-4xl font-bold mb-2">Terms of Service</h1>
         <p className="text-sm mb-12" style={{ color: 'var(--color-text-muted)' }}>
-          Effective date: March 25, 2026
+          Effective date: July 14, 2026
         </p>
 
         <div className="space-y-10">
@@ -85,8 +85,9 @@ export default function TermsOfServicePage() {
                 className="leading-relaxed font-semibold"
                 style={{ color: 'var(--color-text-primary)' }}
               >
-                HealthTrack is NOT a substitute for professional medical advice, diagnosis, or
-                treatment. Always seek the advice of your physician or other qualified health
+                HealthTrack is not a medical device. HealthTrack is NOT a substitute for
+                professional medical advice, diagnosis, or treatment. Always seek the advice of
+                your physician or other qualified health
                 provider with any questions you may have regarding a medical condition. Never
                 disregard professional medical advice or delay in seeking it because of something
                 you have read or received through HealthTrack.
@@ -130,7 +131,6 @@ export default function TermsOfServicePage() {
               <li>Upload malicious content, viruses, or harmful code</li>
               <li>Attempt to gain unauthorized access to other users&apos; data or accounts</li>
               <li>Interfere with or disrupt the Service or its infrastructure</li>
-              <li>Use the Service for any commercial purpose without our written consent</li>
               <li>Scrape, crawl, or use automated means to access the Service</li>
               <li>Impersonate another person or misrepresent your identity</li>
             </ul>
@@ -140,11 +140,20 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="text-xl md:text-2xl font-bold mb-4">6. Intellectual Property</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-              The HealthTrack application, including its design, code, features, logos, and
-              documentation, is the intellectual property of HealthTrack and is protected by
-              applicable intellectual property laws. You may not copy, modify, distribute, or create
-              derivative works of the Service without our prior written consent. Your use of the
-              Service does not grant you any ownership rights to our intellectual property.
+              The HealthTrack software is open source and licensed under the{' '}
+              <a
+                href="https://github.com/EzekielTheMad/healthtrack/blob/main/LICENSE"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                MIT License
+              </a>
+              . The MIT License governs your rights to the software itself, including your rights
+              to use, copy, modify, and distribute it. Content you store on an instance of the
+              Service remains yours (see Section 8, Data Ownership). Nothing in these Terms limits
+              the rights granted to you by the MIT License.
             </p>
           </section>
 
@@ -188,27 +197,38 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="text-xl md:text-2xl font-bold mb-4">9. Limitation of Liability</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-              To the maximum extent permitted by law, HealthTrack and its operator shall not be
-              liable for any indirect, incidental, special, consequential, or punitive damages, or
-              any loss of data, profits, or goodwill, arising out of or in connection with your use
-              of the Service. This includes, without limitation, any damages resulting from reliance
-              on AI-generated health insights, data inaccuracies, service interruptions, or
-              unauthorized access to your account. Our total liability for any claim arising from the
-              Service shall not exceed the amount you paid us in the twelve months preceding the
-              claim.
+              The HealthTrack software is provided free of charge. To the maximum extent permitted
+              by law, neither the software authors and contributors nor the operator of any
+              self-hosted instance shall be liable for any indirect, incidental, special,
+              consequential, or exemplary damages, any loss of data, or any decisions made based on
+              information or AI-generated content in the application. This includes, without
+              limitation, any damages resulting from reliance on AI-generated health insights, data
+              inaccuracies, service interruptions, or unauthorized access to your account. Because
+              the software is provided free of charge, total aggregate liability for any claim
+              arising from the Service shall not exceed zero dollars ($0).
             </p>
           </section>
 
           {/* 10. Disclaimer of Warranties */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">10. Disclaimer of Warranties</h2>
-            <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">
+              10. Disclaimer of Warranties; Self-Hosted Software
+            </h2>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               HealthTrack is provided on an &quot;as-is&quot; and &quot;as-available&quot; basis
               without warranties of any kind, whether express or implied, including but not limited
               to implied warranties of merchantability, fitness for a particular purpose, and
               non-infringement. We do not warrant that the Service will be uninterrupted,
               error-free, secure, or free of harmful components. We do not warrant the accuracy or
               completeness of any AI-generated content or health insights.
+            </p>
+            <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
+              HealthTrack is self-hosted software. Each instance of the Service is operated
+              independently by whoever deploys it (&quot;the operator&quot;). The operator — not
+              the software authors or contributors — is responsible for the instance&apos;s
+              security, availability, backups, lawful operation, and any data stored on it. You use
+              any instance at your own risk. The software authors provide the code &quot;as
+              is&quot; in accordance with the MIT License.
             </p>
           </section>
 
@@ -231,7 +251,10 @@ export default function TermsOfServicePage() {
               These Terms shall be governed by and construed in accordance with the laws of the
               United States. Any disputes arising from these Terms or the Service shall be resolved
               through good-faith negotiation. If negotiation fails, disputes shall be submitted to
-              binding arbitration in accordance with applicable rules.
+              binding arbitration in accordance with applicable rules. Because self-hosted
+              instances are operated independently, individual operators may be subject to the laws
+              of their own jurisdiction; the governing-law and arbitration provisions above apply
+              to the software project itself.
             </p>
           </section>
 

@@ -26,12 +26,12 @@ afterEach(() => {
 });
 
 describe('getCapabilities', () => {
-  it('everything optional is off with a bare env; signups default open', () => {
+  it('everything optional is off with a bare env; signups default invite-only (not open)', () => {
     expect(getCapabilities()).toEqual({
       ai: false,
       googleAuth: false,
       oura: false,
-      signupsEnabled: true,
+      signupsEnabled: false,
     });
   });
 
@@ -54,13 +54,14 @@ describe('getCapabilities', () => {
     expect(getCapabilities().oura).toBe(true);
   });
 
-  it("signupsEnabled is false only for the literal 'false'", () => {
+  it("signupsEnabled (open registration) is true only for the literal 'true'", () => {
     process.env.SIGNUPS_ENABLED = 'false';
     expect(getCapabilities().signupsEnabled).toBe(false);
     process.env.SIGNUPS_ENABLED = 'true';
     expect(getCapabilities().signupsEnabled).toBe(true);
+    // Anything else (unset, '0', '1') is the invite-only default — not open.
     process.env.SIGNUPS_ENABLED = '0';
-    expect(getCapabilities().signupsEnabled).toBe(true);
+    expect(getCapabilities().signupsEnabled).toBe(false);
   });
 
   it('reads env at call time (no snapshot)', () => {

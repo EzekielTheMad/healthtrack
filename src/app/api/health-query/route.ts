@@ -3,6 +3,7 @@ import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
 import { safeError } from '@/lib/safe-log';
+import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
 import { queryHealthData } from '@/lib/claude/query';
 import type { HealthContext } from '@/lib/claude/query';
 import {
@@ -299,7 +300,7 @@ export async function POST(request: Request) {
     }
 
     // Append disclaimer
-    const disclaimer = '\n\n⚠️ This is not medical advice. Always consult your healthcare provider for medical decisions.';
+    const disclaimer = '\n\n⚠️ ' + AI_DISCLAIMER;
     responseText = responseText + disclaimer;
 
     // ------------------------------------------------------------------

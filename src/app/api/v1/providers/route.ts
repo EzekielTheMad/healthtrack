@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
       { headers: corsHeaders },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Internal error';
-    return Response.json({ error: message }, { status: 500, headers: corsHeaders });
+    console.error('[v1] request failed:', error instanceof Error ? error.message : error);
+    return Response.json({ error: 'internal_error' }, { status: 500, headers: corsHeaders });
   }
 }

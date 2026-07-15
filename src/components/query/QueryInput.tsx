@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
 
 const QUICK_QUERIES = [
   'Current medications',
@@ -113,6 +114,11 @@ export default function QueryInput({ onSubmit, loading, error }: QueryInputProps
           </button>
         ))}
       </div>
+
+      {/* Standing AI caveat */}
+      <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
+        {AI_DISCLAIMER}
+      </p>
 
       {/* Error display — calm, non-alarming. A failed AI query is a temporary
           hiccup, not a broken page, so use muted styling (not a red alert)

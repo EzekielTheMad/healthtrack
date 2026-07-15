@@ -26,7 +26,10 @@ export function getCapabilities(): Capabilities {
       process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
     ),
     oura: Boolean(process.env.OURA_CLIENT_ID && process.env.OURA_CLIENT_SECRET),
-    signupsEnabled: process.env.SIGNUPS_ENABLED !== 'false',
+    // OPEN registration (operator opt-in). The default is invite-only — the
+    // login page derives the full policy (open/invite/closed + first-user
+    // bootstrap) from getSignupPolicy(), which also needs the user count.
+    signupsEnabled: process.env.SIGNUPS_ENABLED === 'true',
   };
 }
 

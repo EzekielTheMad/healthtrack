@@ -43,15 +43,23 @@ async function signUp(auth: LoadedAuth, email: string) {
   return res.user.id;
 }
 
+let savedSignups: string | undefined;
+
 beforeEach(() => {
   savedDataDir = process.env.DATA_DIR;
+  savedSignups = process.env.SIGNUPS_ENABLED;
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'healthtrack-del-'));
   process.env.DATA_DIR = tmpDir;
+  // These tests register several users; open signups (invite gating is
+  // covered in auth.test.ts).
+  process.env.SIGNUPS_ENABLED = 'true';
 });
 
 afterEach(() => {
   if (savedDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = savedDataDir;
+  if (savedSignups === undefined) delete process.env.SIGNUPS_ENABLED;
+  else process.env.SIGNUPS_ENABLED = savedSignups;
   try {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   } catch {

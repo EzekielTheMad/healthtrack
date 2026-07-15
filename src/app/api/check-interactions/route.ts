@@ -2,16 +2,20 @@ import { NextRequest } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
+import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { rowToSnake } from '@/lib/api/snake';
 import { checkMedicationInteractions } from '@/lib/claude/check-interactions';
 import { listMedications } from '@/lib/repos/medications';
 import {
-  clearActiveInteractionAlerts,
-  createInteractionAlerts,
+  reconcileInteractionAlerts,
+  recordInteractionCheck,
+  interactionSignature,
+  type DetectedInteraction,
 } from '@/lib/repos/interaction-alerts';
 import type { Medication } from '@/lib/types';
+import { AI_INTERACTION_DISCLAIMER } from '@/lib/ai-disclaimer';
 
-const DISCLAIMER = ' (This is an AI-generated alert, not a substitute for pharmacist review.)';
+const DISCLAIMER = AI_INTERACTION_DISCLAIMER;
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +24,11 @@ export async function POST(request: NextRequest) {
     // Gated after auth so unauthenticated callers can't probe instance config.
     if (!getCapabilities().ai) {
       return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
+    }
+
+    // Cap the AI interaction check per user.
+    if (!checkRateLimit(`check-interactions:${user.id}`, { max: 20, windowMs: HOUR_MS })) {
+      return apiError(429, 'rate_limited', 'Too many interaction checks this hour. Please try again later.');
     }
 
     const body = await request.json();
@@ -49,32 +58,39 @@ export async function POST(request: NextRequest) {
       alert_text: a.alert_text + DISCLAIMER,
     }));
 
-    // Determine trigger medication id
-    const triggerId = trigger_id ?? medications[0]?.id ?? null;
+    // Map each detected interaction to a stable signature and a trigger med.
+    // trigger_id is honored when it names one of the interacting meds; otherwise
+    // we prefer a med that actually appears in the interaction, falling back to
+    // any active med (the FK just needs a valid id — cascades on med delete).
+    const byName = new Map(
+      medications.map((m) => [m.name.trim().toLowerCase(), m.id]),
+    );
+    const triggerFor = (names: string[]): string => {
+      for (const n of names) {
+        const id = byName.get(n.trim().toLowerCase());
+        if (id) return id;
+      }
+      return trigger_id ?? medications[0]!.id;
+    };
 
-    let savedAlertIds: string[] = [];
+    const detected: DetectedInteraction[] = alertsWithDisclaimer.map((a) => ({
+      signature: interactionSignature(a.medication_names),
+      triggerMedicationId: triggerFor(a.medication_names),
+      alertText: a.alert_text,
+      severity: a.severity,
+      medicationSnapshot: { medication_names: a.medication_names },
+    }));
 
-    if (result.has_interactions && triggerId) {
-      // Clear old non-dismissed alerts for this user to avoid stale duplicates
-      await clearActiveInteractionAlerts(user.id);
-
-      savedAlertIds = await createInteractionAlerts(
-        user.id,
-        alertsWithDisclaimer.map((a) => ({
-          triggerMedicationId: triggerId,
-          alertText: a.alert_text,
-          severity: a.severity,
-          medicationSnapshot: {
-            medication_names: a.medication_names,
-          },
-        })),
-      );
-    }
+    // Reconcile stored alerts (owner scope): preserves snoozes on unchanged
+    // interactions, inserts new ones, deletes interactions that no longer
+    // exist. Runs even when clear (detected = []) to clear stale alerts.
+    await reconcileInteractionAlerts(user.id, null, detected);
+    await recordInteractionCheck(user.id, null, result.has_interactions);
 
     return Response.json({
       ...result,
       alerts: alertsWithDisclaimer,
-      saved_alert_ids: savedAlertIds,
+      checked_at: new Date().toISOString(),
     });
   } catch (err) {
     if (err instanceof UnauthorizedError) {

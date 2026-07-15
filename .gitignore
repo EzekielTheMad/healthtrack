@@ -50,3 +50,4 @@ tmpdata
 
 # Local Claude Code config (contains machine/infra specifics)
 .claude/
+CLAUDE.local.md

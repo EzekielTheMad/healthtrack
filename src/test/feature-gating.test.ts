@@ -157,7 +157,9 @@ describe('GET /api/capabilities', () => {
       ai: false,
       googleAuth: false,
       oura: true,
-      signupsEnabled: true,
+      // Unset SIGNUPS_ENABLED → invite-only default, so "open signups" is
+      // false (true only with an explicit SIGNUPS_ENABLED=true).
+      signupsEnabled: false,
     });
   });
 });

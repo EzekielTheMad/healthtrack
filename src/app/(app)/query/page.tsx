@@ -8,9 +8,19 @@ import QueryHistory from '@/components/query/QueryHistory';
 
 export default function QueryPage() {
   const { capabilities } = useCapabilities();
-  const { queryHistory, loading, error, submitQuery } = useHealthQuery();
+  const { queryHistory, loading, error, notice, submitQuery, refreshLast } = useHealthQuery();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const handleRefresh = useCallback(async () => {
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await refreshLast();
+    } finally {
+      setSubmitting(false);
+    }
+  }, [refreshLast]);
 
   const handleSubmit = useCallback(
     async (query: string) => {
@@ -89,6 +99,29 @@ export default function QueryPage() {
               loading={submitting}
               error={submitError}
             />
+
+            {/* Dedupe notice: the answer came from saved history (no AI call).
+                Offer a one-click fresh run in case the underlying data changed. */}
+            {notice && !submitError && (
+              <div
+                className="mt-3 rounded-lg px-4 py-2.5 text-sm flex items-center justify-between gap-3"
+                style={{
+                  backgroundColor: 'var(--bg-subtle)',
+                  color: 'var(--color-text-muted)',
+                }}
+              >
+                <span>{notice}</span>
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={submitting}
+                  className="text-xs font-medium underline hover:opacity-80 disabled:opacity-50 shrink-0"
+                  style={{ color: 'var(--color-sage)' }}
+                >
+                  Get a fresh answer
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

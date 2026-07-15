@@ -33,7 +33,7 @@ docker run -d \
   ghcr.io/ezekielthemad/healthtrack:latest
 ```
 
-Open http://localhost:3000 and register — **the first user becomes the instance admin**. Set `SIGNUPS_ENABLED=false` afterwards if you want to close registration.
+Open http://localhost:3000 and register — **the first user becomes the instance admin**. After that, registration is **invite-only by default**: create single-use invite links under **Settings → Invites** to add family members. (Set `SIGNUPS_ENABLED=true` to open registration to anyone, or `false` to close it completely.)
 
 > **Port 3000 already in use?** Map a different host port and point `APP_URL` at
 > it, e.g. `-p 3005:3000` with `-e APP_URL=http://localhost:3005`. The container
@@ -60,7 +60,7 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 | `APP_URL` | **yes** | `http://localhost:3000` | Absolute URL of the instance — must match what users browse to; used for auth callbacks |
 | `AUTH_SECRET` | no | auto-generated to `/data/keys` | Session signing secret |
 | `ENCRYPTION_KEY` | no | auto-generated to `/data/keys` | Encrypts stored OAuth tokens |
-| `SIGNUPS_ENABLED` | no | `true` | Allow new registrations |
+| `SIGNUPS_ENABLED` | no | invite-only | Unset: first account registers freely (becomes admin), everyone after needs a single-use invite link (Settings → Invites). `true`: open registration. `false`: fully closed |
 | `ANTHROPIC_API_KEY` | no | — | Enables AI features (summaries, queries, PDF parsing, interaction checks) |
 | `ANTHROPIC_MODEL` | no | current Sonnet | Claude model for reasoning features (summaries, queries, interaction checks) — e.g. `claude-opus-4-8` |
 | `ANTHROPIC_MODEL_EXTRACTION` | no | current Sonnet | Claude model for PDF extraction — a cheaper model like `claude-haiku-4-5` works well |

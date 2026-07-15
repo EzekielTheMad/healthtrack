@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 interface WelcomeProps {
   onNext: () => void;
   onBack: () => void;
@@ -69,6 +71,20 @@ export function Welcome({ onNext }: WelcomeProps) {
           </div>
         ))}
       </div>
+
+      <p className="text-xs mb-6 max-w-md" style={{ color: 'var(--color-text-muted)' }}>
+        HealthTrack helps you organize health information. It is not a medical
+        device and does not provide medical advice. By continuing you agree to
+        the{' '}
+        <Link href="/terms" className="underline hover:opacity-80">
+          Terms
+        </Link>{' '}
+        and{' '}
+        <Link href="/privacy" className="underline hover:opacity-80">
+          Privacy Policy
+        </Link>
+        .
+      </p>
 
       <button
         type="button"

@@ -1,27 +1,46 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useMedications } from '@/hooks/useMedications';
 import { useInteractionAlerts } from '@/hooks/useInteractionAlerts';
+import { useCapabilities } from '@/hooks/useCapabilities';
 import EmptyState from '@/components/shared/EmptyState';
 import Skeleton from '@/components/shared/Skeleton';
 import MedCard from '@/components/medications/MedCard';
 import AddMedForm, { type AddMedFormData } from '@/components/medications/AddMedForm';
 import InteractionAlert from '@/components/medications/InteractionAlert';
 
+/** Friendly absolute date for the last interaction check, e.g. "Jul 13, 2026". */
+function formatCheckDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 export default function MedicationsPage() {
   const [tab, setTab] = useState<'active' | 'past'>('active');
   const [showAddForm, setShowAddForm] = useState(false);
   const { medications, loading, error, addMedication, updateMedication } = useMedications();
+  const { capabilities } = useCapabilities();
   const {
     alerts: interactionAlerts,
-    dismissAlert,
+    status: interactionStatus,
+    snoozedCount,
+    checking,
+    snoozeAlert,
     checkInteractions,
   } = useInteractionAlerts();
 
   const activeMeds = medications.filter((m) => m.active);
   const pastMeds = medications.filter((m) => !m.active);
   const displayedMeds = tab === 'active' ? activeMeds : pastMeds;
+
+  // Manual re-check: the auto-check only fires when meds are added/toggled via
+  // the UI, so imported meds (or a list whose interactions changed) never get
+  // re-evaluated. This button closes that gap; the hook refreshes status after.
+  const handleManualCheck = useCallback(async () => {
+    await checkInteractions();
+  }, [checkInteractions]);
 
   const handleAdd = async (data: AddMedFormData) => {
     const isActive = data.active !== undefined ? data.active : true;
@@ -91,16 +110,42 @@ export default function MedicationsPage() {
         )}
       </div>
 
-      {/* Interaction alerts */}
-      {interactionAlerts.length > 0 && (
+      {/* Interaction status: the persisted result of the last check. The check
+          runs automatically on med add/remove; this also offers an on-demand
+          re-check. Alerts snooze temporarily (severity-capped) instead of being
+          dismissed forever, and the summary line persists an "all clear" state. */}
+      {capabilities?.ai && activeMeds.length >= 2 && (
         <div className="space-y-3">
           {interactionAlerts.map((alert) => (
-            <InteractionAlert
-              key={alert.id}
-              alert={alert}
-              onDismiss={dismissAlert}
-            />
+            <InteractionAlert key={alert.id} alert={alert} onSnooze={snoozeAlert} />
           ))}
+
+          <div
+            className="rounded-lg border px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap text-sm"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+          >
+            <span style={{ color: 'var(--color-text-muted)' }}>
+              {interactionAlerts.length > 0
+                ? `${interactionAlerts.length} active interaction${interactionAlerts.length !== 1 ? 's' : ''}${snoozedCount > 0 ? `, ${snoozedCount} snoozed` : ''}`
+                : snoozedCount > 0
+                  ? `No active interactions — ${snoozedCount} snoozed`
+                  : interactionStatus
+                    ? '✓ No interactions found among your active medications'
+                    : 'Interactions haven’t been checked yet'}
+              {interactionStatus && (
+                <span> · checked {formatCheckDate(interactionStatus.checked_at)}</span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={handleManualCheck}
+              disabled={checking}
+              className="text-sm font-medium underline hover:opacity-80 disabled:opacity-50 cursor-pointer shrink-0"
+              style={{ color: 'var(--color-sage)' }}
+            >
+              {checking ? 'Checking…' : interactionStatus ? 'Check again' : 'Check interactions'}
+            </button>
+          </div>
         </div>
       )}
 

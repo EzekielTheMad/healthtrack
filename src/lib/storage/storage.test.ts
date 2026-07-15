@@ -57,7 +57,7 @@ describe('saveUpload / readUpload round-trip', () => {
 
   it('normalizes image/jpg to image/jpeg', async () => {
     const { saveUpload, readUpload } = await importStorage();
-    const relPath = await saveUpload(OWNER, Buffer.from('jpg-bytes'), {
+    const relPath = await saveUpload(OWNER, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x10]), {
       mime: 'image/jpg',
     });
     expect(relPath).toMatch(/\.jpg$/);
@@ -90,6 +90,15 @@ describe('validation errors', () => {
     }).catch((e) => e);
     expect(err).toBeInstanceOf(UnsupportedUploadTypeError);
     expect(err.status).toBe(415);
+  });
+
+  it('rejects content whose magic bytes do not match the declared type (415)', async () => {
+    const { saveUpload, UnsupportedUploadTypeError } = await importStorage();
+    // Declares PDF but the bytes are HTML — the signature check must reject it.
+    const err = await saveUpload(OWNER, Buffer.from('<html><script>x</script>'), {
+      mime: 'application/pdf',
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(UnsupportedUploadTypeError);
   });
 
   it('rejects an ownerId that is not a safe path segment', async () => {

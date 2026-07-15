@@ -233,9 +233,19 @@ export interface InteractionAlert {
   alert_text: string;
   severity: AlertSeverity;
   dismissed: boolean;
+  /** ISO instant the alert is snoozed until; null/past means it is shown. */
+  snoozed_until?: string | null;
+  /** Stable key for one interaction (sorted, lowercased med names). */
+  signature?: string | null;
   checked_at: string;
   medication_snapshot: Record<string, unknown>;
   dependent_id?: string | null;
+}
+
+/** Latest interaction-check outcome for a scope (from GET /interaction-alerts). */
+export interface InteractionStatus {
+  checked_at: string;
+  has_interactions: boolean;
 }
 
 export interface Appointment {

@@ -11,7 +11,7 @@ You should get an initial response within a week. Please include reproduction st
 HealthTrack stores **sensitive personal health data**. Take reports of authentication, authorization (cross-user data access), file-upload and injection issues especially seriously — and as an operator:
 
 - Keep your instance behind HTTPS (reverse proxy) if it is reachable from the internet.
-- Set `SIGNUPS_ENABLED=false` after creating your accounts.
+- Registration is **invite-only by default** (first account becomes admin, then single-use invite links). Don't set `SIGNUPS_ENABLED=true` on an internet-exposed instance unless you genuinely want strangers to register.
 - Back up `/data` — it contains the database, uploads and your auto-generated secrets.
 
 ## Multi-user trust model
@@ -22,8 +22,10 @@ signed-in account registered with. On an instance with **open signups**,
 anyone who can register the invited address can see and accept that
 invitation. Therefore:
 
-- **Set `SIGNUPS_ENABLED=false` before sending share/delegate invitations**,
-  or only run open signups on a network limited to people you trust.
+- **Keep the default invite-only registration when sending share/delegate
+  invitations** (with `SIGNUPS_ENABLED=true`, anyone who can register the
+  invited address can accept them) — or only run open signups on a network
+  limited to people you trust.
 - Invitations grant nothing until accepted, and accepted links are never
   re-pointed if an email address is later re-registered by someone else.
 - A share **link token** (the `/shared/…` URL) serves a slightly broader

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import BottomNav from '@/components/shared/BottomNav';
 import SidebarNav from '@/components/shared/SidebarNav';
@@ -38,6 +39,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <ProfileSwitcher />
               </div>
               {children}
+              <footer
+                className="mt-8 py-4 flex items-center justify-center gap-3 text-xs"
+                style={{
+                  color: 'var(--color-text-muted)',
+                  borderTop: '1px solid var(--border-card)',
+                }}
+              >
+                <Link href="/terms" className="hover:underline">
+                  Terms
+                </Link>
+                <Link href="/privacy" className="hover:underline">
+                  Privacy
+                </Link>
+                <span>Not medical advice.</span>
+              </footer>
             </div>
           </main>
           {/* Mobile bottom nav */}
