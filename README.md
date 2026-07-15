@@ -14,6 +14,8 @@
 - **Family & dependents** — track children or family members under your account, with a transition flow when they grow up
 - **Sharing** — share selected sections of your (or a dependent's) health record with another user, with expiry
 - **Delegates** — grant another user read-only or read-write access to manage a record
+- **Medical-history import*** — upload a doctor-provided history PDF (yours or a dependent's) and AI extracts medications, conditions, allergies, procedures, vaccines, and lab results in one pass; large documents are processed in page chunks, and a review screen flags anything already on record before import
+- **Fitness tracking** — log workouts manually or via the API (set shorthand like `185x5 x3`), with history, trend charts (est. 1RM, PR badges), weekly rollups, goals, and an exercise catalog
 - **API access** — personal access tokens with scoped permissions for the REST API (`/api/v1/...`), including read endpoints for every domain
 - **Device integrations / bring your own bridge** — push metrics from any device (CPAP, smart scale, watch, CGM, …) via `POST /api/v1/vitals` and `/api/v1/vitals/batch` with idempotent upserts; see [docs/API.md](docs/API.md). Every instance self-documents at `/docs/api` (human cookbook) and `/api/v1/openapi.json` (OpenAPI 3.1) — both public, API-shape only
 - **AI health assistant*** — natural-language questions about your data, health summaries
