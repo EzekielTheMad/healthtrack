@@ -13,6 +13,13 @@
   <Category>Tools: Productivity:</Category>
   <Beta>False</Beta>
   <Changes>
+### 0.4.1
+- Large medical-history PDFs (up to 200 pages / 50MB) are processed in page chunks and merged before review.
+### 0.4.0
+- Medical-history import: upload a doctor-provided PDF (for yourself or a dependent); AI extracts medications, conditions, allergies, procedures, vaccines and labs, with a duplicate-flagging review screen before anything is saved.
+- Fitness: log workouts manually in the UI (set shorthand like 185x5 x3).
+### 0.3.5
+- Landing page fully server-rendered; social-embed images fixed.
 ### 0.3.3
 - Registration is now invite-only by default: first account becomes admin, then single-use invite links (Settings &gt; Invites). Set SIGNUPS_ENABLED=true for open registration.
 - Security hardening: security headers (CSP, HSTS, clickjacking/nosniff), login brute-force rate limits, rate limits on AI routes, upload content validation.
@@ -35,6 +42,9 @@
   <WebUI>http://[IP]:[PORT:3000]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/unraid/healthtrack.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/public/icon.png</Icon>
+  <Screenshot>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/docs/screenshots/dashboard.webp</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/docs/screenshots/vitals-trends.webp</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/EzekielTheMad/healthtrack/main/docs/screenshots/import-review.webp</Screenshot>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
