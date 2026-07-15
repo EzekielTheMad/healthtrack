@@ -51,6 +51,27 @@ docker compose up -d
 
 HealthTrack ships a Community Applications template: [`unraid/healthtrack.xml`](unraid/healthtrack.xml). See [docs/UNRAID.md](docs/UNRAID.md) for install instructions (via CA or manual template URL).
 
+## Adding users & family
+
+Registration is **invite-only by default** — nobody can create an account on
+your instance without your say-so. The ways to bring people in:
+
+1. **Invite links** (new accounts) — as admin, go to **Settings → Invites**,
+   create a link (optionally note who it's for) and send it. Each link is
+   **single-use** and expires after 7 days. The recipient registers with email
+   + password; afterwards they can also use "Sign in with Google" on the same
+   email (accounts link automatically). Revoke unused links any time.
+2. **Dependents** (no account needed) — track children or family members as
+   profiles under your own account (**Settings → Family & Dependents**), with
+   a transition flow to hand the record over when they grow up.
+3. **Delegates** — grant another *account* read-only or read-write access to
+   manage your record (**Settings → Delegate Access**).
+4. **Sharing** — share selected sections of a record with another account,
+   with expiry (**Settings → Health Sharing**).
+
+Prefer open registration (e.g. a trusted LAN)? Set `SIGNUPS_ENABLED=true`.
+Set `SIGNUPS_ENABLED=false` to close registration completely, invites included.
+
 ## Configuration
 
 All configuration is via environment variables (see [`.env.example`](.env.example)):
