@@ -5,6 +5,8 @@
 
 **Self-hosted personal & family health tracker.** Medications, conditions, allergies, labs, vitals, procedures, vaccines, appointments and notes — for you and your dependents — in a single Docker container. All data stays in one SQLite database and an uploads folder on **your** server. No cloud services required.
 
+![HealthTrack dashboard — AI health overview, quick stats with trends, active medications and lab flags](docs/screenshots/dashboard.webp)
+
 ## Features
 
 - **Medications** — dosages, schedules, active/inactive history, AI interaction checks*
@@ -23,6 +25,30 @@
 - **Sign in with Google*** — alongside built-in email/password auth
 
 \* Optional. AI features need an `ANTHROPIC_API_KEY`, Google login needs a Google OAuth client, Oura sync needs an Oura OAuth client. Each feature is hidden in the UI until its keys are configured — the core tracker is fully functional without any of them.
+
+## Screenshots
+
+*All screenshots show a demo account with fictional data.*
+
+**Vitals & wearables** — every metric grouped by domain, with trend sparklines, reference-range bars, and per-device source badges. Data flows in from bridges, the API, or manual entry:
+
+![Vitals — all metrics view with trends and reference ranges](docs/screenshots/vitals-trends.webp)
+
+**Focus view** — the day-to-day question ("how am I doing?") answered at a glance: recovery verdict, body-composition trend, and weekly activity vs. your 30-day norms:
+
+![Vitals — focus view with recovery, body composition and activity summaries](docs/screenshots/vitals-focus.webp)
+
+**Medications** — active/past history with categories, plus AI interaction checks that run automatically when your med list changes:
+
+![Medications with AI interaction status bar](docs/screenshots/medications.webp)
+
+**Fitness** — workout history with per-set detail, working-set summaries, trends with estimated 1RM and PR badges, weekly rollups and goals:
+
+![Fitness history with expanded strength session](docs/screenshots/fitness-history.webp)
+
+**Medical-history import** — upload a doctor-provided PDF; AI extracts medications, conditions, allergies, procedures, vaccines and labs in one pass, deduplicates against what's already on record, and imports only what you approve:
+
+![Import medical history review screen with dedupe badges](docs/screenshots/import-review.webp)
 
 ## Quick start
 
