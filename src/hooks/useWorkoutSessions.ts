@@ -2,11 +2,11 @@
 
 /**
  * Full workout sessions (nested entries) for the Fitness History tab, via
- * GET /api/workouts, plus the edit/delete mutations against
- * /api/workouts/{id}. List failures land in `error`; mutation failures THROW
- * (ApiRequestError) so forms can surface them inline (409 dedupe etc.).
- * Scoping mirrors useVitals: ?owner_id= in delegate mode, ?dependent_id=
- * for an active dependent profile.
+ * GET /api/workouts, plus the create/edit/delete mutations (POST
+ * /api/workouts, PATCH/DELETE /api/workouts/{id}). List failures land in
+ * `error`; mutation failures THROW (ApiRequestError) so forms can surface
+ * them inline (409 dedupe etc.). Scoping mirrors useVitals: ?owner_id= in
+ * delegate mode, ?dependent_id= for an active dependent profile.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
@@ -61,6 +61,28 @@ export function useWorkoutSessions(options: UseWorkoutSessionsOptions = {}) {
     };
   }, [from, to, type, dependentId, delegateOwnerId]);
 
+  /** POST /api/workouts — wire-shaped (snake_case) create body with nested
+      entries. Scope keys mirror the list params: owner_id in delegate mode,
+      dependent_id for an active dependent profile. Throws on failure
+      (409 dedupe etc.). */
+  const createSession = useCallback(
+    async (body: Record<string, unknown>) => {
+      const payload: Record<string, unknown> = { ...body };
+      if (delegateOwnerId) payload.owner_id = delegateOwnerId;
+      else if (dependentId) payload.dependent_id = dependentId;
+      const created = await apiFetch<WorkoutWire>('/api/workouts', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      // Keep the list's started_at-descending order without a refetch.
+      setSessions((prev) =>
+        [created, ...prev].sort((a, b) => b.started_at.localeCompare(a.started_at)),
+      );
+      return created;
+    },
+    [dependentId, delegateOwnerId],
+  );
+
   /** PATCH /api/workouts/{id} — wire-shaped (snake_case) partial body;
       `entries` present = full replacement. Throws on failure. */
   const updateSession = useCallback(async (id: string, body: Record<string, unknown>) => {
@@ -78,5 +100,5 @@ export function useWorkoutSessions(options: UseWorkoutSessionsOptions = {}) {
     setSessions((prev) => prev.filter((s) => s.id !== id));
   }, []);
 
-  return { sessions, loading, error, updateSession, deleteSession };
+  return { sessions, loading, error, createSession, updateSession, deleteSession };
 }

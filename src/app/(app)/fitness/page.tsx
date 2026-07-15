@@ -9,9 +9,9 @@ import GoalsView from '@/components/fitness/GoalsView';
 // ---------------------------------------------------------------------------
 // Fitness page — view-first workout tracking (spec §UI): History (sessions),
 // Trends (per-exercise charts), Weekly (rollup + check-in), Goals & catalog.
-// Logging is agent/API-first, so there is deliberately NO entry wizard here —
-// this surface views and corrects. Tab pattern mirrors the vitals page
-// (role=tablist, aria-selected, sage tint).
+// Logging is agent/API-first; the History tab also offers manual entry
+// ("Log session") for sessions logged by hand. Tab pattern mirrors the
+// vitals page (role=tablist, aria-selected, sage tint).
 // ---------------------------------------------------------------------------
 
 const TABS = [

@@ -9,6 +9,7 @@ import PdfExportSection from '@/components/export/PdfExportSection';
 import { OuraConnectCard } from '@/components/settings/OuraConnectCard';
 import HealthShareManager from '@/components/settings/HealthShareManager';
 import DependentManager from '@/components/settings/DependentManager';
+import MedicalHistoryImport from '@/components/settings/MedicalHistoryImport';
 import DelegateManager from '@/components/settings/DelegateManager';
 import ApiKeyManager from '@/components/settings/ApiKeyManager';
 import InviteManager from '@/components/settings/InviteManager';
@@ -242,6 +243,16 @@ function SettingsContent() {
       >
         <DependentManager />
       </SettingsSection>
+
+      {/* Import Medical History — hidden when the instance has no AI configured */}
+      {capabilities?.ai !== false && (
+        <SettingsSection
+          title="Import Medical History"
+          description="Upload a doctor-provided medical-history PDF to extract and import records for you or a dependent."
+        >
+          <MedicalHistoryImport />
+        </SettingsSection>
+      )}
 
       {/* Connected Sources — hidden when the instance has no Oura app configured */}
       {capabilities?.oura !== false && (

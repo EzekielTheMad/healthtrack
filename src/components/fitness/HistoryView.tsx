@@ -18,8 +18,10 @@ import SessionEditForm from './SessionEditForm';
 // History tab — filterable session list (type / label / date range) with
 // expandable rows: ordered entries with per-set breakdowns (formatSets),
 // notes, energy, and cardio fields for cardio sessions; inline edit
-// (SessionEditForm → PATCH with full entry replacement) and delete with a
-// two-step confirm.
+// (SessionEditForm → PATCH with full entry replacement), delete with a
+// two-step confirm, and manual logging ("Log session" → SessionEditForm in
+// create mode → POST /api/workouts, panel above the list like the
+// medications page's add form).
 // ---------------------------------------------------------------------------
 
 // Session-type badge tints (muted rgba of the app palette, see FocusView).
@@ -287,7 +289,7 @@ export function SessionList({ sessions, onSave, onDelete }: SessionListProps) {
             </svg>
           }
           title="No sessions found"
-          description="No workout sessions match these filters yet. Sessions logged through your agent or the API show up here."
+          description="No workout sessions match these filters yet. Log one with the button above — sessions from your agent or the API show up here too."
         />
       </div>
     );
@@ -321,15 +323,17 @@ export default function HistoryView() {
   const [labelFilter, setLabelFilter] = useState('');
   const [fromDay, setFromDay] = useState('');
   const [toDay, setToDay] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
 
   const from = useMemo(() => dayToFromIso(fromDay), [fromDay]);
   const to = useMemo(() => dayToToIso(toDay), [toDay]);
 
-  const { sessions, loading, error, updateSession, deleteSession } = useWorkoutSessions({
-    from,
-    to,
-    type: type || undefined,
-  });
+  const { sessions, loading, error, createSession, updateSession, deleteSession } =
+    useWorkoutSessions({
+      from,
+      to,
+      type: type || undefined,
+    });
 
   // Label filtering is client-side (contains, case-insensitive) — the list
   // endpoint's ?label= is exact-match, which is unhelpful for free text.
@@ -388,7 +392,36 @@ export default function HistoryView() {
           className={filterField}
           style={filterStyle}
         />
+        {!showCreate && (
+          <button
+            type="button"
+            onClick={() => setShowCreate(true)}
+            className="ml-auto px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
+            style={{ backgroundColor: 'var(--color-sage)', color: 'var(--bg-primary)' }}
+          >
+            Log session
+          </button>
+        )}
       </div>
+
+      {/* Manual logging panel — mirrors the medications page's add form */}
+      {showCreate && (
+        <div
+          className="rounded-xl border p-5"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+        >
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>
+            Log session
+          </h2>
+          <SessionEditForm
+            onSave={async (body) => {
+              await createSession(body);
+              setShowCreate(false);
+            }}
+            onCancel={() => setShowCreate(false)}
+          />
+        </div>
+      )}
 
       {error && (
         <div

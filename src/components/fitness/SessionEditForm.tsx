@@ -11,11 +11,15 @@ import {
 import { formatSets } from '@/lib/fitness/set-parser';
 
 // ---------------------------------------------------------------------------
-// Inline edit form for one workout session: session fields plus FULL entry
+// Inline form for one workout session: session fields plus FULL entry
 // replacement (the PATCH contract — the entries array sent replaces all
 // existing entries in order). Sets are edited as the owner's shorthand
 // ("330x12 / 330x8"); parseSets structures what it can and the raw string is
 // preserved verbatim as ground truth, so unparsed tokens warn but never block.
+//
+// Two modes: `session` present = edit (prefilled, PATCH body); absent =
+// create (blank defaults, today, one starter entry row — the same body shape
+// works as the POST /api/workouts payload).
 // ---------------------------------------------------------------------------
 
 interface EntryDraft {
@@ -25,8 +29,9 @@ interface EntryDraft {
 }
 
 export interface SessionEditFormProps {
-  session: WorkoutWire;
-  /** Receives the wire-shaped (snake_case) PATCH body. Must throw on failure. */
+  /** Session to edit; omit to log a new one (create mode). */
+  session?: WorkoutWire;
+  /** Receives the wire-shaped (snake_case) PATCH/POST body. Must throw on failure. */
   onSave: (body: Record<string, unknown>) => Promise<void>;
   onCancel: () => void;
 }
@@ -69,22 +74,28 @@ const labelStyle: React.CSSProperties = { color: 'var(--color-text-muted)' };
 const fieldClass = 'w-full rounded-lg border px-2.5 py-1.5 text-sm';
 
 export default function SessionEditForm({ session, onSave, onCancel }: SessionEditFormProps) {
-  const [type, setType] = useState<string>(session.type);
-  const [label, setLabel] = useState(session.label ?? '');
-  const [startedAt, setStartedAt] = useState(isoToLocalInput(session.started_at));
-  const [durationMin, setDurationMin] = useState(session.duration_min?.toString() ?? '');
-  const [energy, setEnergy] = useState(session.energy?.toString() ?? '');
-  const [notes, setNotes] = useState(session.notes ?? '');
-  // Cardio fields
-  const [distanceMi, setDistanceMi] = useState(session.distance_mi?.toString() ?? '');
-  const [avgHr, setAvgHr] = useState(session.avg_hr?.toString() ?? '');
-  const [calories, setCalories] = useState(session.calories?.toString() ?? '');
-  const [steps, setSteps] = useState(session.steps?.toString() ?? '');
-  const [machine, setMachine] = useState(session.machine ?? '');
-  const [perceivedEffort, setPerceivedEffort] = useState(
-    session.perceived_effort?.toString() ?? '',
+  const [type, setType] = useState<string>(session?.type ?? 'strength');
+  const [label, setLabel] = useState(session?.label ?? '');
+  const [startedAt, setStartedAt] = useState(() =>
+    isoToLocalInput(session?.started_at ?? new Date().toISOString()),
   );
-  const [entries, setEntries] = useState<EntryDraft[]>(session.entries.map(draftFromEntry));
+  const [durationMin, setDurationMin] = useState(session?.duration_min?.toString() ?? '');
+  const [energy, setEnergy] = useState(session?.energy?.toString() ?? '');
+  const [notes, setNotes] = useState(session?.notes ?? '');
+  // Cardio fields
+  const [distanceMi, setDistanceMi] = useState(session?.distance_mi?.toString() ?? '');
+  const [avgHr, setAvgHr] = useState(session?.avg_hr?.toString() ?? '');
+  const [calories, setCalories] = useState(session?.calories?.toString() ?? '');
+  const [steps, setSteps] = useState(session?.steps?.toString() ?? '');
+  const [machine, setMachine] = useState(session?.machine ?? '');
+  const [perceivedEffort, setPerceivedEffort] = useState(
+    session?.perceived_effort?.toString() ?? '',
+  );
+  const [entries, setEntries] = useState<EntryDraft[]>(() =>
+    session
+      ? session.entries.map(draftFromEntry)
+      : [{ exerciseName: '', setsText: '', notes: '' }],
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -119,7 +130,15 @@ export default function SessionEditForm({ session, onSave, onCancel }: SessionEd
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (entries.some((en) => en.exerciseName.trim() === '')) {
+    // Create mode starts with a starter row; rows left fully blank are dropped
+    // rather than blocking, so entry-less sessions (cardio) submit cleanly.
+    const kept = session
+      ? entries
+      : entries.filter(
+          (en) =>
+            en.exerciseName.trim() !== '' || en.setsText.trim() !== '' || en.notes.trim() !== '',
+        );
+    if (kept.some((en) => en.exerciseName.trim() === '')) {
       setError('Every entry needs an exercise name.');
       return;
     }
@@ -142,7 +161,7 @@ export default function SessionEditForm({ session, onSave, onCancel }: SessionEd
       steps: numOrNull(steps),
       machine: machine.trim() === '' ? null : machine.trim(),
       perceived_effort: numOrNull(perceivedEffort),
-      entries: entries.map((en) => {
+      entries: kept.map((en) => {
         const { sets } = parseSets(en.setsText);
         return {
           exercise_name: en.exerciseName.trim(),
@@ -166,9 +185,11 @@ export default function SessionEditForm({ session, onSave, onCancel }: SessionEd
   return (
     <form
       onSubmit={handleSubmit}
-      className="mt-4 pt-4 space-y-4 border-t"
+      // Edit renders inside an expanded SessionCard, so it separates itself
+      // with a top border; create renders in its own panel.
+      className={session ? 'mt-4 pt-4 space-y-4 border-t' : 'space-y-4'}
       style={{ borderColor: 'var(--border-card)' }}
-      aria-label="Edit session"
+      aria-label={session ? 'Edit session' : 'Log session'}
     >
       {/* Session fields */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -310,8 +331,10 @@ export default function SessionEditForm({ session, onSave, onCancel }: SessionEd
           </button>
         </div>
         <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-          Saving replaces the session&apos;s entries with this list, in order. Sets use the
-          shorthand grammar: <span className="font-mono">330x12 / 330x8</span>,{' '}
+          {session
+            ? 'Saving replaces the session’s entries with this list, in order. '
+            : ''}
+          Sets use the shorthand grammar: <span className="font-mono">330x12 / 330x8</span>,{' '}
           <span className="font-mono">50/side x12</span>, <span className="font-mono">75s</span>,{' '}
           <span className="font-mono">130x10 x3</span>, trailing <span className="font-mono">warmup</span>.
         </p>
@@ -402,7 +425,7 @@ export default function SessionEditForm({ session, onSave, onCancel }: SessionEd
           className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer disabled:opacity-60"
           style={{ backgroundColor: 'var(--color-sage)', color: 'var(--bg-primary)' }}
         >
-          {saving ? 'Saving…' : 'Save changes'}
+          {saving ? 'Saving…' : session ? 'Save changes' : 'Log session'}
         </button>
         <button
           type="button"

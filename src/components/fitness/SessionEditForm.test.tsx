@@ -1,7 +1,8 @@
 /**
  * SessionEditForm — prefill from the wire session, shorthand set parsing on
  * save (raw preserved verbatim), non-blocking unparsed-token warnings, and
- * inline server-error surfacing (409 dedupe etc.).
+ * inline server-error surfacing (409 dedupe etc.). Create mode (no session
+ * prop): blank defaults, POST-shaped wire body, blank starter row dropped.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -113,5 +114,76 @@ describe('SessionEditForm', () => {
     expect(screen.getByLabelText('Entry 2 exercise name')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove entry 2' }));
     expect(screen.queryByLabelText('Entry 2 exercise name')).not.toBeInTheDocument();
+  });
+});
+
+describe('SessionEditForm (create mode)', () => {
+  it('renders blank defaults with a starter entry row', () => {
+    render(<SessionEditForm onSave={async () => {}} onCancel={() => {}} />);
+    expect(screen.getByRole('form', { name: 'Log session' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Log session' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Type')).toHaveValue('strength');
+    expect(screen.getByLabelText('Entry 1 exercise name')).toHaveValue('');
+    expect(screen.getByLabelText('Entry 1 sets')).toHaveValue('');
+  });
+
+  it('submits the wire-shaped POST body with parsed shorthand sets', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<SessionEditForm onSave={onSave} onCancel={() => {}} />);
+
+    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'Day B' } });
+    fireEvent.change(screen.getByLabelText('Started at'), {
+      target: { value: '2026-07-10T08:30' },
+    });
+    fireEvent.change(screen.getByLabelText('Duration (min)'), { target: { value: '45' } });
+    fireEvent.change(screen.getByLabelText('Entry 1 exercise name'), {
+      target: { value: 'Bench press' },
+    });
+    fireEvent.change(screen.getByLabelText('Entry 1 sets'), {
+      target: { value: '185x5 x3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Log session' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const body = onSave.mock.calls[0][0] as Record<string, unknown>;
+    expect(body.type).toBe('strength');
+    expect(body.label).toBe('Day B');
+    expect(body.started_at).toBe(new Date('2026-07-10T08:30').toISOString());
+    expect(body.duration_min).toBe(45);
+    expect(body.notes).toBeNull();
+    expect(body.entries).toEqual([
+      {
+        exercise_name: 'Bench press',
+        sets: [
+          { weight: 185, reps: 5 },
+          { weight: 185, reps: 5 },
+          { weight: 185, reps: 5 },
+        ],
+        raw_sets: '185x5 x3',
+        notes: null,
+      },
+    ]);
+  });
+
+  it('drops the fully blank starter row so entry-less sessions submit', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<SessionEditForm onSave={onSave} onCancel={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Log session' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    const body = onSave.mock.calls[0][0] as Record<string, unknown>;
+    expect(body.entries).toEqual([]);
+  });
+
+  it('surfaces server errors inline', async () => {
+    const onSave = vi
+      .fn()
+      .mockRejectedValue(
+        new Error("A workout session already exists at started_at '2026-07-10T15:30:00.000Z'."),
+      );
+    render(<SessionEditForm onSave={onSave} onCancel={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Log session' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'A workout session already exists',
+    );
   });
 });
