@@ -29,7 +29,11 @@ export function ProfileForm() {
     formState: { errors },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { unit_system: 'imperial' },
+    defaultValues: {
+      unit_system: 'imperial',
+      height_inches: 0,
+      weight_lbs: 0,
+    },
   });
 
   const unitSystem = useWatch({ control, name: 'unit_system' }) as UnitSystem ?? 'imperial';

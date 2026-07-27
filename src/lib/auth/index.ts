@@ -44,7 +44,6 @@ export async function getSignupPolicy(): Promise<SignupPolicy> {
 
 function buildAuth() {
   const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-  const isProd = process.env.NODE_ENV === 'production';
 
   // Session cookies only get the Secure flag when the base URL is https. Behind
   // a TLS-terminating proxy/tunnel that forwards plain http, an http APP_URL
@@ -66,9 +65,15 @@ function buildAuth() {
     baseURL: appUrl,
     trustedOrigins: [appUrl],
     telemetry: { enabled: false },
-    // Force the Secure cookie flag in production regardless of how the proxy
-    // presents the scheme to the app.
-    advanced: { useSecureCookies: isProd },
+    // Secure cookies require an https origin. NODE_ENV=production is baked
+    // into the Docker image unconditionally, so tying this to isProd instead
+    // of the actual APP_URL scheme forces Secure on every container
+    // deployment — including the plain-http LAN setups the Unraid/Docker
+    // Compose docs recommend (APP_URL=http://YOUR_SERVER_IP:3000). Browsers
+    // silently drop a Secure cookie sent over http, so login/registration
+    // appears to succeed but the session never sticks. Tie it to the scheme
+    // the warning above already checks.
+    advanced: { useSecureCookies: appUrl.startsWith('https://') },
     // Brute-force protection. In-memory storage is adequate for the
     // single-container self-hosted topology (one process); stricter per-route
     // caps on the credential endpoints blunt credential-stuffing.
