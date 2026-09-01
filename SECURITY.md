@@ -33,6 +33,28 @@ invitation. Therefore:
   parity: providers, appointments and notes are included in the token view).
   Treat share links like passwords.
 
+## Webhook receivers
+
+The Health Connect receiver
+(`POST /api/v1/integrations/health-connect/webhook`) accepts data from a phone
+app, so it is authenticated twice over:
+
+- A personal access token with the narrow `write:health_connect` scope, which
+  admits that endpoint and nothing else — no clinical, vitals or fitness writes.
+- An HMAC-SHA256 signature over the **exact raw request bytes**, sent as
+  `X-Signature: sha256=<hex>`. The body is read and hashed *before* any JSON
+  parsing (re-serializing changes the bytes and would break verification), the
+  comparison is constant-time after a length check, and the shared secret is
+  stored AES-256-GCM encrypted at rest. **The signature is mandatory in
+  production**; `HEALTH_CONNECT_ALLOW_UNSIGNED=true` is a development-only
+  escape hatch that is ignored when `NODE_ENV=production`.
+
+Rotating the secret (Settings → Health Connect) invalidates the previous one
+immediately, with no overlap window. Bodies are capped
+(`HEALTH_CONNECT_MAX_BODY_BYTES`, default 2 MiB) and deliveries are rate
+limited per token and per user. Ingestion logs record ids and counts only —
+never tokens, secrets, signature headers or health values.
+
 ## Telemetry
 
 HealthTrack sends **no telemetry**. The only outbound connections are the optional integrations you configure yourself (Anthropic API, Google OAuth, Oura API).

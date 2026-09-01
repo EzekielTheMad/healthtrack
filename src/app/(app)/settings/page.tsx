@@ -12,6 +12,7 @@ import DependentManager from '@/components/settings/DependentManager';
 import MedicalHistoryImport from '@/components/settings/MedicalHistoryImport';
 import DelegateManager from '@/components/settings/DelegateManager';
 import ApiKeyManager from '@/components/settings/ApiKeyManager';
+import HealthConnectManager from '@/components/settings/HealthConnectManager';
 import InviteManager from '@/components/settings/InviteManager';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import { useSession } from '@/lib/auth/client';
@@ -289,6 +290,14 @@ function SettingsContent() {
         description="Generate tokens to access your health data from external apps and scripts."
       >
         <ApiKeyManager />
+      </SettingsSection>
+
+      {/* Health Connect (Android phone relay) */}
+      <SettingsSection
+        title="Health Connect"
+        description="Receive Health Connect data from the Life Dashboard Android app — activity totals and nutrition."
+      >
+        <HealthConnectManager />
       </SettingsSection>
 
       {/* Health Sharing */}

@@ -161,6 +161,113 @@ export const OPENAPI_DOCUMENT = {
         },
         required: ['records'],
       },
+      NutritionDay: {
+        type: 'object',
+        description:
+          'Canonical daily actual intake — ONE row per (user, Phoenix ' +
+          'calendar date, source package), recomputed and overwritten on ' +
+          'every sync. A null nutrient means UNKNOWN, never zero.',
+        properties: {
+          date: { type: 'string', description: 'YYYY-MM-DD (America/Phoenix)' },
+          source_package: { type: 'string', description: 'Exact Android package, e.g. "com.sbs.diet"' },
+          calories: { type: ['number', 'null'] },
+          protein_grams: { type: ['number', 'null'] },
+          carbs_grams: { type: ['number', 'null'] },
+          fat_grams: { type: ['number', 'null'] },
+          fiber_grams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
+          sugar_grams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
+          sodium_milligrams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
+          record_count: { type: 'integer', description: 'Raw source records this day was computed from' },
+          updated_at: { type: 'string' },
+        },
+        required: ['date', 'source_package', 'record_count'],
+      },
+      HealthConnectEnvelope: {
+        type: 'object',
+        description:
+          'Life Dashboard companion payload. Pinned to docs/webhook-schema.json ' +
+          'at upstream commit b94f7453a2d61a69bf9866d15e37ae4fb5343e21. Unknown ' +
+          'top-level fields are retained verbatim in the raw layer but never ' +
+          'become normalized health data. Every record array carries optional ' +
+          '`uuid` (stable Health Connect record id) and `source` (Android ' +
+          'package). The companion’s "Send Test Ping" payload ' +
+          '(`{"test": true, …}`) is also accepted.',
+        properties: {
+          timestamp: { type: 'string', description: 'ISO 8601' },
+          app_version: { type: 'string' },
+          source: { type: 'string', enum: ['health_connect'] },
+          backfill: { type: 'boolean' },
+          window_start: { type: 'string' },
+          window_end: { type: 'string' },
+          daily_totals: {
+            type: 'array',
+            description:
+              'Health Connect aggregate-API day totals — a daily snapshot ' +
+              'that REPLACES the day, never added to a stored value.',
+            items: {
+              type: 'object',
+              properties: {
+                date: { type: 'string', description: 'YYYY-MM-DD' },
+                steps: { type: 'integer' },
+                distance_meters: { type: 'number' },
+                active_calories: { type: 'number' },
+                total_calories: { type: 'number' },
+              },
+              required: ['date'],
+            },
+          },
+          nutrition: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                calories: { type: ['number', 'null'] },
+                protein_grams: { type: ['number', 'null'] },
+                carbs_grams: { type: ['number', 'null'] },
+                fat_grams: { type: ['number', 'null'] },
+                start_time: { type: 'string' },
+                end_time: { type: 'string' },
+                source: { type: 'string' },
+                uuid: { type: 'string' },
+              },
+              required: ['start_time'],
+            },
+          },
+        },
+        required: ['timestamp', 'source'],
+      },
+      HealthConnectIngestResult: {
+        type: 'object',
+        properties: {
+          ingest_id: { type: 'string' },
+          status: { type: 'string', enum: ['accepted', 'duplicate', 'test_ping'] },
+          records: {
+            type: 'object',
+            properties: {
+              received: { type: 'integer' },
+              inserted: { type: 'integer' },
+              updated: { type: 'integer' },
+              duplicates: { type: 'integer' },
+              rejected: { type: 'integer' },
+            },
+            required: ['received', 'inserted', 'updated', 'duplicates', 'rejected'],
+          },
+          normalization: {
+            type: 'object',
+            properties: {
+              vitals_upserted: { type: 'integer' },
+              nutrition_days_upserted: { type: 'integer' },
+              skipped_unapproved: {
+                type: 'integer',
+                description: 'Retained raw but not written canonically (unsupported type, unapproved package, or inventory mode)',
+              },
+              errors: { type: 'array', items: { type: 'string' } },
+            },
+            required: ['vitals_upserted', 'nutrition_days_upserted', 'skipped_unapproved', 'errors'],
+          },
+        },
+        required: ['ingest_id', 'status', 'records', 'normalization'],
+      },
       BatchResult: {
         type: 'object',
         description:
@@ -587,6 +694,118 @@ export const OPENAPI_DOCUMENT = {
     },
     '/api/v1/summary': {
       get: listOperation('Full health summary — all data in one call', 'read:all'),
+    },
+    '/api/v1/nutrition/daily': {
+      get: {
+        summary: 'Daily nutrition totals (canonical actual intake)',
+        description:
+          'Requires scope `read:nutrition` (or `read:all`). Returns the ' +
+          'canonical daily snapshot table only — never raw webhook history. ' +
+          'One row per (Phoenix calendar date, source package); a null ' +
+          'nutrient is UNKNOWN, not zero.',
+        parameters: [
+          {
+            name: 'start_date',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Inclusive YYYY-MM-DD lower bound',
+          },
+          {
+            name: 'end_date',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Inclusive YYYY-MM-DD upper bound',
+          },
+          {
+            name: 'source_package',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Exact Android package filter',
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', default: 400, maximum: 1000 },
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Daily totals, date ascending', {
+            type: 'array',
+            items: { $ref: '#/components/schemas/NutritionDay' },
+          }),
+          ...VALIDATION_400,
+          ...AUTH_ERRORS,
+        },
+      },
+    },
+    '/api/v1/integrations/health-connect/webhook': {
+      post: {
+        summary: 'Health Connect webhook receiver (Life Dashboard companion)',
+        description:
+          'Requires scope `write:health_connect`. Receives the Life Dashboard ' +
+          'companion envelope, verifies `X-Signature` as ' +
+          '`sha256=<hex HMAC-SHA256(secret, EXACT raw request body)>` using a ' +
+          'constant-time comparison, retains every accepted source record ' +
+          'losslessly, and normalizes only the record types and exact source ' +
+          'packages the user approved in Settings.\n\n' +
+          'Deduplication is per record on ' +
+          '`(user, record_type, source_package, source_uuid)`, so retries, ' +
+          'overlapping batches and backfills never duplicate. Nutrition is a ' +
+          'daily snapshot: each affected America/Phoenix date is recomputed ' +
+          'from the retained records and overwritten — an incoming subtotal ' +
+          'is never added to a stored total.\n\n' +
+          'A new integration starts in `inventory` status: records are stored ' +
+          'and inventoried, but nothing is written canonically until exact ' +
+          'source packages are approved.',
+        parameters: [
+          {
+            name: 'X-Signature',
+            in: 'header',
+            required: true,
+            schema: { type: 'string' },
+            description:
+              '`sha256=<lowercase hex>` over the exact raw body. Mandatory in ' +
+              'production; waivable outside production with ' +
+              'HEALTH_CONNECT_ALLOW_UNSIGNED=true.',
+          },
+        ],
+        requestBody: jsonBody('#/components/schemas/HealthConnectEnvelope'),
+        responses: {
+          '200': jsonResponse(
+            'Committed (including a valid no-op retry)',
+            { $ref: '#/components/schemas/HealthConnectIngestResult' },
+          ),
+          '400': {
+            description: 'Malformed JSON or invalid envelope',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+          '401': {
+            description: 'Missing or invalid bearer token',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+          '403': {
+            description:
+              'Missing scope, no integration, paused/errored integration, or invalid/missing HMAC signature',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+          '413': {
+            description: 'Payload larger than the configured limit (default 2 MiB)',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+          '429': {
+            description: 'Rate limit exceeded',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+          '500': {
+            description: 'Transaction or internal failure — nothing was committed',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
+        },
+      },
     },
     '/api/v1/vitals': {
       get: {

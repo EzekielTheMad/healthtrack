@@ -13,6 +13,11 @@ export const AVAILABLE_SCOPES = [
   { value: 'write:vitals', label: 'Write Vitals', description: 'Write vitals & device metrics' },
   { value: 'read:fitness', label: 'Read Fitness', description: 'Read workouts, exercises, check-ins & goals' },
   { value: 'write:fitness', label: 'Write Fitness', description: 'Write workouts, exercises, check-ins & goals' },
+  { value: 'read:nutrition', label: 'Read Nutrition', description: 'Read daily nutrition totals' },
+  // Narrow ingest scope for the Life Dashboard companion app. It admits the
+  // Health Connect receiver and NOTHING else — no clinical writes, no vitals
+  // or fitness writes — so a phone token cannot become a general write token.
+  { value: 'write:health_connect', label: 'Write Health Connect', description: 'Deliver Health Connect webhooks (phone relay only)' },
   { value: 'read:labs', label: 'Read Labs', description: 'Read lab results' },
   { value: 'read:procedures', label: 'Read Procedures', description: 'Read procedures history' },
   { value: 'read:vaccines', label: 'Read Vaccines', description: 'Read vaccine records' },

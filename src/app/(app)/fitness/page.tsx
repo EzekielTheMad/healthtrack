@@ -5,6 +5,7 @@ import HistoryView from '@/components/fitness/HistoryView';
 import TrendsView from '@/components/fitness/TrendsView';
 import WeeklyView from '@/components/fitness/WeeklyView';
 import GoalsView from '@/components/fitness/GoalsView';
+import NutritionView from '@/components/fitness/NutritionView';
 
 // ---------------------------------------------------------------------------
 // Fitness page — view-first workout tracking (spec §UI): History (sessions),
@@ -19,6 +20,7 @@ const TABS = [
   { id: 'trends', label: 'Trends' },
   { id: 'weekly', label: 'Weekly' },
   { id: 'goals', label: 'Goals & catalog' },
+  { id: 'nutrition', label: 'Nutrition' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -70,8 +72,10 @@ export default function FitnessPage() {
         <TrendsView />
       ) : view === 'weekly' ? (
         <WeeklyView />
-      ) : (
+      ) : view === 'goals' ? (
         <GoalsView />
+      ) : (
+        <NutritionView />
       )}
     </div>
   );

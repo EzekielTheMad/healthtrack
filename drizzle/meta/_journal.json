@@ -57,6 +57,13 @@
       "when": 1784085848817,
       "tag": "0007_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788283805515,
+      "tag": "0008_health-connect-ingestion",
+      "breakpoints": true
     }
   ]
 }

@@ -233,6 +233,21 @@ export async function GET() {
         params: [],
         description: 'Full health summary — all data in one call',
       },
+      {
+        path: '/api/v1/nutrition/daily',
+        method: 'GET',
+        scope: 'read:nutrition',
+        params: ['start_date', 'end_date', 'source_package', 'limit'],
+        description: 'Canonical daily nutrition totals (America/Phoenix dates)',
+      },
+      {
+        path: '/api/v1/integrations/health-connect/webhook',
+        method: 'POST',
+        scope: 'write:health_connect',
+        params: [],
+        description:
+          'Health Connect webhook receiver (Life Dashboard companion; HMAC-signed)',
+      },
     ],
     scopes,
   });

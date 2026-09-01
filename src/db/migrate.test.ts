@@ -59,6 +59,10 @@ const EXPECTED_TABLES = [
   'query_history',
   'interaction_alerts',
   'api_keys',
+  'nutrition_daily',
+  'health_connect_integrations',
+  'health_connect_ingest_runs',
+  'health_connect_raw_records',
   'breach_events',
   'breach_notifications',
 ];

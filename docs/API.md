@@ -22,6 +22,10 @@ Tokens carry scopes (`read:vitals`, `write:vitals`, per-domain reads,
 `read:all`, `write:all`). Every token resolves to exactly one user; all reads
 and writes are hard-scoped to that user's own data.
 
+`write:health_connect` is a deliberately narrow ingest scope: it admits the
+Health Connect webhook receiver and nothing else, so the token you paste into
+a phone app cannot write clinical records, vitals or workouts directly.
+
 ## Endpoints
 
 | Method | Path | Scope | Description |
@@ -41,6 +45,8 @@ and writes are hard-scoped to that user's own data.
 | GET | `/api/v1/providers` | `read:providers` | List providers |
 | GET | `/api/v1/profile` | `read:profile` | User profile |
 | GET | `/api/v1/summary` | `read:all` | Full health summary |
+| GET | `/api/v1/nutrition/daily` | `read:nutrition` | Daily nutrition totals (`?start_date=`, `?end_date=`, `?source_package=`) |
+| POST | `/api/v1/integrations/health-connect/webhook` | `write:health_connect` | Health Connect webhook receiver (HMAC-signed) |
 
 ## Writing vitals (device bridges)
 
@@ -59,6 +65,31 @@ Record shape (snake_case):
   updates instead of duplicating, so bridges can safely re-send.
 - Batch: `{ "records": [...] }`, max 500; per-record errors reported by index
   without aborting the rest.
+
+## Health Connect ingestion (Android)
+
+The [Life Dashboard companion app](https://github.com/owen282000/life-dashboard-companion-app)
+can POST Health Connect records straight to an instance. Set it up in
+**Settings → Health Connect**; full walkthrough in
+[health-connect.md](health-connect.md).
+
+```
+POST /api/v1/integrations/health-connect/webhook
+Authorization: Bearer ohts_pat_...          # scope: write:health_connect
+X-Signature: sha256=<hex HMAC-SHA256(secret, exact raw request body)>
+```
+
+- The signature covers the **exact raw request bytes** and is compared in
+  constant time. Required in production.
+- Accepted records are retained losslessly with their Health Connect UUID and
+  writing Android package; deduplication is
+  `(user, record_type, source_package, source_uuid)`.
+- A new integration starts in **inventory** mode — nothing is written
+  canonically until you approve exact source packages.
+- Approved today: daily activity totals → vitals (source
+  `health_connect_daily`) and MacroFactor nutrition → `nutrition_daily`.
+  Everything else stays raw-only; Oura, Renpho and myAir keep ownership of
+  their metrics.
 
 ## Backfilling history
 

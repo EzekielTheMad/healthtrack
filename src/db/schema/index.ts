@@ -16,6 +16,8 @@ export * from './users';
 export * from './clinical';
 export * from './vitals';
 export * from './fitness';
+export * from './nutrition';
+export * from './health-connect';
 export * from './sharing';
 export * from './integrations';
 export * from './system';

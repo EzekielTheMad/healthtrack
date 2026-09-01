@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { METRICS, CATEGORY_LABELS, CATEGORY_ORDER, type MetricDef } from '@/lib/metrics/registry';
 import { AVAILABLE_SCOPES } from '@/lib/api-scopes';
+import { UPSTREAM_SCHEMA_COMMIT } from '@/lib/integrations/health-connect/schema';
 
 export const metadata = {
   title: 'API Documentation — HealthTrack',
@@ -49,6 +50,8 @@ const ENDPOINTS: Array<{ method: string; path: string; scope: string; descriptio
   { method: 'GET', path: '/api/v1/providers', scope: 'read:providers', description: 'List healthcare providers' },
   { method: 'GET', path: '/api/v1/profile', scope: 'read:profile', description: 'User profile (DOB, height, weight, …)' },
   { method: 'GET', path: '/api/v1/summary', scope: 'read:all', description: 'Full health summary in one call' },
+  { method: 'GET', path: '/api/v1/nutrition/daily', scope: 'read:nutrition', description: 'Daily nutrition totals (?start_date=, ?end_date=, ?source_package=)' },
+  { method: 'POST', path: '/api/v1/integrations/health-connect/webhook', scope: 'write:health_connect', description: 'Health Connect webhook receiver (HMAC-signed, phone relay)' },
 ];
 
 function CodeBlock({ children }: { children: string }) {
@@ -347,9 +350,88 @@ export default function ApiDocsPage() {
             </ul>
           </section>
 
-          {/* 6. Metric registry */}
+          {/* 6. Health Connect */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">6. Metric registry</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">
+              6. Health Connect ingestion (Android)
+            </h2>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              The{' '}
+              <a
+                href="https://github.com/owen282000/life-dashboard-companion-app"
+                style={{ color: 'var(--color-sage)' }}
+              >
+                Life Dashboard companion app
+              </a>{' '}
+              (v1.8.x) can POST Health Connect records straight to this instance. Create the
+              integration in <strong>Settings → Health Connect</strong>; it hands you the webhook
+              URL, a dedicated <code>write:health_connect</code> token, and an HMAC signing
+              secret. Payloads are validated against the published relay schema, pinned at
+              upstream commit <code>{UPSTREAM_SCHEMA_COMMIT.slice(0, 12)}</code>.
+            </p>
+
+            <h3 className="text-lg font-semibold mb-2 mt-6">Phone configuration</h3>
+            <CodeBlock>{`Webhook URL:   https://your-instance/api/v1/integrations/health-connect/webhook
+Header name:   Authorization
+Header value:  Bearer ohts_pat_...      (scope: write:health_connect only)
+HMAC secret:   <shown once when you create or rotate the integration>
+Daily totals:  enabled
+MQTT:          disabled`}</CodeBlock>
+
+            <h3 className="text-lg font-semibold mb-2 mt-6">Signature</h3>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              Every delivery must carry an <code>X-Signature</code> header computed over the{' '}
+              <em>exact raw request bytes</em>. The receiver hashes the body before parsing any
+              JSON and compares in constant time, so re-serialized JSON will not verify.
+            </p>
+            <CodeBlock>{`X-Signature: sha256=<hex of HMAC-SHA256(secret, exact raw request body)>`}</CodeBlock>
+
+            <h3 className="text-lg font-semibold mb-2 mt-6">Inventory first</h3>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              A new integration starts in <strong>inventory</strong> status. It authenticates,
+              verifies, validates and stores every accepted record losslessly — preserving the
+              Health Connect record UUID and the Android package that wrote it — but writes{' '}
+              <em>no</em> canonical data. Settings then shows which packages and record types
+              your phone actually sends, and you approve exact packages for exact domains. There
+              is no wildcard approval.
+            </p>
+            <ul className="list-disc list-inside space-y-2" style={{ color: 'var(--color-text-muted)' }}>
+              <li>
+                <strong>Daily totals</strong> → vitals <code>steps</code>, <code>distance</code>{' '}
+                (meters converted to miles), <code>active_calories</code>,{' '}
+                <code>total_calories</code>, with source <code>health_connect_daily</code>. These
+                come from Health Connect&apos;s aggregate API, which already deduplicates phone
+                and watch, so the newest snapshot <em>replaces</em> the day.
+              </li>
+              <li>
+                <strong>Nutrition</strong> → <code>/api/v1/nutrition/daily</code>. One canonical
+                row per America/Phoenix date and approved package; every sync recomputes the whole
+                day from retained records and overwrites it. An incoming subtotal is never added
+                to a stored total, so retries and edits cannot double count. A missing nutrient is
+                null (unknown), never zero.
+              </li>
+              <li>
+                Everything else stays <strong>raw-only</strong>. Oura sleep/HRV/resting heart
+                rate, Renpho weight and body composition, and myAir metrics remain owned by their
+                direct bridges, and a generic Health Connect exercise session is never turned into
+                a completed strength workout.
+              </li>
+            </ul>
+
+            <h3 className="text-lg font-semibold mb-2 mt-6">Deduplication</h3>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              Records dedupe on{' '}
+              <code>(user, record_type, source_package, source_uuid)</code>, so a re-sent payload,
+              an overlapping batch, or a backfill that covers days you already have produces no
+              duplicates. The same UUID from a different package — or for a different record type
+              — stays a separate record. Records the relay delivers without a UUID are retained
+              under an explicitly weaker content-derived identity and labelled as such.
+            </p>
+          </section>
+
+          {/* 7. Metric registry */}
+          <section>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">7. Metric registry</h2>
             <p className="leading-relaxed mb-4" style={{ color: 'var(--color-text-muted)' }}>
               Every metric the write endpoints accept, with its canonical stored unit. Also
               available as JSON at{' '}
@@ -397,9 +479,9 @@ export default function ApiDocsPage() {
             })}
           </section>
 
-          {/* 7. Backfill */}
+          {/* 8. Backfill */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">7. Backfilling history</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">8. Backfilling history</h2>
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               To seed an instance with historical data, prepare a JSON <em>array</em> of the
               same record objects the write endpoints take and push it in chunks of up to 500
