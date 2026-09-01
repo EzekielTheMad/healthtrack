@@ -17,9 +17,17 @@
  *                 the better-auth handler at /api/auth/* and the public
  *                 discovery endpoints /api/v1/metrics + /api/v1/openapi.json)
  * Everything else — the (app) group — requires a session cookie.
+ *
+ * Runs before the gate: the canonical-host redirect, so host-scoped auth
+ * cookies are always written and read on APP_URL's origin (see
+ * src/lib/canonical-host.ts). It has to come first — the gate redirects with
+ * `nextUrl.clone()`, which keeps the incoming host, so a signed-out visitor
+ * on a non-canonical hostname would otherwise be sent to that host's /login
+ * and start the OAuth flow from the wrong origin all over again.
  */
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
+import { canonicalHostRedirect } from '@/lib/canonical-host';
 
 const PUBLIC_EXACT = new Set(['/', '/privacy', '/terms', '/docs/api', '/login', '/signup']);
 const PUBLIC_PREFIXES = ['/shared/', '/api/'];
@@ -32,6 +40,9 @@ function isPublicPath(pathname: string): boolean {
 }
 
 export function proxy(request: NextRequest) {
+  const canonical = canonicalHostRedirect(request);
+  if (canonical) return canonical;
+
   const { pathname } = request.nextUrl;
   const hasSessionCookie = Boolean(getSessionCookie(request));
 

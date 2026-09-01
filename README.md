@@ -123,6 +123,8 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 
 HealthTrack serves plain HTTP on port 3000; put your reverse proxy of choice (Nginx Proxy Manager, Caddy, Traefik, Cloudflare Tunnel, …) in front of it for HTTPS. **`APP_URL` must exactly match the URL users browse to** (scheme, host, port) or login callbacks will fail.
 
+**Serve the app on one public hostname.** If your proxy answers on both `example.com` and `www.example.com` (a common default), pick one, put it in `APP_URL`, and have the other redirect to it. Auth cookies are scoped to the exact host that set them, while OAuth redirect URIs are built from `APP_URL` — so a visitor who starts on the hostname you *didn't* configure gets sent back to the one you did, without their cookie, and Google sign-in fails with `?error=state_mismatch`. HealthTrack now redirects browser page requests to `APP_URL`'s hostname for you (API routes under `/api/` are left alone, as are localhost and LAN addresses), but fixing it at the proxy or DNS layer is still cleaner.
+
 ### Authentication & OAuth
 
 Built-in **email/password** sign-in works anywhere, including a bare LAN IP — nothing extra to configure. The optional social logins have provider-specific requirements:

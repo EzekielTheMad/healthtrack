@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import { proxy } from './proxy';
 
@@ -57,5 +57,52 @@ describe('proxy auth gate', () => {
       const res = proxy(request(path, SESSION));
       expect(redirectTarget(res)).toBe('/dashboard');
     }
+  });
+});
+
+/**
+ * Ordering guard: the canonical-host redirect must win over the auth gate.
+ * The gate redirects with nextUrl.clone(), which preserves the incoming host —
+ * so if the gate ran first, a signed-out visitor on `www` would land on
+ * www/login and restart the OAuth flow from the non-canonical origin, which is
+ * exactly the cookie split that produced `?error=state_mismatch`.
+ */
+describe('proxy canonical-host ordering', () => {
+  const APP_URL = 'https://example.com';
+  const savedAppUrl = process.env.APP_URL;
+
+  afterEach(() => {
+    if (savedAppUrl === undefined) delete process.env.APP_URL;
+    else process.env.APP_URL = savedAppUrl;
+  });
+
+  /** A request off the tunnel: internal URL, public host in the header. */
+  function hosted(host: string, path: string, cookie?: string): NextRequest {
+    return new NextRequest(`http://localhost:3000${path}`, {
+      headers: cookie ? { host, cookie } : { host },
+    });
+  }
+
+  it('sends a non-canonical host to APP_URL instead of that host’s /login', () => {
+    process.env.APP_URL = APP_URL;
+    const res = proxy(hosted('www.example.com', '/dashboard'));
+
+    expect(res.headers.get('location')).toBe(
+      'https://example.com/dashboard',
+    );
+  });
+
+  it('still gates the canonical host normally', () => {
+    process.env.APP_URL = APP_URL;
+    const res = proxy(hosted('example.com', '/dashboard'));
+
+    expect(redirectTarget(res)).toBe('/login');
+  });
+
+  it('leaves API requests on a non-canonical host alone', () => {
+    process.env.APP_URL = APP_URL;
+    const res = proxy(hosted('www.example.com', '/api/v1/medications'));
+
+    expect(res.headers.get('location')).toBeNull();
   });
 });
