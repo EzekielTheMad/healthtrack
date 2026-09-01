@@ -26,6 +26,7 @@ import TrendLine from '@/components/labs/TrendLine';
 import GettingStartedChecklist from '@/components/dashboard/GettingStartedChecklist';
 import DashboardCustomizer from '@/components/dashboard/DashboardCustomizer';
 import HealthSummaryCard from '@/components/dashboard/HealthSummaryCard';
+import DailyActivityCard from '@/components/dashboard/DailyActivityCard';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -250,6 +251,13 @@ export default function DashboardPage() {
           {vitalsError || medsError || labsError}
         </div>
       )}
+
+      {/* Health Connect daily activity totals. Reads the canonical
+          health_connect_daily vitals already loaded above — never raw
+          Fitbit/Samsung/phone/Oura records, which would build a second,
+          competing total from the same walk. Renders nothing until the phone
+          has delivered a day. */}
+      <DailyActivityCard vitals={vitals} loading={vitalsLoading} />
 
       {/* Quick Stat Cards — dynamic based on user preferences */}
       <section>

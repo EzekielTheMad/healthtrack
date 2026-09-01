@@ -64,6 +64,13 @@
       "when": 1788283805515,
       "tag": "0008_health-connect-ingestion",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788293333954,
+      "tag": "0009_nutrition-strategy-rename",
+      "breakpoints": true
     }
   ]
 }

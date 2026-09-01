@@ -2,13 +2,26 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
+/** Wire values for `nutrition_strategy` (src/db/schema/health-connect.ts). */
+export type NutritionStrategy = 'sum_items' | 'latest_summary';
+
+/** What a rebuild of the retained nutrition records produced. */
+export interface RebuildReport {
+  dates_rebuilt: string[];
+  rows_upserted: number;
+  rows_deleted: number;
+  records_considered: number;
+  records_skipped: number;
+  errors: string[];
+}
+
 export interface HealthConnectIntegration {
   id: string;
   name: string;
   status: 'inventory' | 'active' | 'paused' | 'error';
   allowedSources: Record<string, string[]>;
   enabledTypes: string[];
-  nutritionStrategy: 'aggregate' | 'daily_snapshot';
+  nutritionStrategy: NutritionStrategy;
   lastReceivedAt: string | null;
   lastNormalizedAt: string | null;
   lastAppVersion: string | null;
@@ -61,7 +74,7 @@ export interface HealthConnectPatch {
   status?: 'inventory' | 'active' | 'paused';
   allowed_sources?: Record<string, string[]>;
   enabled_types?: string[];
-  nutrition_strategy?: 'aggregate' | 'daily_snapshot';
+  nutrition_strategy?: NutritionStrategy;
 }
 
 const BASE = '/api/integrations/health-connect';
@@ -79,6 +92,7 @@ export function useHealthConnect() {
     start: string | null;
     end: string | null;
   } | null>(null);
+  const [rebuild, setRebuild] = useState<RebuildReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,6 +153,10 @@ export function useHealthConnect() {
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error ?? 'Failed to update the integration');
         setIntegration(data.integration);
+        // A patch that newly authorises canonical nutrition writes rebuilds
+        // the retained records server-side; surface what that produced so the
+        // user does not have to guess whether the change was retroactive.
+        if (data.rebuild) setRebuild(data.rebuild as RebuildReport);
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update the integration');
@@ -147,6 +165,27 @@ export function useHealthConnect() {
     },
     [integration],
   );
+
+  /** Rebuild canonical nutrition from the retained raw records. */
+  const reprocessNutrition = useCallback(async (): Promise<RebuildReport | null> => {
+    if (!integration) return null;
+    setError(null);
+    setRebuild(null);
+    try {
+      const res = await fetch(`${BASE}/${integration.id}/reprocess-nutrition`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to reprocess retained nutrition');
+      setRebuild(data as RebuildReport);
+      return data as RebuildReport;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reprocess retained nutrition');
+      return null;
+    }
+  }, [integration]);
 
   /** Rotate the secret. The previous one stops working immediately. */
   const rotate = useCallback(async (): Promise<string | null> => {
@@ -192,6 +231,7 @@ export function useHealthConnect() {
     inventory,
     runs,
     lastBackfill,
+    rebuild,
     loading,
     error,
     refresh,
@@ -199,5 +239,6 @@ export function useHealthConnect() {
     update,
     rotate,
     remove,
+    reprocessNutrition,
   };
 }

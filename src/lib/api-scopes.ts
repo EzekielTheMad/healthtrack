@@ -18,6 +18,11 @@ export const AVAILABLE_SCOPES = [
   // Health Connect receiver and NOTHING else — no clinical writes, no vitals
   // or fitness writes — so a phone token cannot become a general write token.
   { value: 'write:health_connect', label: 'Write Health Connect', description: 'Deliver Health Connect webhooks (phone relay only)' },
+  // Read counterpart, deliberately SEPARATE from the ingest scope: the token
+  // pasted into a phone can deliver records but must not be able to read the
+  // retained history back out. `read:all` satisfies this; write:health_connect
+  // never does.
+  { value: 'read:health_connect', label: 'Read Health Connect', description: 'Read the Health Connect source inventory and retained raw records' },
   { value: 'read:labs', label: 'Read Labs', description: 'Read lab results' },
   { value: 'read:procedures', label: 'Read Procedures', description: 'Read procedures history' },
   { value: 'read:vaccines', label: 'Read Vaccines', description: 'Read vaccine records' },

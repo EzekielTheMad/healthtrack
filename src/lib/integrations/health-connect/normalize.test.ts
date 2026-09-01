@@ -69,14 +69,14 @@ describe('Phoenix date boundaries', () => {
   });
 });
 
-describe('computeDayTotals — aggregate', () => {
+describe('computeDayTotals — sum_items', () => {
   it('sums every record for the day', () => {
     const totals = computeDayTotals(
       [
         rawRecord({ calories: 520, protein_grams: 42.5, carbs_grams: 38, fat_grams: 18.5, start_time: '2026-09-01T14:05:00Z' }),
         rawRecord({ calories: 740, protein_grams: 55, carbs_grams: 61, fat_grams: 24, start_time: '2026-09-01T19:30:00Z' }),
       ],
-      'aggregate',
+      'sum_items',
     );
     expect(totals).toEqual({
       calories: 1260,
@@ -90,7 +90,7 @@ describe('computeDayTotals — aggregate', () => {
   it('keeps an unreported nutrient NULL rather than zero', () => {
     const totals = computeDayTotals(
       [rawRecord({ calories: 300, start_time: '2026-09-01T14:05:00Z' })],
-      'aggregate',
+      'sum_items',
     );
     expect(totals.calories).toBe(300);
     expect(totals.proteinGrams).toBeNull();
@@ -101,7 +101,7 @@ describe('computeDayTotals — aggregate', () => {
   it('distinguishes a reported zero from an absent nutrient', () => {
     const totals = computeDayTotals(
       [rawRecord({ calories: 0, protein_grams: null, start_time: '2026-09-01T14:05:00Z' })],
-      'aggregate',
+      'sum_items',
     );
     expect(totals.calories).toBe(0);
     expect(totals.proteinGrams).toBeNull();
@@ -112,30 +112,44 @@ describe('computeDayTotals — aggregate', () => {
     const second = rawRecord({ calories: 740, start_time: '2026-09-01T19:30:00Z' });
     // Recomputing the same set twice yields the same answer, and recomputing
     // a SHRUNKEN set yields the smaller answer (an additive path could not).
-    expect(computeDayTotals([first, second], 'aggregate').calories).toBe(1260);
-    expect(computeDayTotals([first, second], 'aggregate').calories).toBe(1260);
-    expect(computeDayTotals([first], 'aggregate').calories).toBe(520);
+    expect(computeDayTotals([first, second], 'sum_items').calories).toBe(1260);
+    expect(computeDayTotals([first, second], 'sum_items').calories).toBe(1260);
+    expect(computeDayTotals([first], 'sum_items').calories).toBe(520);
   });
 
-  it('rounds float noise to a tenth', () => {
-    const totals = computeDayTotals(
-      [
-        rawRecord({ protein_grams: 0.1, start_time: '2026-09-01T14:00:00Z' }),
-        rawRecord({ protein_grams: 0.2, start_time: '2026-09-01T15:00:00Z' }),
-      ],
-      'aggregate',
-    );
-    expect(totals.proteinGrams).toBe(0.3);
+  it('erases float noise without rounding away real precision', () => {
+    // 0.1 + 0.2 = 0.30000000000000004 in IEEE-754.
+    expect(
+      computeDayTotals(
+        [
+          rawRecord({ protein_grams: 0.1, start_time: '2026-09-01T14:00:00Z' }),
+          rawRecord({ protein_grams: 0.2, start_time: '2026-09-01T15:00:00Z' }),
+        ],
+        'sum_items',
+      ).proteinGrams,
+    ).toBe(0.3);
+
+    // …but three-decimal source values survive the sum intact: storage keeps
+    // what the source said, and rounding is left to the display layer.
+    expect(
+      computeDayTotals(
+        [
+          rawRecord({ calories: 135.731, start_time: '2026-09-01T14:00:00Z' }),
+          rawRecord({ calories: 402.368, start_time: '2026-09-01T15:00:00Z' }),
+        ],
+        'sum_items',
+      ).calories,
+    ).toBe(538.099);
   });
 
   it('reports zero records for an empty day', () => {
-    expect(computeDayTotals([], 'aggregate').recordCount).toBe(0);
+    expect(computeDayTotals([], 'sum_items').recordCount).toBe(0);
   });
 
   it('ignores records whose payload does not match the nutrition shape', () => {
     const totals = computeDayTotals(
       [rawRecord({ calories: 500 } as Record<string, unknown>, '2026-09-01T14:00:00Z')],
-      'aggregate',
+      'sum_items',
     );
     // No start_time → not a valid nutrition record → contributes nothing.
     expect(totals.recordCount).toBe(0);
@@ -143,14 +157,14 @@ describe('computeDayTotals — aggregate', () => {
   });
 });
 
-describe('computeDayTotals — daily_snapshot', () => {
+describe('computeDayTotals — latest_summary', () => {
   it('uses only the newest record, so a summary + items cannot double count', () => {
     const totals = computeDayTotals(
       [
         rawRecord({ calories: 520, start_time: '2026-09-01T14:05:00Z' }),
         rawRecord({ calories: 1260, start_time: '2026-09-01T23:59:00Z' }),
       ],
-      'daily_snapshot',
+      'latest_summary',
     );
     expect(totals.calories).toBe(1260);
     expect(totals.recordCount).toBe(1);

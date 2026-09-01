@@ -5,6 +5,8 @@ import {
   useHealthConnect,
   type InventoryEntry,
   type IngestRun,
+  type NutritionStrategy,
+  type RebuildReport,
 } from '@/hooks/useHealthConnect';
 import Skeleton from '@/components/shared/Skeleton';
 
@@ -30,7 +32,7 @@ const NORMALIZABLE = [
     type: 'nutrition',
     label: 'Nutrition (MacroFactor)',
     detail:
-      'Calories and macros → one canonical row per Phoenix date. Approve only the exact package that owns your food log.',
+      'Calories and macros → one canonical row per Phoenix date. Approve only the exact package that owns your food log; approving it rebuilds the days already retained.',
     needsPackage: true,
   },
 ] as const;
@@ -266,6 +268,42 @@ function InventoryTable({
   );
 }
 
+function RebuildSummary({ report }: { report: RebuildReport }) {
+  const failed = report.errors.length > 0;
+  return (
+    <div
+      className="rounded-lg border px-3 py-2 text-xs space-y-1"
+      style={
+        failed
+          ? {
+              backgroundColor: 'rgba(248, 113, 113, 0.1)',
+              borderColor: 'rgba(248, 113, 113, 0.3)',
+            }
+          : cardStyle
+      }
+    >
+      <p style={{ color: failed ? 'var(--color-terracotta)' : 'var(--color-sage)' }}>
+        {failed
+          ? 'Rebuild reported a problem'
+          : `${report.dates_rebuilt.length} day(s) rebuilt · ${report.rows_upserted} row(s) written`}
+      </p>
+      <p style={{ color: 'var(--color-text-muted)' }}>
+        {report.records_considered} record(s) considered · {report.records_skipped} skipped ·{' '}
+        {report.rows_deleted} row(s) removed
+      </p>
+      {report.dates_rebuilt.length > 0 && (
+        <p className="font-mono break-all" style={{ color: 'var(--color-text-muted)' }}>
+          {report.dates_rebuilt.slice(0, 12).join(', ')}
+          {report.dates_rebuilt.length > 12 ? ` +${report.dates_rebuilt.length - 12} more` : ''}
+        </p>
+      )}
+      {failed && (
+        <p style={{ color: 'var(--color-terracotta)' }}>{report.errors.slice(0, 3).join('; ')}</p>
+      )}
+    </div>
+  );
+}
+
 function RunLog({ runs }: { runs: IngestRun[] }) {
   if (runs.length === 0) {
     return (
@@ -317,6 +355,7 @@ export default function HealthConnectManager() {
     inventory,
     runs,
     lastBackfill,
+    rebuild,
     loading,
     error,
     refresh,
@@ -324,6 +363,7 @@ export default function HealthConnectManager() {
     update,
     rotate,
     remove,
+    reprocessNutrition,
   } = useHealthConnect();
   const [secret, setSecret] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -491,21 +531,46 @@ export default function HealthConnectManager() {
               onChange={async (e) => {
                 setBusy(true);
                 await update({
-                  nutrition_strategy: e.target.value as 'aggregate' | 'daily_snapshot',
+                  nutrition_strategy: e.target.value as NutritionStrategy,
                 });
                 setBusy(false);
               }}
               className="rounded-lg border px-2 py-1 text-xs"
               style={{ ...cardStyle, color: 'var(--color-text-primary)' }}
             >
-              <option value="aggregate">Sum food/meal records for the day</option>
-              <option value="daily_snapshot">Use only the newest daily-summary record</option>
+              <option value="sum_items">Sum food/meal records for the day</option>
+              <option value="latest_summary">Use only the newest daily-summary record</option>
             </select>
             <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
               Check the inventory: if the app sends one record per day, either option is
               equivalent. Pick the summary option only if it sends a daily summary{' '}
               <em>alongside</em> individual items — summing both would double count.
             </p>
+
+            <div className="pt-3 space-y-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  await reprocessNutrition();
+                  setBusy(false);
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-40"
+                style={{
+                  backgroundColor: 'rgba(129, 178, 154, 0.15)',
+                  color: 'var(--color-sage)',
+                }}
+              >
+                Reprocess retained nutrition
+              </button>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                Recomputes every Phoenix day from the food records already stored here — no
+                new sync from the phone needed. Safe to run twice: the result is a pure
+                function of what is retained, so it cannot inflate a day.
+              </p>
+              {rebuild && <RebuildSummary report={rebuild} />}
+            </div>
           </div>
         )}
 

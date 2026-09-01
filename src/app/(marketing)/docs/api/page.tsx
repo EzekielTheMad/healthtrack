@@ -50,8 +50,10 @@ const ENDPOINTS: Array<{ method: string; path: string; scope: string; descriptio
   { method: 'GET', path: '/api/v1/providers', scope: 'read:providers', description: 'List healthcare providers' },
   { method: 'GET', path: '/api/v1/profile', scope: 'read:profile', description: 'User profile (DOB, height, weight, …)' },
   { method: 'GET', path: '/api/v1/summary', scope: 'read:all', description: 'Full health summary in one call' },
-  { method: 'GET', path: '/api/v1/nutrition/daily', scope: 'read:nutrition', description: 'Daily nutrition totals (?start_date=, ?end_date=, ?source_package=)' },
+  { method: 'GET', path: '/api/v1/nutrition/daily', scope: 'read:nutrition', description: 'Daily nutrition totals (?start_date=, ?end_date=, ?source_package=, ?limit=)' },
   { method: 'POST', path: '/api/v1/integrations/health-connect/webhook', scope: 'write:health_connect', description: 'Health Connect webhook receiver (HMAC-signed, phone relay)' },
+  { method: 'GET', path: '/api/v1/integrations/health-connect/inventory', scope: 'read:health_connect', description: 'Retained source inventory (?integration_id=, ?record_type=, ?source_package=)' },
+  { method: 'GET', path: '/api/v1/integrations/health-connect/records', scope: 'read:health_connect', description: 'Retained raw records — bounded (start_at/end_at required) & cursor-paginated' },
 ];
 
 function CodeBlock({ children }: { children: string }) {
@@ -408,7 +410,9 @@ MQTT:          disabled`}</CodeBlock>
                 row per America/Phoenix date and approved package; every sync recomputes the whole
                 day from retained records and overwrites it. An incoming subtotal is never added
                 to a stored total, so retries and edits cannot double count. A missing nutrient is
-                null (unknown), never zero.
+                null (unknown), never zero. Approving a source, switching the record-shape
+                strategy or enabling the canonical write <em>rebuilds the days already
+                retained</em> — no further sync from the phone is needed.
               </li>
               <li>
                 Everything else stays <strong>raw-only</strong>. Oura sleep/HRV/resting heart
@@ -418,6 +422,48 @@ MQTT:          disabled`}</CodeBlock>
               </li>
             </ul>
 
+            <h3 className="text-lg font-semibold mb-2 mt-6">Reading retained data back</h3>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              Two endpoints expose what was retained, both behind the dedicated{' '}
+              <code>read:health_connect</code> scope. <code>read:all</code> satisfies it;{' '}
+              <code>write:health_connect</code> deliberately does <strong>not</strong> — the token
+              you paste into a phone delivers records, it does not read your history back out.
+            </p>
+            <CodeBlock>{`# What has this account actually received, and does it become canonical data?
+curl -H "Authorization: Bearer $TOKEN" \\
+  "$BASE/api/v1/integrations/health-connect/inventory"
+
+# Retained raw records — bounded and cursor-paginated
+curl -H "Authorization: Bearer $TOKEN" \\
+  "$BASE/api/v1/integrations/health-connect/records?record_type=nutrition\\
+&start_at=2026-08-01T00:00:00Z&end_at=2026-09-02T00:00:00Z&limit=50"`}</CodeBlock>
+            <p className="leading-relaxed mt-3 mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              The records endpoint has no permissive defaults: <code>integration_id</code> or{' '}
+              <code>record_type</code> is required, an explicit <code>start_at</code>/
+              <code>end_at</code> range is required and may span at most 400 days, and pages cap
+              at 200 records. A missing bound is a <code>400</code>, never a full dump. Responses
+              never carry HMAC secrets, token hashes, encrypted credentials, request body
+              digests, or another user&apos;s records.
+            </p>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              Raw records are <strong>diagnostic/source</strong> data — deduplicated, but not
+              unit-normalized and not deconflicted against the direct bridges. For analytics,
+              prefer the canonical domain endpoints: <code>/api/v1/nutrition/daily</code> for
+              actual intake, <code>/api/v1/vitals</code> for approved daily metrics, and{' '}
+              <code>/api/v1/workouts</code> for completed workouts. Use the raw endpoint for the
+              types that are deliberately raw-only, and for debugging what a source really sent.
+            </p>
+
+            <h3 className="text-lg font-semibold mb-2 mt-6">The full relay contract</h3>
+            <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              All 35 record arrays the pinned schema can emit are understood at the ingestion
+              boundary, along with <code>_diagnostics</code> and the backfill window metadata.
+              Unknown top-level fields and unknown record fields are retained verbatim and never
+              fail a delivery. Known record types are structurally validated; failures are counted
+              and reported as <code>normalization.invalid_records</code> and{' '}
+              <code>invalid_by_type</code> while still being retained, so one malformed
+              heart-rate sample never discards the nutrition records delivered with it.
+            </p>
             <h3 className="text-lg font-semibold mb-2 mt-6">Deduplication</h3>
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               Records dedupe on{' '}

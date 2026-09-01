@@ -26,6 +26,15 @@ import {
   BACKFILL_PAYLOAD,
   MACROFACTOR_PACKAGE,
 } from '@/lib/integrations/health-connect/fixtures/payloads';
+import {
+  FULL_RELAY_PAYLOAD,
+  FULL_RELAY_ARRAY_KEYS,
+} from '@/lib/integrations/health-connect/fixtures/full-relay';
+import {
+  MACROFACTOR_PAYLOAD,
+  EXPECTED_DAILY_TOTALS,
+} from '@/lib/integrations/health-connect/fixtures/macrofactor';
+import { RELAY_CONTRACT } from '@/lib/integrations/health-connect/generated/relay-schema';
 
 type WebhookRoute = typeof import('./route');
 type SignatureLib = typeof import('@/lib/integrations/health-connect/signature');
@@ -769,5 +778,158 @@ describe('regressions', () => {
       }),
     );
     expect(res.status).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The complete pinned relay contract
+// ---------------------------------------------------------------------------
+
+describe('full relay contract', () => {
+  it('accepts and retains one record from every array the relay can emit', async () => {
+    await activate();
+    const { res, body } = await send(FULL_RELAY_PAYLOAD);
+
+    expect(res.status).toBe(200);
+    expect(body.status).toBe('accepted');
+    expect(body.records.rejected).toBe(0);
+    // Every array in the pinned contract is present in the fixture, and every
+    // record in it landed in the raw table.
+    expect(FULL_RELAY_ARRAY_KEYS).toEqual(
+      [...RELAY_CONTRACT.recordArrays.map((a) => a.type)].sort(),
+    );
+    const retained = rows(
+      'select distinct record_type from health_connect_raw_records order by record_type',
+    ).map((r) => r.record_type);
+    expect(retained).toEqual(FULL_RELAY_ARRAY_KEYS);
+    expect(body.records.received).toBe(FULL_RELAY_ARRAY_KEYS.length);
+  });
+
+  it('reports no structural problems for a contract-conformant delivery', async () => {
+    await activate();
+    const { body } = await send(FULL_RELAY_PAYLOAD);
+    expect(body.normalization.invalid_records).toBe(0);
+    expect(body.normalization.invalid_by_type).toEqual({});
+  });
+
+  it('retains unknown top-level fields and _diagnostics in the envelope', async () => {
+    await activate();
+    await send(FULL_RELAY_PAYLOAD);
+    const envelope = JSON.parse(
+      String(rows('select raw_envelope_json from health_connect_ingest_runs')[0].raw_envelope_json),
+    );
+    expect(envelope._diagnostics).toEqual({
+      steps: 'ok',
+      sleep: 'permission_denied',
+      read_duration_ms: 812,
+    });
+    expect(envelope.some_future_top_level_field).toEqual({ hello: 'world' });
+    // Record arrays are not duplicated into the envelope shell.
+    expect(envelope.nutrition).toEqual({ omitted_array_length: 1 });
+  });
+
+  it('writes canonical rows for daily_totals only — everything else stays raw', async () => {
+    await activate();
+    await send(FULL_RELAY_PAYLOAD);
+
+    // The fixture's nutrition record is from an UNAPPROVED package.
+    expect(rows('select * from nutrition_daily')).toHaveLength(0);
+    // Only the four approved activity metrics exist, all from daily_totals.
+    const vitals = rows('select distinct metric_key, source from vitals order by metric_key');
+    expect(vitals.map((v) => v.metric_key).sort()).toEqual([
+      'active_calories',
+      'distance',
+      'steps',
+      'total_calories',
+    ]);
+    expect([...new Set(vitals.map((v) => v.source))]).toEqual(['health_connect_daily']);
+    // No workout was invented from the exercise session.
+    expect(rows('select * from workout_sessions')).toHaveLength(0);
+  });
+
+  it('inventories every retained type with its exact source package', async () => {
+    await activate();
+    await send(FULL_RELAY_PAYLOAD);
+    const inventory = await repo.getInventory(OWNER, integrationId);
+
+    expect(inventory.length).toBe(FULL_RELAY_ARRAY_KEYS.length);
+    const nutrition = inventory.find((e) => e.recordType === 'nutrition')!;
+    expect(nutrition.sourcePackage).toBe('com.example.nutrition');
+    expect(nutrition.populatedFields).toContain('calories');
+    const totals = inventory.find((e) => e.recordType === 'daily_totals')!;
+    expect(totals.sourcePackage).toBe('health_connect_aggregate');
+  });
+});
+
+describe('invalid records do not discard valid ones', () => {
+  it('counts a structurally broken record and keeps the rest of the delivery', async () => {
+    await activate();
+    const payload = {
+      ...MACROFACTOR_PAYLOAD,
+      // Missing the required `bpm`, and a non-numeric one, in an unrelated array.
+      heart_rate: [
+        { time: '2026-09-01T15:00:00Z', source: 'com.example.hr', uuid: 'hr-1' },
+        { bpm: 'fast', time: '2026-09-01T15:05:00Z', source: 'com.example.hr', uuid: 'hr-2' },
+      ],
+    };
+    const { res, body } = await send(payload);
+
+    expect(res.status).toBe(200);
+    expect(body.normalization.invalid_records).toBe(2);
+    expect(body.normalization.invalid_by_type).toEqual({ heart_rate: 2 });
+    // The 16 MacroFactor records still normalized into both days.
+    const days = rows('select * from nutrition_daily order by date');
+    expect(days).toHaveLength(2);
+    expect(days[0].calories as number).toBeCloseTo(EXPECTED_DAILY_TOTALS[0].calories, 6);
+    expect(days[1].calories as number).toBeCloseTo(EXPECTED_DAILY_TOTALS[1].calories, 6);
+    // And the broken records were still RETAINED — the raw layer is lossless.
+    expect(
+      rows("select * from health_connect_raw_records where record_type = 'heart_rate'"),
+    ).toHaveLength(2);
+  });
+
+  it('does not raise the integration error banner for a source-side shape problem', async () => {
+    await activate();
+    await send({
+      ...MACROFACTOR_PAYLOAD,
+      heart_rate: [{ time: '2026-09-01T15:00:00Z', uuid: 'hr-1' }],
+    });
+    const integration = await repo.getIntegration(OWNER);
+    expect(integration?.lastError).toBeNull();
+    expect(integration?.status).toBe('active');
+  });
+});
+
+describe('the 16-record MacroFactor delivery', () => {
+  it('produces both expected canonical rows end to end', async () => {
+    await activate();
+    const { body } = await send(MACROFACTOR_PAYLOAD);
+
+    expect(body.records.received).toBe(16);
+    expect(body.records.inserted).toBe(16);
+    expect(body.normalization.nutrition_days_upserted).toBe(2);
+
+    const days = rows('select * from nutrition_daily order by date');
+    expect(days.map((d) => d.date)).toEqual(['2026-08-31', '2026-09-01']);
+    for (const [i, expected] of EXPECTED_DAILY_TOTALS.entries()) {
+      expect(days[i].record_count).toBe(expected.recordCount);
+      expect(days[i].calories as number).toBeCloseTo(expected.calories, 6);
+      expect(days[i].protein_grams as number).toBeCloseTo(expected.proteinGrams, 6);
+      expect(days[i].carbs_grams as number).toBeCloseTo(expected.carbsGrams, 6);
+      expect(days[i].fat_grams as number).toBeCloseTo(expected.fatGrams, 6);
+    }
+  });
+
+  it('re-delivering the same records does not inflate either day', async () => {
+    await activate();
+    await send(MACROFACTOR_PAYLOAD);
+    // A byte-different but record-identical delivery (new timestamp) is NOT a
+    // payload retry, so it goes through the full path again.
+    await send({ ...MACROFACTOR_PAYLOAD, timestamp: '2026-09-01T23:45:00Z' });
+
+    const days = rows('select * from nutrition_daily order by date');
+    expect(days).toHaveLength(2);
+    expect(days[0].record_count).toBe(10);
+    expect(days[0].calories as number).toBeCloseTo(EXPECTED_DAILY_TOTALS[0].calories, 6);
   });
 });

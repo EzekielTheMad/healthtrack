@@ -33,7 +33,10 @@ fetched at runtime, and a drift test fails if our record table stops matching it
    and Android package your phone actually sent, with counts, date ranges and
    which optional fields each source populates.
 6. **Approve exact packages** for the domains you want, tick the matching
-   canonical writes, and press **Activate normalization**.
+   canonical writes, and press **Activate normalization**. Approving a package,
+   enabling a canonical write, switching the nutrition strategy or activating
+   the integration all **rebuild the records already retained** — you do not
+   need another sync from the phone for them to take effect.
 
 ## Inventory first — always
 
@@ -69,7 +72,59 @@ Everything else stays raw-only:
   use and a privacy review.
 
 Raw records for those types are still inventoried, so you can shadow-compare a
-source before ever deciding to promote it.
+source before ever deciding to promote it, and they can be read back through
+`GET /api/v1/integrations/health-connect/records` (scope `read:health_connect`).
+
+## The ingestion contract covers the whole relay
+
+All **35** record arrays the pinned schema can emit are understood at the
+ingestion boundary — steps, distance, active/total calories, heart rate,
+resting heart rate, HRV, sleep sessions and stages, weight, height, body fat,
+lean mass, bone mass, body-water mass, exercise sessions, blood pressure, blood
+glucose, oxygen saturation, body/skin/basal temperatures, respiratory rate,
+hydration, nutrition, mindfulness, BMR, VO₂ max, the reproductive-health
+records, screen time and the daily aggregate totals — plus `_diagnostics` and
+the backfill window metadata.
+
+The field/type/required data for all of them is **derived** from the vendored
+schema rather than hand-copied: `npm run generate:relay-schema` writes
+`src/lib/integrations/health-connect/generated/relay-schema.ts`, and a drift
+test fails if the checked-in file no longer matches the schema. Understanding a
+type is not the same as normalizing it — see the table above for what actually
+becomes canonical data.
+
+Validation behaviour:
+
+- Unknown top-level fields and unknown record fields are **retained verbatim**
+  and never fail a delivery.
+- Known record types are structurally validated against the pinned contract.
+  Failures are **counted and reported** (`normalization.invalid_records` and
+  `invalid_by_type`) and the records are still retained — one malformed
+  heart-rate sample never discards the nutrition records delivered with it.
+- A source-side shape problem is reported separately from `errors` and does not
+  raise the integration's error banner.
+
+## Reading it back (API)
+
+Raw ingestion without a read contract is only half an integration. Two
+PAT-readable endpoints expose what was retained, both requiring the dedicated
+`read:health_connect` scope (`read:all` satisfies it; `write:health_connect`
+does **not** — the phone's token delivers records, it does not read them back):
+
+| Endpoint | Returns |
+|---|---|
+| `GET /api/v1/integrations/health-connect/inventory` | One entry per (record type × exact package): counts, first/last record instants, fields observed, canonical policy and the reason for it |
+| `GET /api/v1/integrations/health-connect/records` | Retained raw records — bounded and cursor-paginated |
+
+The records endpoint has **no permissive defaults**: `integration_id` or
+`record_type` is required, an explicit `start_at`/`end_at` range is required and
+may span at most 400 days, and pages cap at 200 records. A missing bound is a
+`400`, never a full dump. Responses never contain HMAC secrets, PAT hashes,
+encrypted credentials, body digests, or another user's records.
+
+Raw records are **diagnostic/source** data. For analytics, prefer the canonical
+domain endpoints: `/api/v1/nutrition/daily` for intake, `/api/v1/vitals` for
+approved daily metrics, `/api/v1/workouts` for completed workouts.
 
 ## Nutrition is a daily snapshot, not a running total
 
@@ -87,12 +142,34 @@ count. Concretely:
 - Editing a record across midnight recomputes **both** affected days.
 - A missing nutrient stays `null` (unknown) — never `0`.
 
-If inventory shows your food app emits one mutable daily-summary record
-*alongside* individual food records, switch **Nutrition record shape** to
-"Use only the newest daily-summary record" so the two are not summed together.
+### Record shape (strategy)
+
+| Strategy | What it does | Use when |
+|---|---|---|
+| `sum_items` (default) | Sums every deduplicated record for the day | The source emits individual food/meal records — **MacroFactor does this** — or exactly one record per day |
+| `latest_summary` | Uses only the newest record for the day | The source emits one *mutable daily summary* **alongside** item records, where summing both would double count |
+
+MacroFactor emits individual food records with stable Health Connect UUIDs and
+no daily-summary record, so `sum_items` is correct for `com.sbs.diet`.
 
 MacroFactor's Android package is `com.sbs.diet`. That is not a built-in
 allowlist — approve whatever your own inventory reports.
+
+### Reprocess retained nutrition
+
+Settings → Health Connect → **Reprocess retained nutrition** recomputes every
+Phoenix day from the food records already stored, and reports the dates
+rebuilt, rows written, records considered, records skipped and any errors.
+
+It is safe to run repeatedly: the rebuild is a pure function of the retained
+raw state, so it cannot inflate a day. Reach for it when you approved a source
+after the records had already arrived, changed the strategy, or want to confirm
+what the canonical rows are actually derived from.
+
+HealthTrack stores and displays imported **actual intake**. It is not a food
+logger and calculates no targets — MacroFactor remains the source of truth for
+logging and dynamic targets. Imported days are shown at **/nutrition**, a
+top-level page (not a Fitness sub-tab).
 
 ## Deduplication
 
@@ -140,6 +217,9 @@ Records dedupe on `(user, record_type, source_package, source_uuid)`:
     "vitals_upserted": 7,
     "nutrition_days_upserted": 1,
     "skipped_unapproved": 3,
+    "invalid_records": 0,
+    "invalid_by_type": {},
+    "invalid_issues": [],
     "errors": []
   }
 }

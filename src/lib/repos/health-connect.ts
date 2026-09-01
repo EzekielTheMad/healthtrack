@@ -15,13 +15,14 @@
  * ingestion commits (or rolls back) as one better-sqlite3 transaction — the
  * same constraint upsertOwnVital carries in src/lib/repos/vitals.ts.
  */
-import { and, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, type DB } from '@/db';
 import {
   healthConnectIngestRuns,
   healthConnectIntegrations,
   healthConnectRawRecords,
+  nutritionDaily,
   HEALTH_CONNECT_STATUSES,
   NUTRITION_STRATEGIES,
   type AllowedSources,
@@ -34,7 +35,12 @@ import { NotFoundError } from '@/lib/authz';
 import { encrypt } from '@/lib/crypto/encrypt';
 import { decrypt } from '@/lib/crypto/decrypt';
 import { generateHmacSecret } from '@/lib/integrations/health-connect/signature';
-import { NORMALIZABLE_TYPES } from '@/lib/integrations/health-connect/schema';
+import {
+  NORMALIZABLE_TYPES,
+  getRecordType,
+} from '@/lib/integrations/health-connect/schema';
+import { dayKeyInTz } from '@/lib/fitness/weeks';
+import { OWNER_TZ } from '@/lib/fitness/rollup';
 
 export type HealthConnectIntegrationRow = typeof healthConnectIntegrations.$inferSelect;
 export type HealthConnectRawRecordRow = typeof healthConnectRawRecords.$inferSelect;
@@ -133,6 +139,14 @@ export async function getIntegration(
     .where(eq(healthConnectIntegrations.userId, actorId))
     .limit(1);
   return rows[0] ? toIntegrationView(rows[0]) : null;
+}
+
+/** One owned integration by id (404 for anyone else's). Never the secret. */
+export async function getOwnedIntegration(
+  actorId: string,
+  id: string,
+): Promise<HealthConnectIntegrationView> {
+  return toIntegrationView(await requireOwnedIntegration(actorId, id));
 }
 
 /** Internal lookup used by the webhook — carries the encrypted secret. */
@@ -432,6 +446,57 @@ export function listRawRecordsInWindow(
     .all();
 }
 
+/**
+ * Every live raw record of one type written by one of `sourcePackages` —
+ * the input to a FULL rebuild, which has no date bound by definition.
+ * Package matching is exact equality (SQL `in`), never a pattern.
+ */
+export function listRawRecordsForPackages(
+  dbh: HcWriteDb,
+  userId: string,
+  recordType: string,
+  sourcePackages: string[],
+): HealthConnectRawRecordRow[] {
+  if (sourcePackages.length === 0) return [];
+  return dbh
+    .select()
+    .from(healthConnectRawRecords)
+    .where(
+      and(
+        eq(healthConnectRawRecords.userId, userId),
+        eq(healthConnectRawRecords.recordType, recordType),
+        isNull(healthConnectRawRecords.deletedAt),
+        inArray(healthConnectRawRecords.sourcePackage, sourcePackages),
+      ),
+    )
+    .all();
+}
+
+/**
+ * Phoenix dates that already carry a canonical nutrition row for one of
+ * `sourcePackages`. A full rebuild adds these to its target set so a day
+ * whose raw records have gone away loses its stale row instead of keeping a
+ * total nothing supports any more.
+ */
+export function listNutritionDatesForPackages(
+  dbh: HcWriteDb,
+  userId: string,
+  sourcePackages: string[],
+): string[] {
+  if (sourcePackages.length === 0) return [];
+  const rows = dbh
+    .select({ date: nutritionDaily.date })
+    .from(nutritionDaily)
+    .where(
+      and(
+        eq(nutritionDaily.userId, userId),
+        inArray(nutritionDaily.sourcePackage, sourcePackages),
+      ),
+    )
+    .all();
+  return rows.map((r) => r.date);
+}
+
 // ---------------------------------------------------------------------------
 // Ingest runs
 // ---------------------------------------------------------------------------
@@ -598,4 +663,367 @@ export async function getIntegrationStatus(actorId: string) {
       : null,
     statuses: HEALTH_CONNECT_STATUSES,
   };
+}
+
+// ---------------------------------------------------------------------------
+// PAT read surface (read:health_connect) — inventory + bounded raw records
+//
+// Raw ingestion without a read contract is only half an integration: without
+// these, the only way to see what HealthTrack retained was to open the SQLite
+// file. Both paths are strictly owner-scoped, and neither can reach a secret:
+// the HMAC secret, PAT hashes and body digests live in other tables and are
+// never selected here.
+// ---------------------------------------------------------------------------
+
+/** Maximum raw records returned in one page — a conservative bound. */
+export const RAW_RECORDS_MAX_PAGE = 200;
+export const RAW_RECORDS_DEFAULT_PAGE = 50;
+/** Widest time span one raw-records query may cover. */
+export const RAW_RECORDS_MAX_WINDOW_DAYS = 400;
+
+/** A bounded query is refused with 400, not silently widened. */
+export class UnboundedQueryError extends Error {
+  readonly status = 400;
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnboundedQueryError';
+  }
+}
+
+export interface ApiInventoryEntry extends InventoryEntry {
+  integrationId: string | null;
+  integrationStatus: HealthConnectStatus | null;
+  /** 'normalized' when this release writes canonical rows for the type AND the
+      owner approved this exact package; 'raw_only' otherwise. */
+  canonicalPolicy: 'normalized' | 'raw_only';
+  /** Why, in one line — source ownership, privacy, or awaiting approval. */
+  canonicalPolicyReason: string;
+  lastReceivedAt: string | null;
+  lastNormalizedAt: string | null;
+}
+
+export interface InventoryFilters {
+  integrationId?: string;
+  recordType?: string;
+  sourcePackage?: string;
+}
+
+/**
+ * Source inventory for the PAT surface: what was retained, from which exact
+ * package, over what span, and whether it becomes canonical data.
+ *
+ * Owner-scoped by user_id. The integration id filter is an additional
+ * narrowing, never a way to read another account's integration — an id that is
+ * not the caller's simply matches nothing.
+ */
+export async function getApiInventory(
+  actorId: string,
+  filters: InventoryFilters = {},
+): Promise<ApiInventoryEntry[]> {
+  if (!actorId) throw new NotFoundError();
+
+  const integration = (
+    await db
+      .select()
+      .from(healthConnectIntegrations)
+      .where(eq(healthConnectIntegrations.userId, actorId))
+      .limit(1)
+  )[0];
+
+  // A filter naming an integration the caller does not own matches nothing.
+  if (filters.integrationId && filters.integrationId !== integration?.id) return [];
+
+  const groups = await db
+    .select({
+      integrationId: healthConnectRawRecords.integrationId,
+      recordType: healthConnectRawRecords.recordType,
+      sourcePackage: healthConnectRawRecords.sourcePackage,
+      identityKind: healthConnectRawRecords.identityKind,
+      count: sql<number>`count(*)`,
+      oldest: sql<string | null>`min(${healthConnectRawRecords.recordedStartAt})`,
+      newest: sql<string | null>`max(${healthConnectRawRecords.recordedStartAt})`,
+      lastSeenAt: sql<string>`max(${healthConnectRawRecords.lastSeenAt})`,
+    })
+    .from(healthConnectRawRecords)
+    .where(
+      and(
+        eq(healthConnectRawRecords.userId, actorId),
+        isNull(healthConnectRawRecords.deletedAt),
+        filters.recordType
+          ? eq(healthConnectRawRecords.recordType, filters.recordType)
+          : undefined,
+        // Exact equality — the inventory never prefix-matches a package.
+        filters.sourcePackage
+          ? eq(healthConnectRawRecords.sourcePackage, filters.sourcePackage)
+          : undefined,
+      ),
+    )
+    .groupBy(
+      healthConnectRawRecords.recordType,
+      healthConnectRawRecords.sourcePackage,
+      healthConnectRawRecords.identityKind,
+    )
+    .orderBy(healthConnectRawRecords.recordType, healthConnectRawRecords.sourcePackage);
+
+  const approvedNutrition = new Set(integration?.allowedSources?.nutrition ?? []);
+  const enabled = new Set(integration?.enabledTypes ?? []);
+
+  const out: ApiInventoryEntry[] = [];
+  for (const g of groups) {
+    out.push({
+      ...g,
+      integrationId: g.integrationId ?? integration?.id ?? null,
+      integrationStatus: integration?.status ?? null,
+      populatedFields: await observedFields(actorId, g.recordType, g.sourcePackage),
+      ...canonicalPolicyFor(g.recordType, g.sourcePackage, enabled, approvedNutrition, integration?.status),
+      lastReceivedAt: integration?.lastReceivedAt ?? null,
+      lastNormalizedAt: integration?.lastNormalizedAt ?? null,
+    });
+  }
+  return out;
+}
+
+/** Fields at least one recent record of this group actually populated. */
+async function observedFields(
+  actorId: string,
+  recordType: string,
+  sourcePackage: string,
+  sampleSize = 25,
+): Promise<string[]> {
+  const samples = await db
+    .select({ payload: healthConnectRawRecords.payload })
+    .from(healthConnectRawRecords)
+    .where(
+      and(
+        eq(healthConnectRawRecords.userId, actorId),
+        eq(healthConnectRawRecords.recordType, recordType),
+        eq(healthConnectRawRecords.sourcePackage, sourcePackage),
+      ),
+    )
+    .orderBy(desc(healthConnectRawRecords.lastSeenAt))
+    .limit(sampleSize);
+
+  const fields = new Set<string>();
+  for (const s of samples) {
+    for (const [k, v] of Object.entries(s.payload ?? {})) {
+      if (v !== null && v !== undefined) fields.add(k);
+    }
+  }
+  return [...fields].sort();
+}
+
+/**
+ * Whether this exact (type, package) becomes canonical data, and why not.
+ * Mirrors the ingestion decision rather than restating it: the reasons come
+ * from RECORD_TYPES, which is the one place the policy is declared.
+ */
+function canonicalPolicyFor(
+  recordType: string,
+  sourcePackage: string,
+  enabledTypes: Set<string>,
+  approvedNutrition: Set<string>,
+  status: HealthConnectStatus | undefined,
+): { canonicalPolicy: 'normalized' | 'raw_only'; canonicalPolicyReason: string } {
+  const def = getRecordType(recordType);
+  if (!def?.normalized) {
+    return {
+      canonicalPolicy: 'raw_only',
+      canonicalPolicyReason:
+        def?.note ?? 'Not normalized in this release — retained for diagnostics only.',
+    };
+  }
+  if (!enabledTypes.has(recordType)) {
+    return {
+      canonicalPolicy: 'raw_only',
+      canonicalPolicyReason: `Canonical writes for '${recordType}' are not enabled in Settings.`,
+    };
+  }
+  if (recordType === 'nutrition' && !approvedNutrition.has(sourcePackage)) {
+    return {
+      canonicalPolicy: 'raw_only',
+      canonicalPolicyReason: `Package '${sourcePackage}' is not on the exact approved list for nutrition.`,
+    };
+  }
+  if (status !== 'active') {
+    return {
+      canonicalPolicy: 'raw_only',
+      canonicalPolicyReason: `Integration is '${status ?? 'missing'}' — approved records are retained but not normalized until it is active.`,
+    };
+  }
+  return {
+    canonicalPolicy: 'normalized',
+    canonicalPolicyReason: def.note ?? 'Written to canonical tables.',
+  };
+}
+
+export interface RawRecordQuery {
+  integrationId?: string;
+  recordType?: string;
+  sourcePackage?: string;
+  /** Inclusive ISO lower bound on recorded_start_at. */
+  startAt?: string;
+  /** Inclusive ISO upper bound on recorded_start_at. */
+  endAt?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface RawRecordView {
+  id: string;
+  integration_id: string | null;
+  record_type: string;
+  source_package: string;
+  source_uuid: string;
+  identity_kind: RawIdentityKind;
+  recorded_start_at: string | null;
+  recorded_end_at: string | null;
+  /** Owner-local calendar date, when the record has a start instant. */
+  phoenix_date: string | null;
+  source_last_modified_at: string | null;
+  observed_fields: string[];
+  /** The record object exactly as delivered — unknown fields included. */
+  record: Record<string, unknown>;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface RawRecordPage {
+  records: RawRecordView[];
+  next_cursor: string | null;
+}
+
+/**
+ * Bounded, filtered access to retained raw records.
+ *
+ * Two guards make an accidental full dump impossible:
+ *   1. the caller MUST narrow by integration id or record type;
+ *   2. the caller MUST supply an explicit time range, no wider than
+ *      RAW_RECORDS_MAX_WINDOW_DAYS.
+ * Neither has a permissive default — a missing bound is a 400, never "all of
+ * it". Pages are capped at RAW_RECORDS_MAX_PAGE.
+ */
+export async function listRawRecordsPage(
+  actorId: string,
+  query: RawRecordQuery,
+): Promise<RawRecordPage> {
+  if (!actorId) throw new NotFoundError();
+
+  if (!query.integrationId && !query.recordType) {
+    throw new UnboundedQueryError(
+      'Specify integration_id or record_type — an unfiltered dump of retained records is not supported.',
+    );
+  }
+  if (!query.startAt || !query.endAt) {
+    throw new UnboundedQueryError(
+      'Specify both start_at and end_at — an unbounded time range is not supported.',
+    );
+  }
+  const startMs = new Date(query.startAt).getTime();
+  const endMs = new Date(query.endAt).getTime();
+  if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
+    throw new UnboundedQueryError('start_at and end_at must be ISO 8601 timestamps.');
+  }
+  if (endMs < startMs) {
+    throw new UnboundedQueryError('end_at must not be earlier than start_at.');
+  }
+  const spanDays = (endMs - startMs) / 86_400_000;
+  if (spanDays > RAW_RECORDS_MAX_WINDOW_DAYS) {
+    throw new UnboundedQueryError(
+      `Time range spans ${Math.ceil(spanDays)} days — the maximum is ${RAW_RECORDS_MAX_WINDOW_DAYS}.`,
+    );
+  }
+
+  const limit = Math.min(Math.max(1, query.limit ?? RAW_RECORDS_DEFAULT_PAGE), RAW_RECORDS_MAX_PAGE);
+  const after = decodeCursor(query.cursor);
+
+  // Keyset pagination on (recorded_start_at, id): both are stable and the pair
+  // is unique, so a page boundary cannot skip or repeat a record the way
+  // OFFSET does when rows arrive mid-listing.
+  const rows = await db
+    .select()
+    .from(healthConnectRawRecords)
+    .where(
+      and(
+        eq(healthConnectRawRecords.userId, actorId),
+        isNull(healthConnectRawRecords.deletedAt),
+        query.integrationId
+          ? eq(healthConnectRawRecords.integrationId, query.integrationId)
+          : undefined,
+        query.recordType
+          ? eq(healthConnectRawRecords.recordType, query.recordType)
+          : undefined,
+        // Exact equality, never a pattern.
+        query.sourcePackage
+          ? eq(healthConnectRawRecords.sourcePackage, query.sourcePackage)
+          : undefined,
+        gte(healthConnectRawRecords.recordedStartAt, new Date(startMs).toISOString()),
+        lte(healthConnectRawRecords.recordedStartAt, new Date(endMs).toISOString()),
+        after
+          ? or(
+              gt(healthConnectRawRecords.recordedStartAt, after.startAt),
+              and(
+                eq(healthConnectRawRecords.recordedStartAt, after.startAt),
+                gt(healthConnectRawRecords.id, after.id),
+              ),
+            )
+          : undefined,
+      ),
+    )
+    .orderBy(asc(healthConnectRawRecords.recordedStartAt), asc(healthConnectRawRecords.id))
+    .limit(limit + 1);
+
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  return {
+    records: page.map(toRawRecordView),
+    next_cursor:
+      rows.length > limit && last ? encodeCursor(last.recordedStartAt ?? '', last.id) : null,
+  };
+}
+
+/**
+ * The record as the API returns it. Everything sensitive lives in other
+ * tables — the HMAC secret, PAT hashes and the run body digest are not
+ * selected here and cannot appear in this shape.
+ *
+ * `null` and ABSENT are both preserved: the retained object is returned
+ * verbatim, so a nutrient the source explicitly nulled stays null and one it
+ * never sent stays missing.
+ */
+function toRawRecordView(row: HealthConnectRawRecordRow): RawRecordView {
+  const payload = (row.payload ?? {}) as Record<string, unknown>;
+  return {
+    id: row.id,
+    integration_id: row.integrationId,
+    record_type: row.recordType,
+    source_package: row.sourcePackage,
+    source_uuid: row.sourceUuid,
+    identity_kind: row.identityKind,
+    recorded_start_at: row.recordedStartAt,
+    recorded_end_at: row.recordedEndAt,
+    phoenix_date: row.recordedStartAt ? dayKeyInTz(new Date(row.recordedStartAt), OWNER_TZ) : null,
+    source_last_modified_at: row.sourceLastModifiedAt,
+    observed_fields: Object.keys(payload).sort(),
+    record: payload,
+    first_seen_at: row.firstSeenAt,
+    last_seen_at: row.lastSeenAt,
+  };
+}
+
+/** Opaque keyset cursor. Base64url of "<recorded_start_at>|<id>". */
+function encodeCursor(startAt: string, id: string): string {
+  return Buffer.from(`${startAt}|${id}`, 'utf8').toString('base64url');
+}
+
+function decodeCursor(cursor?: string): { startAt: string; id: string } | null {
+  if (!cursor) return null;
+  let decoded: string;
+  try {
+    decoded = Buffer.from(cursor, 'base64url').toString('utf8');
+  } catch {
+    throw new UnboundedQueryError('cursor is not a valid pagination cursor.');
+  }
+  const sep = decoded.lastIndexOf('|');
+  if (sep <= 0) throw new UnboundedQueryError('cursor is not a valid pagination cursor.');
+  return { startAt: decoded.slice(0, sep), id: decoded.slice(sep + 1) };
 }

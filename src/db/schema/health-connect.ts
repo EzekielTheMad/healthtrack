@@ -62,14 +62,16 @@ export type RawIdentityKind = (typeof RAW_IDENTITY_KINDS)[number];
 export type AllowedSources = Record<string, string[]>;
 
 /** How the nutrition domain collapses a Phoenix day into one canonical row.
-    Chosen after inventory reveals MacroFactor's real record shape (PRD §6.7):
-      - 'aggregate'      — sum every deduplicated record for that day (food /
+    Chosen after inventory reveals the source's real record shape (PRD §6.7):
+      - 'sum_items'      — sum every deduplicated record for that day (food /
                            meal records; also correct for a single summary).
-      - 'daily_snapshot' — take only the newest record for that day (used when
+                           MacroFactor (com.sbs.diet) emits individual food
+                           records with stable UUIDs, so this is its strategy.
+      - 'latest_summary' — take only the newest record for that day (used when
                            the source emits ONE mutable daily-summary record
                            alongside item records, where summing double counts).
     Never additive against previously stored totals in either mode. */
-export const NUTRITION_STRATEGIES = ['aggregate', 'daily_snapshot'] as const;
+export const NUTRITION_STRATEGIES = ['sum_items', 'latest_summary'] as const;
 export type NutritionStrategy = (typeof NUTRITION_STRATEGIES)[number];
 
 export const healthConnectIntegrations = sqliteTable(
@@ -97,7 +99,7 @@ export const healthConnectIntegrations = sqliteTable(
       .default([]),
     nutritionStrategy: text('nutrition_strategy', { enum: NUTRITION_STRATEGIES })
       .notNull()
-      .default('aggregate'),
+      .default('sum_items'),
     lastReceivedAt: text('last_received_at'),
     lastNormalizedAt: text('last_normalized_at'),
     lastAppVersion: text('last_app_version'),

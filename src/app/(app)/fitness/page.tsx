@@ -5,7 +5,6 @@ import HistoryView from '@/components/fitness/HistoryView';
 import TrendsView from '@/components/fitness/TrendsView';
 import WeeklyView from '@/components/fitness/WeeklyView';
 import GoalsView from '@/components/fitness/GoalsView';
-import NutritionView from '@/components/fitness/NutritionView';
 
 // ---------------------------------------------------------------------------
 // Fitness page — view-first workout tracking (spec §UI): History (sessions),
@@ -13,6 +12,10 @@ import NutritionView from '@/components/fitness/NutritionView';
 // Logging is agent/API-first; the History tab also offers manual entry
 // ("Log session") for sessions logged by hand. Tab pattern mirrors the
 // vitals page (role=tablist, aria-selected, sage tint).
+//
+// Nutrition deliberately does NOT live here: food intake is its own health
+// domain with its own source of truth and canonical table, so it is a
+// top-level page at /nutrition.
 // ---------------------------------------------------------------------------
 
 const TABS = [
@@ -20,7 +23,6 @@ const TABS = [
   { id: 'trends', label: 'Trends' },
   { id: 'weekly', label: 'Weekly' },
   { id: 'goals', label: 'Goals & catalog' },
-  { id: 'nutrition', label: 'Nutrition' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -72,10 +74,8 @@ export default function FitnessPage() {
         <TrendsView />
       ) : view === 'weekly' ? (
         <WeeklyView />
-      ) : view === 'goals' ? (
-        <GoalsView />
       ) : (
-        <NutritionView />
+        <GoalsView />
       )}
     </div>
   );

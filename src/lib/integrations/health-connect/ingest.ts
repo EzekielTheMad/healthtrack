@@ -29,7 +29,9 @@ import {
   type RawRecordInput,
 } from '@/lib/repos/health-connect';
 import { normalizeDailyTotals } from './normalize-activity';
-import { normalizeNutritionDays, phoenixDate } from './normalize-nutrition';
+import { isKnownRecordType, validateRelayRecord } from './validate-record';
+import { phoenixDate } from './normalize-nutrition';
+import { rebuildNutritionDays } from './rebuild-nutrition';
 import {
   AGGREGATE_SOURCE_PACKAGE,
   MAX_ARRAYS_PER_PAYLOAD,
@@ -62,6 +64,14 @@ export interface NormalizationSummary {
   vitals_upserted: number;
   nutrition_days_upserted: number;
   skipped_unapproved: number;
+  /** Known-type records that failed the pinned structural contract. */
+  invalid_records: number;
+  /** invalid_records broken down by record type. */
+  invalid_by_type: Record<string, number>;
+  /** Why those records failed — reported separately from `errors`, because a
+      source sending a malformed sample is not an integration failure and must
+      not raise the integration's error banner. */
+  invalid_issues: string[];
   errors: string[];
 }
 
@@ -91,13 +101,28 @@ export interface ExtractedRecord extends RawRecordInput {
   phoenixDate: string | null;
 }
 
+/** Records that failed the pinned structural contract for their own type. */
+export interface StructuralReport {
+  /** Total known-type records that did not match the pinned contract. */
+  invalid: number;
+  /** invalid count per record type, so one noisy source is identifiable. */
+  byType: Record<string, number>;
+  /** First few human-readable reasons, for the delivery log. */
+  issues: string[];
+}
+
 export interface ExtractionResult {
   records: ExtractedRecord[];
   /** Entries dropped for being unusable (no timestamp, oversized, malformed). */
   rejected: number;
   /** `daily_totals` entries, kept as delivered for the activity normalizer. */
   dailyTotals: unknown[];
+  /** Structural validation of KNOWN types — reported, never a reason to drop. */
+  structural: StructuralReport;
 }
+
+/** How many distinct issue strings a run keeps. Bounds a hostile payload. */
+const MAX_STRUCTURAL_ISSUES = 10;
 
 /**
  * Walk every array the pinned upstream schema can emit and turn its entries
@@ -107,6 +132,7 @@ export interface ExtractionResult {
 export function extractRecords(envelope: Record<string, unknown>): ExtractionResult {
   const records: ExtractedRecord[] = [];
   const dailyTotals: unknown[] = [];
+  const structural: StructuralReport = { invalid: 0, byType: {}, issues: [] };
   let rejected = 0;
   let arrays = 0;
 
@@ -131,6 +157,32 @@ export function extractRecords(envelope: Record<string, unknown>): ExtractionRes
           `Payload has more than ${MAX_RECORDS_PER_PAYLOAD} records in total.`,
         );
       }
+
+      // Structural validation against the pinned per-type contract. It is a
+      // REPORT, not a filter: the raw layer is a lossless boundary, and a
+      // record that fails one required field is still evidence of what the
+      // phone sent. Normalization has its own, stricter gate (the zod record
+      // schemas), so nothing structurally broken reaches canonical rows.
+      if (isKnownRecordType(key)) {
+        const check = validateRelayRecord(key, entry);
+        if (!check.valid) {
+          structural.invalid += 1;
+          structural.byType[key] = (structural.byType[key] ?? 0) + 1;
+          for (const issue of check.issues) {
+            if (
+              structural.issues.length < MAX_STRUCTURAL_ISSUES &&
+              !structural.issues.includes(issue)
+            ) {
+              structural.issues.push(issue);
+            }
+          }
+        }
+      }
+
+      // Retention is decided separately, and only on what makes a record
+      // STORABLE at all: an identity and a usable instant. A structurally
+      // invalid record that still has both is retained, so one bad field in
+      // one record never discards the valid records around it.
       const extracted = extractOne(key, entry);
       if (extracted) records.push(extracted);
       else rejected += 1;
@@ -139,7 +191,7 @@ export function extractRecords(envelope: Record<string, unknown>): ExtractionRes
     if (key === 'daily_totals') dailyTotals.push(...value);
   }
 
-  return { records, rejected, dailyTotals };
+  return { records, rejected, dailyTotals, structural };
 }
 
 function extractOne(recordType: string, entry: unknown): ExtractedRecord | null {
@@ -270,6 +322,9 @@ export function ingestEnvelope(input: IngestInput): IngestResult {
           vitals_upserted: 0,
           nutrition_days_upserted: 0,
           skipped_unapproved: 0,
+          invalid_records: 0,
+          invalid_by_type: {},
+          invalid_issues: [],
           errors: [],
         },
       };
@@ -308,6 +363,9 @@ export function ingestEnvelope(input: IngestInput): IngestResult {
       vitals_upserted: 0,
       nutrition_days_upserted: 0,
       skipped_unapproved: 0,
+      invalid_records: extraction.structural.invalid,
+      invalid_by_type: extraction.structural.byType,
+      invalid_issues: extraction.structural.issues,
       errors: [],
     };
 
@@ -329,14 +387,20 @@ export function ingestEnvelope(input: IngestInput): IngestResult {
     if (normalizing && enabled.has('nutrition') && nutritionDates.size > 0) {
       const approved = integration.allowedSources.nutrition ?? [];
       if (approved.length > 0) {
-        const nutrition = normalizeNutritionDays(tx, userId, nutritionDates, {
+        // Same service the Settings "Reprocess retained nutrition" action
+        // calls — the webhook only narrows it to the dates this delivery
+        // touched (including the day a moved record LEFT).
+        const nutrition = rebuildNutritionDays(tx, {
+          userId,
           integrationId: integration.id,
-          ingestId,
-          appVersion,
           allowedPackages: approved,
           strategy: integration.nutritionStrategy,
+          dates: nutritionDates,
+          ingestId,
+          appVersion,
+          trigger: 'webhook',
         });
-        normalization.nutrition_days_upserted += nutrition.daysUpserted;
+        normalization.nutrition_days_upserted += nutrition.rowsUpserted;
         normalization.errors.push(...nutrition.errors);
       }
     }
@@ -422,6 +486,9 @@ export function recordTestPing(
         vitals_upserted: 0,
         nutrition_days_upserted: 0,
         skipped_unapproved: 0,
+        invalid_records: 0,
+        invalid_by_type: {},
+        invalid_issues: [],
         errors: [],
       },
     };

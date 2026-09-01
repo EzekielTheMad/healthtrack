@@ -110,3 +110,61 @@ describe('GET /api/v1/openapi.json', () => {
     expect(OPENAPI_DOCUMENT.security).toEqual([{ bearerAuth: [] }]);
   });
 });
+
+describe('Health Connect surface', () => {
+  it('documents the COMPLETE pinned relay envelope, not a subset', async () => {
+    const { RELAY_CONTRACT } = await import(
+      '@/lib/integrations/health-connect/generated/relay-schema'
+    );
+    const envelope = OPENAPI_DOCUMENT.components.schemas.HealthConnectEnvelope as {
+      properties: Record<string, unknown>;
+      required: string[];
+    };
+    for (const array of RELAY_CONTRACT.recordArrays) {
+      expect(envelope.properties[array.type], `envelope missing '${array.type}'`).toBeDefined();
+    }
+    // Envelope metadata the relay sends alongside the arrays.
+    for (const field of ['timestamp', 'app_version', 'source', 'backfill', 'window_start', 'window_end', '_diagnostics']) {
+      expect(envelope.properties[field], `envelope missing '${field}'`).toBeDefined();
+    }
+    expect(envelope.required.sort()).toEqual(['app_version', 'source', 'timestamp']);
+  });
+
+  it('documents the read surface behind read:health_connect', () => {
+    const paths = OPENAPI_DOCUMENT.paths as unknown as Record<
+      string,
+      Record<string, { description: string }>
+    >;
+    for (const path of [
+      '/api/v1/integrations/health-connect/inventory',
+      '/api/v1/integrations/health-connect/records',
+    ]) {
+      expect(paths[path], `undocumented: ${path}`).toBeDefined();
+      expect(paths[path].get.description).toContain('read:health_connect');
+      // The separation that matters: ingest never implies read.
+      expect(paths[path].get.description).toContain('write:health_connect');
+    }
+    const schemas = OPENAPI_DOCUMENT.components.schemas as Record<string, unknown>;
+    for (const name of [
+      'HealthConnectInventoryEntry',
+      'HealthConnectRawRecord',
+      'HealthConnectRecordPage',
+    ]) {
+      expect(schemas[name], `missing schema: ${name}`).toBeDefined();
+    }
+  });
+
+  it('points raw-record readers at the canonical domain endpoints', () => {
+    const records = OPENAPI_DOCUMENT.paths['/api/v1/integrations/health-connect/records']
+      .get.description as string;
+    expect(records).toContain('/api/v1/nutrition/daily');
+    expect(records).toContain('/api/v1/vitals');
+    expect(records).toMatch(/diagnostic/i);
+  });
+
+  it('lists read:health_connect in the bearer scope documentation', () => {
+    expect(OPENAPI_DOCUMENT.components.securitySchemes.bearerAuth.description).toContain(
+      'read:health_connect',
+    );
+  });
+});

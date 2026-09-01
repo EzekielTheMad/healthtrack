@@ -25,6 +25,16 @@ const moreLinks = [
     ),
   },
   {
+    label: 'Nutrition',
+    href: '/nutrition',
+    icon: (
+      // Fork and knife
+      <svg width={iconSize} height={iconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 2v7c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2V2M6 2v20M17 2v20c2.2 0 4-1.8 4-4V7c0-2.8-1.8-5-4-5z" />
+      </svg>
+    ),
+  },
+  {
     label: 'Medications',
     href: '/medications',
     icon: (

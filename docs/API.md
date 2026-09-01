@@ -24,7 +24,10 @@ and writes are hard-scoped to that user's own data.
 
 `write:health_connect` is a deliberately narrow ingest scope: it admits the
 Health Connect webhook receiver and nothing else, so the token you paste into
-a phone app cannot write clinical records, vitals or workouts directly.
+a phone app cannot write clinical records, vitals or workouts directly. Its
+read counterpart, `read:health_connect`, is separate and is **not** implied by
+it — the phone delivers records, it does not read the retained history back
+out. `read:all` satisfies both reads.
 
 ## Endpoints
 
@@ -45,8 +48,64 @@ a phone app cannot write clinical records, vitals or workouts directly.
 | GET | `/api/v1/providers` | `read:providers` | List providers |
 | GET | `/api/v1/profile` | `read:profile` | User profile |
 | GET | `/api/v1/summary` | `read:all` | Full health summary |
-| GET | `/api/v1/nutrition/daily` | `read:nutrition` | Daily nutrition totals (`?start_date=`, `?end_date=`, `?source_package=`) |
+| GET | `/api/v1/nutrition/daily` | `read:nutrition` | Daily nutrition totals (`?start_date=`, `?end_date=`, `?source_package=`, `?limit=`) |
 | POST | `/api/v1/integrations/health-connect/webhook` | `write:health_connect` | Health Connect webhook receiver (HMAC-signed) |
+| GET | `/api/v1/integrations/health-connect/inventory` | `read:health_connect` | Retained source inventory (`?integration_id=`, `?record_type=`, `?source_package=`) |
+| GET | `/api/v1/integrations/health-connect/records` | `read:health_connect` | Retained raw records — bounded & cursor-paginated |
+
+### Which endpoint to read
+
+| You want | Read |
+|---|---|
+| Actual daily food intake | `/api/v1/nutrition/daily` |
+| Canonical daily activity & other approved metrics | `/api/v1/vitals` (+ `/api/v1/metrics`) |
+| Completed programmed workouts | `/api/v1/workouts` |
+| Raw-only or not-yet-productized Health Connect records | `/api/v1/integrations/health-connect/records` |
+| Source coverage & ingestion diagnostics | `/api/v1/integrations/health-connect/inventory` |
+
+Raw records are **diagnostic/source** data: deduplicated, but not
+unit-normalized and not deconflicted against the direct Oura, Renpho and myAir
+bridges. Prefer the canonical domain endpoints for analytics.
+
+## Daily nutrition
+
+```bash
+curl -H "Authorization: Bearer ohts_pat_..." "https://your-instance/api/v1/nutrition/daily?start_date=2026-08-31&end_date=2026-09-01"
+```
+
+```json
+[
+  { "date": "2026-08-31", "source_package": "com.sbs.diet",
+    "calories": 2147.099, "protein_grams": 190.913, "carbs_grams": 199.891,
+    "fat_grams": 70.927, "fiber_grams": null, "sugar_grams": null,
+    "sodium_milligrams": null, "record_count": 10,
+    "updated_at": "2026-09-01T23:30:11.204Z" }
+]
+```
+
+- One row per (America/Phoenix calendar date, exact source package).
+- Date filters are **inclusive**; `source_package` matches by exact equality.
+- A `null` nutrient is **unknown**, never zero — `0` means the source reported
+  zero. Nullable fields stay nullable in every response.
+- Canonical snapshots only: individual food records are never returned here.
+
+## Reading retained Health Connect data
+
+```bash
+curl -H "Authorization: Bearer ohts_pat_..." "https://your-instance/api/v1/integrations/health-connect/inventory"
+
+curl -H "Authorization: Bearer ohts_pat_..." "https://your-instance/api/v1/integrations/health-connect/records?record_type=nutrition&start_at=2026-08-01T00:00:00Z&end_at=2026-09-02T00:00:00Z&limit=50"
+```
+
+The records endpoint is bounded on purpose, with no permissive defaults:
+
+- `integration_id` **or** `record_type` is required;
+- an explicit `start_at`/`end_at` range is required, spanning at most 400 days;
+- pages are cursor-paginated (`next_cursor`), max 200 records.
+
+A missing bound is a `400`, never a full dump. Responses never contain HMAC
+secrets, PAT hashes, encrypted credentials, request body digests, or another
+user's records.
 
 ## Writing vitals (device bridges)
 
@@ -90,6 +149,11 @@ X-Signature: sha256=<hex HMAC-SHA256(secret, exact raw request body)>
   `health_connect_daily`) and MacroFactor nutrition → `nutrition_daily`.
   Everything else stays raw-only; Oura, Renpho and myAir keep ownership of
   their metrics.
+- The ingestion contract covers the **complete** pinned relay schema (35 record
+  arrays). Unknown fields and unknown top-level keys are retained verbatim and
+  never fail a delivery; known records are structurally validated, and failures
+  are counted (`normalization.invalid_records`) without discarding the valid
+  records delivered alongside them.
 
 ## Backfilling history
 

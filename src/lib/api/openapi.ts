@@ -7,6 +7,7 @@
  * path entry here. When you add a v1 route, add its path below.
  */
 import { AVAILABLE_SCOPES } from '@/lib/api-scopes';
+import { healthConnectEnvelopeSchema } from './health-connect-openapi';
 
 const SCOPE_DOC = AVAILABLE_SCOPES.map((s) => `- \`${s.value}\` — ${s.description}`).join('\n');
 
@@ -182,59 +183,109 @@ export const OPENAPI_DOCUMENT = {
         },
         required: ['date', 'source_package', 'record_count'],
       },
-      HealthConnectEnvelope: {
+      HealthConnectEnvelope: healthConnectEnvelopeSchema(),
+      HealthConnectInventoryEntry: {
         type: 'object',
         description:
-          'Life Dashboard companion payload. Pinned to docs/webhook-schema.json ' +
-          'at upstream commit b94f7453a2d61a69bf9866d15e37ae4fb5343e21. Unknown ' +
-          'top-level fields are retained verbatim in the raw layer but never ' +
-          'become normalized health data. Every record array carries optional ' +
-          '`uuid` (stable Health Connect record id) and `source` (Android ' +
-          'package). The companion’s "Send Test Ping" payload ' +
-          '(`{"test": true, …}`) is also accepted.',
+          'One (record type × EXACT source package) group the account has ' +
+          'received, with its canonical-write policy.',
         properties: {
-          timestamp: { type: 'string', description: 'ISO 8601' },
-          app_version: { type: 'string' },
-          source: { type: 'string', enum: ['health_connect'] },
-          backfill: { type: 'boolean' },
-          window_start: { type: 'string' },
-          window_end: { type: 'string' },
-          daily_totals: {
-            type: 'array',
+          integration_id: { type: ['string', 'null'] },
+          integration_status: {
+            type: ['string', 'null'],
+            enum: ['inventory', 'active', 'paused', 'error', null],
+          },
+          record_type: { type: 'string' },
+          source_package: {
+            type: 'string',
+            description: 'Exact Android package, e.g. "com.sbs.diet"',
+          },
+          identity_kind: {
+            type: 'string',
+            enum: ['uuid', 'derived'],
             description:
-              'Health Connect aggregate-API day totals — a daily snapshot ' +
-              'that REPLACES the day, never added to a stored value.',
-            items: {
-              type: 'object',
-              properties: {
-                date: { type: 'string', description: 'YYYY-MM-DD' },
-                steps: { type: 'integer' },
-                distance_meters: { type: 'number' },
-                active_calories: { type: 'number' },
-                total_calories: { type: 'number' },
-              },
-              required: ['date'],
-            },
+              '"derived" means the relay sent no Health Connect record id, so deduplication is content-derived and cannot recognise an edited record.',
           },
-          nutrition: {
+          record_count: { type: 'integer' },
+          earliest_record_at: { type: ['string', 'null'] },
+          latest_record_at: { type: ['string', 'null'] },
+          fields_observed: {
             type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                calories: { type: ['number', 'null'] },
-                protein_grams: { type: ['number', 'null'] },
-                carbs_grams: { type: ['number', 'null'] },
-                fat_grams: { type: ['number', 'null'] },
-                start_time: { type: 'string' },
-                end_time: { type: 'string' },
-                source: { type: 'string' },
-                uuid: { type: 'string' },
-              },
-              required: ['start_time'],
-            },
+            items: { type: 'string' },
+            description: 'Fields at least one recent record of this group populated',
           },
+          canonical_policy: { type: 'string', enum: ['normalized', 'raw_only'] },
+          canonical_policy_reason: { type: 'string' },
+          last_received_at: { type: ['string', 'null'] },
+          last_normalized_at: { type: ['string', 'null'] },
+          last_seen_at: { type: 'string' },
         },
-        required: ['timestamp', 'source'],
+        required: [
+          'record_type',
+          'source_package',
+          'identity_kind',
+          'record_count',
+          'canonical_policy',
+          'canonical_policy_reason',
+        ],
+      },
+      HealthConnectRawRecord: {
+        type: 'object',
+        description:
+          'One retained raw record. DIAGNOSTIC data: deduplicated but not ' +
+          'unit-normalized and not deconflicted against the direct bridges. ' +
+          'Never contains secrets — the HMAC secret, PAT hashes and request ' +
+          'body digests live in other tables and are not exposed anywhere.',
+        properties: {
+          id: { type: 'string' },
+          integration_id: { type: ['string', 'null'] },
+          record_type: { type: 'string' },
+          source_package: { type: 'string' },
+          source_uuid: {
+            type: 'string',
+            description: 'Health Connect record id, or a labelled derived identity',
+          },
+          identity_kind: { type: 'string', enum: ['uuid', 'derived'] },
+          recorded_start_at: { type: ['string', 'null'] },
+          recorded_end_at: { type: ['string', 'null'] },
+          phoenix_date: {
+            type: ['string', 'null'],
+            description: 'Owner-local (America/Phoenix) calendar date of the start instant',
+          },
+          source_last_modified_at: { type: ['string', 'null'] },
+          observed_fields: { type: 'array', items: { type: 'string' } },
+          record: {
+            type: 'object',
+            additionalProperties: true,
+            description:
+              'The record object exactly as delivered, unknown fields included. Null and ABSENT are both preserved.',
+          },
+          first_seen_at: { type: 'string' },
+          last_seen_at: { type: 'string' },
+        },
+        required: [
+          'id',
+          'record_type',
+          'source_package',
+          'source_uuid',
+          'identity_kind',
+          'record',
+        ],
+      },
+      HealthConnectRecordPage: {
+        type: 'object',
+        properties: {
+          records: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/HealthConnectRawRecord' },
+          },
+          next_cursor: {
+            type: ['string', 'null'],
+            description: 'Pass back as ?cursor= for the next page; null on the last page',
+          },
+          max_page_size: { type: 'integer' },
+        },
+        required: ['records', 'next_cursor'],
       },
       HealthConnectIngestResult: {
         type: 'object',
@@ -261,9 +312,33 @@ export const OPENAPI_DOCUMENT = {
                 type: 'integer',
                 description: 'Retained raw but not written canonically (unsupported type, unapproved package, or inventory mode)',
               },
+              invalid_records: {
+                type: 'integer',
+                description:
+                  'Known-type records that failed the pinned structural contract. They are still RETAINED (the raw layer is lossless) and never discard the valid records delivered alongside them.',
+              },
+              invalid_by_type: {
+                type: 'object',
+                additionalProperties: { type: 'integer' },
+                description: 'invalid_records broken down by record type',
+              },
+              invalid_issues: {
+                type: 'array',
+                items: { type: 'string' },
+                description:
+                  'Why those records failed. Reported separately from `errors`: a source sending a malformed sample is not an integration failure.',
+              },
               errors: { type: 'array', items: { type: 'string' } },
             },
-            required: ['vitals_upserted', 'nutrition_days_upserted', 'skipped_unapproved', 'errors'],
+            required: [
+              'vitals_upserted',
+              'nutrition_days_upserted',
+              'skipped_unapproved',
+              'invalid_records',
+              'invalid_by_type',
+              'invalid_issues',
+              'errors',
+            ],
           },
         },
         required: ['ingest_id', 'status', 'records', 'normalization'],
@@ -738,6 +813,141 @@ export const OPENAPI_DOCUMENT = {
             items: { $ref: '#/components/schemas/NutritionDay' },
           }),
           ...VALIDATION_400,
+          ...AUTH_ERRORS,
+        },
+      },
+    },
+    '/api/v1/integrations/health-connect/inventory': {
+      get: {
+        summary: 'Health Connect source inventory (what was retained)',
+        description:
+          'Requires scope `read:health_connect` (or `read:all`). ' +
+          '`write:health_connect` does NOT satisfy it — the token pasted into ' +
+          'a phone delivers records, it does not read the retained history ' +
+          'back out.\n\n' +
+          'Returns one entry per (record type × EXACT source package) the ' +
+          'account has received, with counts, the first and last record ' +
+          'instants, the fields that source actually populates, and whether ' +
+          'the pair becomes canonical data (`canonical_policy`) with the ' +
+          'reason it does not.\n\n' +
+          'This is a source-coverage and ingestion-diagnostics surface. For ' +
+          'product analytics prefer the canonical domain endpoints: ' +
+          '`/api/v1/nutrition/daily` for actual intake and `/api/v1/vitals` ' +
+          '(source `health_connect_daily`) for approved daily activity.',
+        parameters: [
+          {
+            name: 'integration_id',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Exact integration id; another user’s id matches nothing',
+          },
+          {
+            name: 'record_type',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Exact envelope array key, e.g. "nutrition"',
+          },
+          {
+            name: 'source_package',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Exact Android package — never prefix-matched',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Inventory entries', {
+            type: 'array',
+            items: { $ref: '#/components/schemas/HealthConnectInventoryEntry' },
+          }),
+          ...AUTH_ERRORS,
+        },
+      },
+    },
+    '/api/v1/integrations/health-connect/records': {
+      get: {
+        summary: 'Retained raw Health Connect records (bounded, diagnostic)',
+        description:
+          'Requires scope `read:health_connect` (or `read:all`). ' +
+          '`write:health_connect` does NOT satisfy it.\n\n' +
+          'These are DIAGNOSTIC / SOURCE records: exactly what the phone ' +
+          'delivered, deduplicated on ' +
+          '`(user, record_type, source_package, source_uuid)` but NOT ' +
+          'unit-normalized and NOT deconflicted against the direct Oura, ' +
+          'Renpho and myAir bridges. Product analytics should read the ' +
+          'canonical domain endpoints instead — `/api/v1/nutrition/daily` for ' +
+          'intake, `/api/v1/vitals` for approved daily metrics, ' +
+          '`/api/v1/workouts` for completed programmed workouts. This ' +
+          'endpoint exists for the types that are deliberately raw-only and ' +
+          'for debugging what a source actually sent.\n\n' +
+          'Bounded by construction, with no permissive defaults: ' +
+          '`integration_id` or `record_type` is REQUIRED, an explicit ' +
+          '`start_at`/`end_at` range is REQUIRED and may span at most 400 ' +
+          'days, and pages are cursor-paginated with a maximum size of 200. ' +
+          'A missing bound is a 400, never "all of it".\n\n' +
+          'Null and ABSENT are both preserved in `record`: the retained ' +
+          'object is returned verbatim.',
+        parameters: [
+          {
+            name: 'integration_id',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Required unless record_type is given',
+          },
+          {
+            name: 'record_type',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Required unless integration_id is given',
+          },
+          {
+            name: 'source_package',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Exact Android package — never prefix-matched',
+          },
+          {
+            name: 'start_at',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+            description: 'Inclusive ISO 8601 lower bound on the record start instant',
+          },
+          {
+            name: 'end_at',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', format: 'date-time' },
+            description: 'Inclusive ISO 8601 upper bound; at most 400 days after start_at',
+          },
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', default: 50, maximum: 200 },
+          },
+          {
+            name: 'cursor',
+            in: 'query',
+            required: false,
+            schema: { type: 'string' },
+            description: 'Opaque cursor from a previous response’s next_cursor',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('One page of retained records', {
+            $ref: '#/components/schemas/HealthConnectRecordPage',
+          }),
+          '400': {
+            description:
+              'Missing required filter, missing/invalid time range, range too wide, or a malformed cursor',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
           ...AUTH_ERRORS,
         },
       },
