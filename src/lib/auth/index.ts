@@ -68,7 +68,19 @@ function buildAuth() {
     telemetry: { enabled: false },
     // Force the Secure cookie flag in production regardless of how the proxy
     // presents the scheme to the app.
-    advanced: { useSecureCookies: isProd },
+    advanced: {
+      useSecureCookies: isProd,
+      cookies: {
+        // Better Auth defaults the OAuth `state` cookie to Max-Age=300 while
+        // the matching state record it is checked against lives for 600s.
+        // Spending more than five minutes on the provider's account-chooser /
+        // consent / 2FA screens therefore expired the cookie but not the
+        // record, and the callback failed with "State not persisted correctly"
+        // → /?error=state_mismatch. Align the two so only a genuinely stale
+        // flow is rejected.
+        state: { attributes: { maxAge: 600 } },
+      },
+    },
     // Brute-force protection. In-memory storage is adequate for the
     // single-container self-hosted topology (one process); stricter per-route
     // caps on the credential endpoints blunt credential-stuffing.

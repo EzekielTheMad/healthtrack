@@ -18,7 +18,14 @@ import path from 'path';
 let tmpDir: string;
 let savedEnv: Record<string, string | undefined>;
 
-const ENV_KEYS = ['DATA_DIR', 'SIGNUPS_ENABLED', 'APP_URL', 'AUTH_SECRET'] as const;
+const ENV_KEYS = [
+  'DATA_DIR',
+  'SIGNUPS_ENABLED',
+  'APP_URL',
+  'AUTH_SECRET',
+  'GOOGLE_CLIENT_ID',
+  'GOOGLE_CLIENT_SECRET',
+] as const;
 
 async function loadAuth() {
   vi.resetModules();
@@ -41,6 +48,10 @@ beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'healthtrack-auth-'));
   process.env.DATA_DIR = tmpDir;
   delete process.env.SIGNUPS_ENABLED;
+  // Keep provider registration deterministic regardless of the dev machine's
+  // ambient env; the Google tests set these explicitly.
+  delete process.env.GOOGLE_CLIENT_ID;
+  delete process.env.GOOGLE_CLIENT_SECRET;
 });
 
 afterEach(() => {
@@ -201,5 +212,34 @@ describe('better auth server config', () => {
   it('does not register the google provider when env vars are absent', async () => {
     const auth = await loadAuth();
     expect(auth.options.socialProviders?.google).toBeUndefined();
+  });
+});
+
+/**
+ * OAuth state cookie lifetime.
+ *
+ * Better Auth writes the `state` cookie with Max-Age=300 but stores the state
+ * record it is verified against for 600s. A visitor who spends more than five
+ * minutes on the provider's account-chooser / consent / 2FA screens came back
+ * with the record still valid but the cookie already gone, and the callback
+ * failed with "State not persisted correctly" → /?error=state_mismatch.
+ */
+describe('google oauth state cookie', () => {
+  it('lives as long as the state record it is checked against', async () => {
+    process.env.GOOGLE_CLIENT_ID = 'test-client-id';
+    process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
+    const auth = await loadAuth();
+
+    const { headers } = await auth.api.signInSocial({
+      body: { provider: 'google', callbackURL: '/dashboard' },
+      returnHeaders: true,
+    });
+
+    const stateCookie = headers
+      .getSetCookie()
+      .find((c) => c.includes('better-auth.state='));
+
+    expect(stateCookie, 'expected a state cookie').toBeTruthy();
+    expect(stateCookie).toMatch(/Max-Age=600\b/i);
   });
 });
