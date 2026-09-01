@@ -83,17 +83,31 @@ jobs:
           curl -fsS "$base/api/health" | tee health.json | jq -e '.status == "ok"' >/dev/null \
             || fail "/api/health did not return {\"status\":\"ok\"}: $(cat health.json)"
 
-          echo "--- GET /api/capabilities"
-          curl -fsS "$base/api/capabilities" | tee caps.json | jq -e '.signupsEnabled == true' >/dev/null \
-            || fail "/api/capabilities signupsEnabled is not true: $(cat caps.json)"
+          # The container runs with SIGNUPS_ENABLED unset — the DEFAULT, and the
+          # posture real deployments use. That reports signupsEnabled=false
+          # (registration is invite-only); the first account is still allowed
+          # through, because a fresh install must never be bricked.
+          echo "--- GET /api/capabilities (invite-only default)"
+          curl -fsS "$base/api/capabilities" | tee caps.json | jq -e '.signupsEnabled == false' >/dev/null \
+            || fail "/api/capabilities signupsEnabled is not false: $(cat caps.json)"
 
-          echo "--- POST /api/auth/sign-up/email"
+          echo "--- POST /api/auth/sign-up/email (first account bootstraps)"
           code="$(curl -sS -o signup.json -w '%{http_code}' -c cookies.txt \
             -H 'content-type: application/json' \
             -d '{"name":"CI Smoke","email":"ci-smoke@example.com","password":"ci-smoke-password-1"}' \
             "$base/api/auth/sign-up/email")"
-          [ "$code" = "200" ] || fail "sign-up returned $code (want 200): $(cat signup.json)"
+          [ "$code" = "200" ] || fail "bootstrap sign-up returned $code (want 200): $(cat signup.json)"
           grep -q 'better-auth' cookies.txt || fail "sign-up did not set a session cookie"
+
+          # …and the gate closes behind it: a SECOND account needs an invite.
+          # An instance that silently accepts open registration is the failure
+          # that actually matters, so assert it on every build.
+          echo "--- POST /api/auth/sign-up/email (second account blocked -> 403)"
+          code="$(curl -sS -o signup2.json -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            -d '{"name":"CI Intruder","email":"ci-intruder@example.com","password":"ci-intruder-pw-1"}' \
+            "$base/api/auth/sign-up/email")"
+          [ "$code" = "403" ] || fail "second sign-up returned $code (want 403 — signup gate is OPEN): $(cat signup2.json)"
 
           echo "--- POST /api/medications (authed)"
           code="$(curl -sS -o med.json -w '%{http_code}' -b cookies.txt \
