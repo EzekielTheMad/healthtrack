@@ -20,6 +20,7 @@
 - **Fitness tracking** — log workouts manually or via the API (set shorthand like `185x5 x3`), with history, trend charts (est. 1RM, PR badges), weekly rollups, goals, and an exercise catalog
 - **API access** — personal access tokens with scoped permissions for the REST API (`/api/v1/...`), including read endpoints for every domain
 - **Device integrations / bring your own bridge** — push metrics from any device (CPAP, smart scale, watch, CGM, …) via `POST /api/v1/vitals` and `/api/v1/vitals/batch` with idempotent upserts; see [docs/API.md](docs/API.md). Every instance self-documents at `/docs/api` (human cookbook) and `/api/v1/openapi.json` (OpenAPI 3.1) — both public, API-shape only
+- **Health Connect ingestion (Android)** — receive Health Connect data from the [Life Dashboard companion app](https://github.com/owen282000/life-dashboard-companion-app) over an HMAC-signed webhook: daily activity totals land in vitals and food-tracker nutrition becomes daily calories and macros. A new integration starts in **inventory** mode — every record is stored and catalogued, but nothing is written to your health data until you approve the exact apps you trust; see [docs/health-connect.md](docs/health-connect.md)
 - **AI health assistant*** — natural-language questions about your data, health summaries
 - **Oura Ring sync*** — sleep, heart rate and activity data
 - **Sign in with Google*** — alongside built-in email/password auth

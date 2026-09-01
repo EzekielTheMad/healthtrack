@@ -13,6 +13,13 @@
   <Category>Tools: Productivity:</Category>
   <Beta>False</Beta>
   <Changes>
+### 0.5.0
+- Health Connect ingestion (Android): receive Health Connect data from the Life Dashboard companion app over an HMAC-signed webhook (Settings &gt; Health Connect).
+- New integrations start in **inventory** mode — records are stored and catalogued, but nothing is written to your health data until you approve the exact source apps. Existing Oura, Renpho and myAir data keeps its ownership and is never overwritten.
+- Approved today: daily activity totals (steps, distance, active/total calories) into vitals, and food-tracker nutrition into a new daily calories-and-macros view (Fitness &gt; Nutrition).
+- Nutrition is stored as one row per day: every sync recomputes the whole day, so retries and edits correct the day instead of double counting.
+- New PAT scopes: `write:health_connect` (webhook delivery only) and `read:nutrition`.
+- Upgrade is additive — four new tables, no changes to existing data. Nothing appears in your health record until you set the integration up.
 ### 0.4.1
 - Large medical-history PDFs (up to 200 pages / 50MB) are processed in page chunks and merged before review.
 ### 0.4.0
