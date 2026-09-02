@@ -107,6 +107,20 @@ export interface LatestMeasurementWire {
   source: string;
 }
 
+/** One entry of `body.measurements_latest` — a circumference reading plus the
+    canonical unit it is stored in ('in'). */
+export interface LatestBodyMeasurementWire extends LatestMeasurementWire {
+  unit: string | null;
+}
+
+/**
+ * Latest circumference per canonical metric key ('waist', 'left_bicep', …),
+ * as of the week's end. SPARSE: metrics with no reading are ABSENT rather
+ * than null, so clients iterate what is present instead of filtering a wall
+ * of empty keys.
+ */
+export type LatestBodyMeasurementsWire = Record<string, LatestBodyMeasurementWire>;
+
 export interface FrequencyGoalProgressWire {
   goal_id: string;
   session_type: SessionTypeWire;
@@ -132,6 +146,7 @@ export interface WeekRollupWire {
     fat_free_mass_avg: number | null;
     neck_latest: LatestMeasurementWire | null;
     waist_latest: LatestMeasurementWire | null;
+    measurements_latest: LatestBodyMeasurementsWire;
   };
   recovery: {
     hrv_rmssd_avg: number | null;

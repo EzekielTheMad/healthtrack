@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  BODY_MEASUREMENT_KEYS,
   METRICS,
   METRIC_MAP,
   getMetric,
+  metricsInCategory,
   CATEGORY_LABELS,
   CATEGORY_ORDER,
   type MetricCategory,
@@ -21,6 +23,37 @@ const EXISTING_KEYS = [
   'weight',
   'steps',
   'sleep_score',
+  // Body measurements that predate the provider-neutral circumference
+  // vocabulary — their spelling and semantics must never shift.
+  'neck',
+  'chest',
+  'waist',
+  'hips',
+  'bicep',
+  'thigh',
+  'calf',
+];
+
+/** The full canonical circumference vocabulary, unsided and sided. */
+const BODY_MEASUREMENT_VOCABULARY: [key: string, label: string][] = [
+  ['waist', 'Waist'],
+  ['abdomen', 'Abdomen'],
+  ['hips', 'Hips'],
+  ['neck', 'Neck'],
+  ['shoulder', 'Shoulder'],
+  ['chest', 'Chest'],
+  ['bicep', 'Bicep'],
+  ['left_bicep', 'Left Bicep'],
+  ['right_bicep', 'Right Bicep'],
+  ['forearm', 'Forearm'],
+  ['left_forearm', 'Left Forearm'],
+  ['right_forearm', 'Right Forearm'],
+  ['thigh', 'Thigh'],
+  ['left_thigh', 'Left Thigh'],
+  ['right_thigh', 'Right Thigh'],
+  ['calf', 'Calf'],
+  ['left_calf', 'Left Calf'],
+  ['right_calf', 'Right Calf'],
 ];
 
 describe('metric registry', () => {
@@ -119,6 +152,49 @@ describe('metric registry', () => {
     for (const key of ['resting_hr', 'hrv_rmssd', 'spo2', 'bp_systolic', 'bp_diastolic']) {
       expect(getMetric(key)!.chart, `${key} chart`).toBe('stat');
     }
+  });
+
+  it('registers the whole canonical circumference vocabulary with its labels', () => {
+    for (const [key, label] of BODY_MEASUREMENT_VOCABULARY) {
+      const m = getMetric(key);
+      expect(m, `missing body measurement ${key}`).toBeDefined();
+      expect(m!.label, `${key} label`).toBe(label);
+      expect(m!.category, `${key} category`).toBe('body_measurement');
+    }
+    // Closed set: no body_measurement metric outside the vocabulary above.
+    expect([...BODY_MEASUREMENT_KEYS].sort()).toEqual(
+      BODY_MEASUREMENT_VOCABULARY.map(([k]) => k).sort(),
+    );
+  });
+
+  it('gives every circumference the same canonical shape (in / stat / latest / 0.1)', () => {
+    for (const m of metricsInCategory('body_measurement')) {
+      expect(m.unit, `${m.key} unit`).toBe('in');
+      expect(m.valueType, `${m.key} valueType`).toBe('number');
+      expect(m.chart, `${m.key} chart`).toBe('stat');
+      expect(m.aggregate, `${m.key} aggregate`).toBe('latest');
+      expect(m.decimals, `${m.key} decimals`).toBe(1);
+      // Circumference has no universally "better" direction.
+      expect(m.goalDirection, `${m.key} goalDirection`).toBeUndefined();
+      // Day-level like every other tape/scale metric.
+      expect(m.intraday, `${m.key} intraday`).toBeUndefined();
+    }
+  });
+
+  it('keeps left/right circumferences as independent registry entries', () => {
+    for (const base of ['bicep', 'forearm', 'thigh', 'calf']) {
+      // The unsided key survives as its own series alongside the sided ones.
+      for (const key of [base, `left_${base}`, `right_${base}`]) {
+        expect(getMetric(key), key).toBeDefined();
+      }
+      expect(getMetric(`left_${base}`)).not.toBe(getMetric(`right_${base}`));
+    }
+  });
+
+  it('BODY_MEASUREMENT_KEYS is derived from METRICS, in registry order', () => {
+    expect(BODY_MEASUREMENT_KEYS).toEqual(
+      METRICS.filter((m) => m.category === 'body_measurement').map((m) => m.key),
+    );
   });
 
   it('uses sum aggregation for cumulative daily metrics and latest for body metrics', () => {

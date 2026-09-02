@@ -1,7 +1,7 @@
 /**
  * /api/weeks/{weekStart} — session-authenticated weekly rollup for the UI's
- * Weekly tab: sessions by type, body/recovery averages, latest neck/waist,
- * frequency-goal progress, the check-in row, and prior-week deltas. Reuses
+ * Weekly tab: sessions by type, body/recovery averages, latest body
+ * circumferences, frequency-goal progress, the check-in row, and prior-week deltas. Reuses
  * the shared rollup (src/lib/fitness/rollup.ts) — never reimplemented.
  * Supports ?owner_id= delegate scoping; weeks are strictly per-user.
  * weekStart must be a Monday YYYY-MM-DD (400 otherwise).

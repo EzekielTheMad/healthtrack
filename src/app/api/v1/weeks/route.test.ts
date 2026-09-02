@@ -4,7 +4,8 @@
  *
  * Covers the PAT auth matrix, the Monday-key 400, rollup math over sparse
  * body-comp data (avg of per-day means, min of raw weigh-ins, days weighed),
- * recovery averages, latest neck/waist (as-of week end, never future rows),
+ * recovery averages, latest body circumferences (as-of week end, never
+ * future rows) plus the backward-compatible neck/waist fields,
  * frequency-goal progress, the check-in row, prior-week deltas, the
  * Phoenix-timezone week-boundary pins for sessions, and the empty week.
  */
@@ -104,10 +105,19 @@ async function seedEverything(token: string) {
     { metric_key: 'readiness_score', value: 80, recorded_at: '2026-07-06', source: 'oura' },
     { metric_key: 'sleep_duration', value: 7.5, recorded_at: '2026-07-06', source: 'oura' },
     { metric_key: 'sleep_duration', value: 6.5, recorded_at: '2026-07-07', source: 'oura' },
-    // Tape: waist has an older reading and a FUTURE one past the week.
+    // Circumferences: waist has an older reading and a FUTURE one past the week.
     { metric_key: 'waist', value: 40.5, recorded_at: '2026-06-01', source: 'manual' },
     { metric_key: 'waist', value: 41.0, recorded_at: '2026-07-01', source: 'manual' },
     { metric_key: 'waist', value: 42.0, recorded_at: '2026-07-15', source: 'manual' },
+    // A mixed circumference set from a generic integration: unsided, sided,
+    // and a centimetre submission that must be normalized before it lands.
+    { metric_key: 'chest', value: 43.0, recorded_at: '2026-07-07', source: 'example_tape' },
+    { metric_key: 'left_bicep', value: 14.1, recorded_at: '2026-07-07', source: 'example_tape' },
+    { metric_key: 'right_bicep', value: 36.3, unit: 'cm', recorded_at: '2026-07-07', source: 'example_tape' },
+    // Stale reading from before the week - still current AS OF the week end.
+    { metric_key: 'left_thigh', value: 23.0, recorded_at: '2026-05-04', source: 'example_tape' },
+    // Future-only metric: recorded after the week, must never appear.
+    { metric_key: 'shoulder', value: 48.0, recorded_at: '2026-07-20', source: 'example_tape' },
   ];
   const batchRes = await vitalsBatch.POST(
     req('/api/v1/vitals/batch', token, 'POST', { records }),
@@ -247,6 +257,70 @@ describe('rollup contract', () => {
     });
   });
 
+  it('reports every available circumference as of the week end, and no future ones', async () => {
+    const token = fullToken();
+    await seedEverything(token);
+    const { body } = await getRollup(token);
+    const latest = body.body.measurements_latest;
+
+    // Sparse map: only metrics with a reading on or before Sunday Jul 12.
+    expect(Object.keys(latest).sort()).toEqual(
+      ['chest', 'left_bicep', 'left_thigh', 'right_bicep', 'waist'].sort(),
+    );
+    // 'shoulder' was recorded Jul 20 and 'waist' has a Jul 15 reading - neither
+    // future row leaks into this historical week.
+    expect(latest.shoulder).toBeUndefined();
+    expect(latest.waist).toMatchObject({ value: 41, unit: 'in', source: 'manual' });
+    expect(latest.waist.recorded_at).toBe('2026-07-01T00:00:00Z');
+
+    // Every entry carries value + unit + recorded_at + source.
+    for (const [key, m] of Object.entries(latest) as [string, Record<string, unknown>][]) {
+      expect(Object.keys(m).sort(), key).toEqual(['recorded_at', 'source', 'unit', 'value']);
+      expect(m.unit, key).toBe('in');
+    }
+
+    // Left and right stay independent series; the cm submission was
+    // normalized to inches on the way in, not on the way out.
+    expect(latest.left_bicep.value).toBe(14.1);
+    expect(latest.right_bicep.value).toBe(36.3 / 2.54);
+
+    // A stale reading is reported with its own (older) date, not suppressed.
+    expect(latest.left_thigh).toMatchObject({ value: 23, source: 'example_tape' });
+    expect(latest.left_thigh.recorded_at).toBe('2026-05-04T00:00:00Z');
+
+    // No derived series: nothing invents an unsided 'bicep' from left/right.
+    expect(latest.bicep).toBeUndefined();
+  });
+
+  it('keeps neck_latest/waist_latest backward compatible alongside the new map', async () => {
+    const token = fullToken();
+    await seedEverything(token);
+    const { body } = await getRollup(token);
+
+    // Same reading, same three-field shape as before this map existed.
+    expect(body.body.waist_latest).toEqual({
+      value: 41,
+      recorded_at: '2026-07-01T00:00:00Z',
+      source: 'manual',
+    });
+    expect(body.body.neck_latest).toBeNull();
+    expect(body.body.measurements_latest.neck).toBeUndefined();
+
+    // And they agree with the map for the metrics they mirror.
+    const { unit, ...waist } = body.body.measurements_latest.waist;
+    expect(unit).toBe('in');
+    expect(waist).toEqual(body.body.waist_latest);
+  });
+
+  it('returns an empty measurement map for a week with nothing recorded yet', async () => {
+    const token = fullToken();
+    await seedEverything(token);
+    // 2025-07-07 is a Monday, long before any seeded reading.
+    const { body } = await getRollup(token, '2025-07-07');
+    expect(body.body.measurements_latest).toEqual({});
+    expect(body.body.waist_latest).toBeNull();
+  });
+
   it("never mixes in another user's data", async () => {
     const ownerToken = fullToken();
     await seedEverything(ownerToken);
@@ -256,5 +330,8 @@ describe('rollup contract', () => {
     expect(body.body.weight_avg).toBeNull();
     expect(body.frequency_goals).toEqual([]);
     expect(body.checkin).toBeNull();
+    // Circumferences are owner-scoped like everything else in the rollup.
+    expect(body.body.measurements_latest).toEqual({});
+    expect(body.body.waist_latest).toBeNull();
   });
 });

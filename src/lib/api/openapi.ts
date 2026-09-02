@@ -121,17 +121,43 @@ export const OPENAPI_DOCUMENT = {
           'One vital record. `metric_key` must exist in the metric registry ' +
           '(GET /api/v1/metrics). Ordinal metrics take `value` (1-based ' +
           'integer) or `value_label`; number metrics require `value`. `unit`, ' +
-          'when provided, must equal the canonical unit (exception: weight ' +
-          'accepts "kg" and is converted to lbs). `recorded_at` is normalized ' +
-          'to day granularity unless the metric is intraday-capable.',
+          'when provided, must be an accepted input unit for the metric: the ' +
+          'canonical unit, or a registered alternate that is converted ' +
+          'server-side (metrics stored in "lbs" accept "kg"; metrics stored ' +
+          'in "in" — every body_measurement circumference — accept "cm"). An ' +
+          'omitted unit means the value is already in the canonical unit; any ' +
+          'other unit is rejected rather than guessed at. The stored and ' +
+          'returned unit is always the canonical one, and a converted value is ' +
+          'stored unrounded at full double precision (cm/in) - rounding to a ' +
+          "metric's display precision happens only at render time; kg/lbs is " +
+          'the exception, quantizing to a tenth of a pound as it always has. ' +
+          '`recorded_at` is normalized to day granularity unless the metric is ' +
+          'intraday-capable.',
         properties: {
           metric_key: { type: 'string' },
           value: { type: 'number' },
           value_label: { type: 'string', description: 'Ordinal metrics only' },
-          unit: { type: ['string', 'null'] },
+          unit: {
+            type: ['string', 'null'],
+            description:
+              'Canonical or accepted alternate unit (e.g. "in" or "cm" for ' +
+              'circumferences). Omit to declare the value already canonical.',
+          },
           recorded_at: { type: 'string', description: 'ISO date or datetime' },
-          source: { type: 'string', description: 'Device/bridge id, e.g. "oura", "myair"' },
-          metadata: { type: 'object', additionalProperties: true },
+          source: {
+            type: 'string',
+            description:
+              'Free-form identifier for the submitting integration, e.g. ' +
+              '"example_tape", "mobile_health_bridge", "manual_import". Part ' +
+              'of the idempotency tuple.',
+          },
+          metadata: {
+            type: 'object',
+            additionalProperties: true,
+            description:
+              'Opaque provenance owned by the submitting integration — stored ' +
+              'and echoed verbatim, never interpreted as a canonical value.',
+          },
         },
         required: ['metric_key', 'recorded_at', 'source'],
       },
@@ -613,6 +639,16 @@ export const OPENAPI_DOCUMENT = {
         },
         required: ['value', 'recorded_at', 'source'],
       },
+      LatestBodyMeasurement: {
+        type: 'object',
+        properties: {
+          value: { type: 'number', description: 'In the canonical stored unit' },
+          unit: { type: ['string', 'null'], description: 'Canonical unit — "in"' },
+          recorded_at: { type: 'string' },
+          source: { type: 'string', description: 'Submitting integration id' },
+        },
+        required: ['value', 'unit', 'recorded_at', 'source'],
+      },
       WeekRollup: {
         type: 'object',
         description:
@@ -654,8 +690,21 @@ export const OPENAPI_DOCUMENT = {
               fat_free_mass_avg: { type: ['number', 'null'] },
               neck_latest: { $ref: '#/components/schemas/LatestMeasurement' },
               waist_latest: { $ref: '#/components/schemas/LatestMeasurement' },
+              measurements_latest: {
+                type: 'object',
+                description:
+                  'Latest body-circumference reading per canonical metric key ' +
+                  '(waist, neck, left_bicep, …) recorded on or before the ' +
+                  "week's Sunday — never a future reading. SPARSE: a metric " +
+                  'with no reading is ABSENT rather than null, so clients ' +
+                  'iterate what is present. neck_latest/waist_latest carry the ' +
+                  'same readings and are retained for backward compatibility. ' +
+                  'Left/right keys are independent series — nothing here is ' +
+                  'averaged, copied or derived.',
+                additionalProperties: { $ref: '#/components/schemas/LatestBodyMeasurement' },
+              },
             },
-            required: ['weight_avg', 'weight_min', 'days_weighed'],
+            required: ['weight_avg', 'weight_min', 'days_weighed', 'measurements_latest'],
           },
           recovery: {
             type: 'object',
@@ -1388,7 +1437,8 @@ export const OPENAPI_DOCUMENT = {
         description:
           'Requires scope `read:fitness` (or `read:all`). Sessions by type ' +
           'with labels, weigh-in aggregates + days weighed, body-composition ' +
-          'and recovery averages over the days that exist, latest neck/waist, ' +
+          'and recovery averages over the days that exist, the latest body ' +
+          'circumference per registered metric (measurements_latest), ' +
           'active frequency-goal progress, the check-in row, and prior-week ' +
           'deltas. Weeks are Monday-anchored in the owner timezone.',
         parameters: [pathParam('weekStart', 'Monday, YYYY-MM-DD')],

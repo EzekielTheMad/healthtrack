@@ -138,14 +138,35 @@ export const METRICS: readonly MetricDef[] = [
   { key: 'bmr', label: 'BMR', category: 'body_composition', unit: 'kcal', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 0 },
   { key: 'body_age', label: 'Body Age', category: 'body_composition', unit: 'years', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 0, goalDirection: 'lower' },
 
-  // ── Body measurements (stored imperial, like weight) ──────────────────────
+  // ── Body measurements (circumferences; canonical unit 'in') ───────────────
+  //
+  // Provider-neutral vocabulary: any device, app or manual client maps its own
+  // field names onto these keys before submitting. Writes accept 'in' or 'cm'
+  // (see src/lib/metrics/units.ts) and are stored in inches.
+  //
+  // Sidedness is explicit and independent. An unsided key ('bicep', 'forearm',
+  // 'thigh', 'calf') is an unspecified / overall / caller-derived measurement;
+  // 'left_*' and 'right_*' are separate series. HealthTrack never copies,
+  // averages or derives one series from another — it stores exactly what the
+  // caller submitted.
   { key: 'waist', label: 'Waist', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'abdomen', label: 'Abdomen', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
   { key: 'hips', label: 'Hips', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
   { key: 'neck', label: 'Neck', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'shoulder', label: 'Shoulder', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
   { key: 'chest', label: 'Chest', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
-  { key: 'thigh', label: 'Thigh', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
   { key: 'bicep', label: 'Bicep', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'left_bicep', label: 'Left Bicep', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'right_bicep', label: 'Right Bicep', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'forearm', label: 'Forearm', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'left_forearm', label: 'Left Forearm', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'right_forearm', label: 'Right Forearm', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'thigh', label: 'Thigh', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'left_thigh', label: 'Left Thigh', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'right_thigh', label: 'Right Thigh', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
   { key: 'calf', label: 'Calf', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'left_calf', label: 'Left Calf', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
+  { key: 'right_calf', label: 'Right Calf', category: 'body_measurement', unit: 'in', valueType: 'number', chart: 'stat', aggregate: 'latest', decimals: 1 },
 
   // ── Metabolic ─────────────────────────────────────────────────────────────
   { key: 'blood_glucose', label: 'Blood Glucose', category: 'metabolic', unit: 'mg/dL', valueType: 'number', chart: 'stat', aggregate: 'mean', decimals: 0, intraday: true },
@@ -169,3 +190,17 @@ export const METRIC_MAP: ReadonlyMap<string, MetricDef> = new Map(
 export function getMetric(key: string): MetricDef | undefined {
   return METRIC_MAP.get(key);
 }
+
+/** Every registered metric in one category, in registry (display) order. */
+export function metricsInCategory(category: MetricCategory): readonly MetricDef[] {
+  return METRICS.filter((m) => m.category === category);
+}
+
+/**
+ * Canonical body-circumference keys, in registry order — the vocabulary the
+ * weekly rollup reports and any integration writes into. Derived, never a
+ * second hand-maintained list.
+ */
+export const BODY_MEASUREMENT_KEYS: readonly string[] = metricsInCategory(
+  'body_measurement',
+).map((m) => m.key);

@@ -339,9 +339,52 @@ describe('validateVitalWrite', () => {
     const kg = repo.validateVitalWrite({ ...base, metricKey: 'weight', value: 80, unit: 'kg' });
     expect(kg.value).toBeCloseTo(176.4, 5);
     expect(kg.unit).toBe('lbs');
+    // Acceptance is keyed on the canonical unit, so the other lbs metric
+    // normalizes the same way with no per-metric branch.
+    const ffm = repo.validateVitalWrite({
+      ...base,
+      metricKey: 'fat_free_mass',
+      value: 68,
+      unit: 'kg',
+    });
+    expect(ffm.value).toBeCloseTo(149.9, 5);
+    expect(ffm.unit).toBe('lbs');
     // omitted unit → canonical filled in
     const bare = repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 100 });
     expect(bare.unit).toBe('steps');
+  });
+
+  it('accepts cm for every circumference and stores normalized inches', () => {
+    // 96.8 cm ≈ 38.1102 in — stored at full precision, not the 0.1 in display
+    // rounding, and always with the canonical unit.
+    const cm = repo.validateVitalWrite({
+      ...base,
+      metricKey: 'waist',
+      value: 96.8,
+      unit: 'cm',
+    });
+    // The exact quotient is what persists: not the 0.1 in display precision,
+    // and not a guard-rounded intermediate either.
+    expect(cm.value).toBe(96.8 / 2.54);
+    expect(cm.value).toBe(38.11023622047244);
+    expect(cm.value).not.toBe(38.1);
+    expect(cm.value).not.toBe(38.1102);
+    expect(cm.unit).toBe('in');
+
+    // Inch writes are byte-identical to before — no conversion, no rounding.
+    const inches = repo.validateVitalWrite({
+      ...base,
+      metricKey: 'waist',
+      value: 38.125,
+      unit: 'in',
+    });
+    expect(inches.value).toBe(38.125);
+    expect(inches.unit).toBe('in');
+
+    // Omitted unit means "already canonical".
+    const bare = repo.validateVitalWrite({ ...base, metricKey: 'left_calf', value: 15.25 });
+    expect(bare.value).toBe(15.25);
+    expect(bare.unit).toBe('in');
   });
 
   it('rejects units that differ from the registry canonical unit', () => {
@@ -351,6 +394,19 @@ describe('validateVitalWrite', () => {
     expect(() =>
       repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 1, unit: 'pts' }),
     ).toThrow(/unit/);
+    // Circumferences fail closed on anything but in/cm, and the message names
+    // what IS accepted.
+    expect(() =>
+      repo.validateVitalWrite({ ...base, metricKey: 'waist', value: 96.8, unit: 'mm' }),
+    ).toThrow(/Accepted units: in, cm/);
+  });
+
+  it('rejects unknown circumference-shaped keys — the registry stays closed', () => {
+    for (const metricKey of ['left_waist', 'bicep_left', 'wrist']) {
+      expect(() =>
+        repo.validateVitalWrite({ ...base, metricKey, value: 12 }),
+      ).toThrow(/Unknown metric key/);
+    }
   });
 
   it('day-normalizes recorded_at except for intraday metrics', () => {
