@@ -96,12 +96,12 @@ describe('WeekSummary', () => {
     expect(screen.getByText('7.2 hrs')).toBeInTheDocument();
     // sleep_score_avg is null → em dash
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-    // Latest circumference carries its as-of date
+    // Latest circumference carries its measurement date
     expect(screen.getByText(/Neck 16.5 in/)).toBeInTheDocument();
     expect(screen.getByText('Jul 1')).toBeInTheDocument();
   });
 
-  it('renders a full circumference set grouped by measurement day', () => {
+  it('summarizes a full circumference set compactly with a link to details', () => {
     render(
       <WeekSummary
         rollup={makeRollup({
@@ -110,25 +110,87 @@ describe('WeekSummary', () => {
             waist_latest: { value: 38.1, recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
             measurements_latest: {
               waist: { value: 38.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              hips: { value: 37.6, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
               neck: { value: 16.5, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
               left_bicep: { value: 14.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
               right_bicep: { value: 14.3, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
-              // A stale reading from an earlier session keeps its own date.
+              chest: { value: 42, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+            },
+          },
+        })}
+      />,
+    );
+
+    // Header date, three readings in registry order, then the overflow count.
+    expect(screen.getByText(/Measurements ·/)).toBeInTheDocument();
+    expect(screen.getByText('Jul 5')).toBeInTheDocument();
+    expect(screen.getByText('Waist 38.1 in')).toBeInTheDocument();
+    expect(screen.getByText('Hips 37.6 in')).toBeInTheDocument();
+    expect(screen.getByText('Neck 16.5 in')).toBeInTheDocument();
+    expect(screen.getByText(/3 more measurements/)).toBeInTheDocument();
+    // The dense inline dump is gone — the rest live behind the link.
+    expect(screen.queryByText('Left Bicep 14.1 in')).not.toBeInTheDocument();
+    expect(screen.queryByText('Right Bicep 14.3 in')).not.toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'View details' })).toHaveAttribute(
+      'href',
+      '/vitals?view=measurements',
+    );
+  });
+
+  it('shows a single measurement without an overflow count', () => {
+    render(<WeekSummary rollup={makeRollup()} />);
+    expect(screen.getByText('Neck 16.5 in')).toBeInTheDocument();
+    expect(screen.queryByText(/more measurement/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View details' })).toBeInTheDocument();
+  });
+
+  it('shows exactly three measurements without an overflow count', () => {
+    render(
+      <WeekSummary
+        rollup={makeRollup({
+          body: {
+            ...makeRollup().body,
+            measurements_latest: {
+              waist: { value: 38.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              hips: { value: 37.6, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              neck: { value: 16.5, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+            },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText('Waist 38.1 in')).toBeInTheDocument();
+    expect(screen.getByText('Neck 16.5 in')).toBeInTheDocument();
+    expect(screen.queryByText(/more measurement/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a stale reading visibly dated rather than borrowing the header date', () => {
+    render(
+      <WeekSummary
+        rollup={makeRollup({
+          body: {
+            ...makeRollup().body,
+            measurements_latest: {
+              waist: { value: 38.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              // Measured a month earlier — it keeps its own date inline.
               chest: { value: 42, unit: 'in', recorded_at: '2026-06-01T00:00:00Z', source: 'manual_import' },
             },
           },
         })}
       />,
     );
-    // Newest group first, one "as of" line per measurement day.
-    const days = screen.getAllByText(/^(Jul|Jun) \d+$/).map((el) => el.textContent);
-    expect(days).toEqual(['Jul 5', 'Jun 1']);
-    expect(screen.getByText(/Waist 38.1 in · Neck 16.5 in/)).toBeInTheDocument();
-    // Left and right are independent series, both shown, neither averaged.
-    expect(screen.getByText(/Left Bicep 14.1 in/)).toBeInTheDocument();
-    expect(screen.getByText(/Right Bicep 14.3 in/)).toBeInTheDocument();
-    // The stale chest reading is separated by its older date.
-    expect(screen.getByText('Chest 42 in')).toBeInTheDocument();
+    expect(screen.getByText('Jul 5')).toBeInTheDocument();
+    expect(screen.getByText('(Jun 1)')).toBeInTheDocument();
+  });
+
+  it('never compares a sparse measurement to the prior calendar week', () => {
+    render(<WeekSummary rollup={makeRollup()} />);
+    // Weight and the other weekly averages carry prior-week deltas; a
+    // point-in-time circumference must not.
+    expect(screen.getByText('-1.2 vs prior week')).toBeInTheDocument();
+    const measurementLine = screen.getByText('Neck 16.5 in').closest('p')!;
+    expect(measurementLine.textContent).not.toMatch(/prior week/);
   });
 
   it('renders nothing for the measurement block when no circumference exists', () => {
@@ -144,7 +206,8 @@ describe('WeekSummary', () => {
         })}
       />,
     );
-    expect(screen.queryByText(/As of/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Measurements ·/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View details' })).not.toBeInTheDocument();
     // The rest of the Body card still renders.
     expect(screen.getByText('212.4 lb')).toBeInTheDocument();
   });

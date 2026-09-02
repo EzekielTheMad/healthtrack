@@ -13,6 +13,7 @@
 - **Conditions, allergies, procedures, vaccines** — full clinical history
 - **Labs** — visits and results with reference ranges, plus AI-powered PDF parsing of lab and vaccine reports*
 - **Vitals** — blood pressure, heart rate, weight, glucose and more, with reference ranges and trend charts
+- **Body measurements** — waist, chest, arms, legs and the rest, from a tape, a scan or any integration that writes them. Treated as the sparse point-in-time readings they are: each compared with the previous reading of that same measurement rather than a daily average, a lone reading labelled as a baseline, left and right kept as independent series, and changes reported neutrally unless you set a goal; see [docs/body-measurements.md](docs/body-measurements.md)
 - **Family & dependents** — track children or family members under your account, with a transition flow when they grow up
 - **Sharing** — share selected sections of your (or a dependent's) health record with another user, with expiry
 - **Delegates** — grant another user read-only or read-write access to manage a record
