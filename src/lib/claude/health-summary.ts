@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { reasoningModel } from './model';
 import { createMessage } from './call';
 import { aggregateVitals, formatAggregatesForPrompt } from '@/lib/metrics/aggregate';
+import { formatMeasurementsForPrompt } from '@/lib/metrics/measurements';
 import {
   formatGoalsForPrompt,
   formatRecentTrainingForPrompt,
@@ -31,6 +32,19 @@ export interface HealthSummaryInput {
     recorded_at: string;
     /** Ordinal rows carry { label } — used for prompt display. */
     metadata?: Record<string, unknown> | null;
+  }>;
+  /**
+   * Body-circumference rows over a LONGER window than `vitals` — these are
+   * sparse point-in-time readings, and a 30-day window would routinely show a
+   * lone reading with nothing to compare it against. Optional; absent reads
+   * like an instance with no measurements.
+   */
+  bodyMeasurements?: Array<{
+    metric_key: string;
+    value: number;
+    unit: string | null;
+    source: string;
+    recorded_at: string;
   }>;
   interactionAlerts: Array<{
     alert_text: string;
@@ -80,6 +94,7 @@ Rules:
 - Lab results carry draw dates and may be months old. Date-frame every lab-derived statement (e.g., "as of your May 26 draw") — never present an old draw as current.
 - Include "labTests" ONLY on highlights derived from flagged lab results, listing the exact test name(s) as given in the data. Omit the field everywhere else.
 - If active goals are listed, relate relevant highlights to them (progress or gaps), without inventing data.
+- Body measurements are occasional tape/scan readings, not daily vitals. Date-frame every measurement statement, never describe one as a daily average, and do NOT call a change an improvement or a regression unless an explicit goal for that measurement is listed. A measurement marked "baseline" has no history to compare against. Left and right measurements are independent series — never interpret a difference between them medically.
 - Do NOT give medical diagnoses or treatment recommendations.
 - Use plain language a patient can understand.
 - If there is very little data, say so and encourage them to add more.
@@ -136,6 +151,19 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
       parts.push(`Device & vital metrics (30-day aggregates):\n${block}`);
     }
   }
+
+  // Circumferences are formatted separately from the 30-day aggregates above:
+  // latest vs previous with dates and a sample count, never an average.
+  const measurementBlock = formatMeasurementsForPrompt(
+    (input.bodyMeasurements ?? []).map((m) => ({
+      metric_key: m.metric_key,
+      value: m.value,
+      unit: m.unit,
+      source: m.source,
+      recorded_at: m.recorded_at,
+    })),
+  );
+  if (measurementBlock) parts.push(measurementBlock);
 
   if (input.interactionAlerts.length > 0) {
     parts.push(

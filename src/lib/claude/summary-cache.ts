@@ -88,6 +88,12 @@ export async function buildSummaryInputForUser(
   vitalsCutoff.setDate(vitalsCutoff.getDate() - 30);
   const vitalsCutoffISO = vitalsCutoff.toISOString();
 
+  // Body circumferences are sparse — a tape session every few weeks. The
+  // 30-day vitals window would routinely surface a lone reading with nothing
+  // to compare it against, so measurements read the full 12-month window and
+  // are formatted separately (latest vs previous, never averaged).
+  const measurementsCutoffISO = cutoffISO;
+
   // Recent-training block covers the trailing 14 days (spec §AI #1).
   const workoutsCutoff = new Date();
   workoutsCutoff.setDate(workoutsCutoff.getDate() - 14);
@@ -100,12 +106,22 @@ export async function buildSummaryInputForUser(
   // averages would be clinically wrong. Owner rows only (dependent IS NULL).
   const ownVitalsScope = { ownerId: userId, dependentId: null };
 
-  const [meds, conditions, allLabResults, vitals, alerts, activeGoals, recentWorkouts] =
+  const [
+    meds,
+    conditions,
+    allLabResults,
+    vitals,
+    measurementVitals,
+    alerts,
+    activeGoals,
+    recentWorkouts,
+  ] =
     await Promise.all([
       listMedications(userId, scope, { active: true }),
       listConditions(userId, scope),
       listLabResults(userId, scope),
       listVitals(userId, ownVitalsScope, { startDate: vitalsCutoffISO, limit: 2000 }),
+      listVitals(userId, ownVitalsScope, { startDate: measurementsCutoffISO, limit: 2000 }),
       listActiveInteractionAlerts(userId, scope),
       // Fitness context is owner-scoped like the vitals aggregates: goals are
       // strictly per-user, and sessions read owner rows only.
@@ -144,6 +160,15 @@ export async function buildSummaryInputForUser(
       unit: v.unit ?? '',
       recorded_at: v.recordedAt,
       metadata: v.metadata,
+    })),
+    // filterMeasurementRows (measurements.ts) drops everything that is not a
+    // registered circumference, so this passes the whole window through.
+    bodyMeasurements: measurementVitals.map((v) => ({
+      metric_key: v.metricKey,
+      value: v.value,
+      unit: v.unit,
+      source: v.source,
+      recorded_at: v.recordedAt,
     })),
     interactionAlerts: alerts.map((a) => ({
       alert_text: a.alertText,

@@ -173,6 +173,13 @@ in the API, and no allowlist of approved sources.
   from the canonical measurements when you need them.
 - Preserving the original submitted value in `metadata` is welcome but never
   required.
+- **How submitted readings are presented.** Circumferences are treated as
+  sparse point-in-time readings, not daily vitals: each is compared with the
+  previous reading of that same metric (never a 7-day average), a lone reading
+  reads as a baseline, changes are reported neutrally unless the user set a
+  goal, and the free-form `source` is rendered as-is. See
+  [body-measurements.md](body-measurements.md) for the full behaviour, and
+  `GET /api/weeks/{weekStart}` below for `measurements_latest`.
 
 ```json
 {

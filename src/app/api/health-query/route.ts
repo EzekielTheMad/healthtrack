@@ -20,6 +20,7 @@ import { listWorkouts } from '@/lib/repos/workouts';
 import { getProfile } from '@/lib/repos/profiles';
 import { listMedications } from '@/lib/repos/medications';
 import { listLabVisitsWithResults } from '@/lib/repos/labs';
+import { formatMeasurementsForPrompt } from '@/lib/metrics/measurements';
 import { listVitals } from '@/lib/repos/vitals';
 import { listConditions } from '@/lib/repos/conditions';
 import { listNotes } from '@/lib/repos/notes';
@@ -118,6 +119,13 @@ export async function POST(request: Request) {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const thirtyDaysAgoISO = thirtyDaysAgo.toISOString();
 
+    // Body circumferences are sparse point-in-time readings, so they read a
+    // 12-month window instead of the 30-day vitals one and are formatted as
+    // latest-vs-previous rather than averaged (see measurements.ts).
+    const twelveMonthsAgo = new Date();
+    twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
+    const twelveMonthsAgoISO = twelveMonthsAgo.toISOString();
+
     // Recent-training block covers the trailing 14 days (spec §AI #1).
     const fourteenDaysAgo = new Date();
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
@@ -130,6 +138,7 @@ export async function POST(request: Request) {
       medications,
       allLabVisits,
       vitals,
+      measurementVitals,
       allConditions,
       allNotes,
       allAppointments,
@@ -143,6 +152,7 @@ export async function POST(request: Request) {
       listLabVisitsWithResults(userId, scope),
       // Recent vitals (last 30 days), recorded_at desc
       listVitals(userId, ownVitalsScope, { startDate: thirtyDaysAgoISO }),
+      listVitals(userId, ownVitalsScope, { startDate: twelveMonthsAgoISO }),
       listConditions(userId, scope),
       listNotes(userId, scope),
       listAppointments(userId, scope),
@@ -220,6 +230,17 @@ export async function POST(request: Request) {
     const vitalsStr = [
       formatAggregatesForPrompt(aggregateVitals(vitals)),
       formatIntradayReadings(vitals),
+      // Circumferences are excluded from the aggregate block above and
+      // reported here as sparse point-in-time readings with dates.
+      formatMeasurementsForPrompt(
+        measurementVitals.map((v) => ({
+          metric_key: v.metricKey,
+          value: v.value,
+          unit: v.unit,
+          source: v.source,
+          recorded_at: v.recordedAt,
+        })),
+      ),
     ]
       .filter(Boolean)
       .join('\n\n');
