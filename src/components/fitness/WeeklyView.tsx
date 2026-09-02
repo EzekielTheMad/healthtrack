@@ -5,8 +5,10 @@ import { useWeekRollup } from '@/hooks/useWeekRollup';
 import { priorWeekStart, weekStartOf } from '@/lib/fitness/weeks';
 import { shiftDayKey, formatUtcDay, formatUtcDayYear } from '@/lib/dates';
 import { formatMetricValue } from '@/lib/metrics/format';
+import { getMetric } from '@/lib/metrics/registry';
 import {
   SESSION_TYPE_OPTIONS,
+  type LatestBodyMeasurementsWire,
   type WeekRollupWire,
 } from '@/lib/fitness/api-types';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
@@ -112,6 +114,45 @@ function GoalProgressBar({
   );
 }
 
+/**
+ * Latest circumferences, grouped by the day they were recorded (newest group
+ * first). `measurements_latest` is sparse — unmeasured metrics are absent — so
+ * this renders only what exists and never a wall of blanks. Grouping keeps the
+ * mobile line count low when a whole tape session lands on one day, and makes
+ * a stale reading obvious: it carries its own older date.
+ */
+function MeasurementLines({ measurements }: { measurements: LatestBodyMeasurementsWire }) {
+  const entries = Object.entries(measurements);
+  if (entries.length === 0) return null;
+
+  const byDay = new Map<string, string[]>();
+  for (const [key, m] of entries) {
+    // Labels and display precision come from the registry, so a new
+    // circumference metric renders here the moment it is registered.
+    const metric = getMetric(key);
+    const text = `${metric?.label ?? key} ${formatMetricValue(m.value, metric?.decimals ?? 1)}${
+      m.unit ? ` ${m.unit}` : ''
+    }`;
+    const group = byDay.get(m.recorded_at) ?? [];
+    group.push(text);
+    byDay.set(m.recorded_at, group);
+  }
+  const days = [...byDay.keys()].sort().reverse();
+
+  return (
+    <dl className="mt-3 space-y-1">
+      {days.map((day) => (
+        <div key={day} className="text-[11px] leading-snug" style={{ color: 'var(--color-text-muted)' }}>
+          <dt className="inline font-medium">
+            As of <time dateTime={day.slice(0, 10)}>{formatUtcDay(day)}</time>:{' '}
+          </dt>
+          <dd className="inline">{byDay.get(day)!.join(' · ')}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 const cardClass = 'rounded-xl border p-5';
 const cardStyle: React.CSSProperties = {
   backgroundColor: 'var(--bg-card)',
@@ -212,15 +253,7 @@ export function WeekSummary({ rollup }: WeekSummaryProps) {
             },
           ]}
         />
-        {(body.neck_latest || body.waist_latest) && (
-          <p className="mt-3 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-            {body.neck_latest &&
-              `Neck ${body.neck_latest.value} in (as of ${formatUtcDay(body.neck_latest.recorded_at)})`}
-            {body.neck_latest && body.waist_latest && ' · '}
-            {body.waist_latest &&
-              `Waist ${body.waist_latest.value} in (as of ${formatUtcDay(body.waist_latest.recorded_at)})`}
-          </p>
-        )}
+        <MeasurementLines measurements={body.measurements_latest ?? {}} />
       </section>
 
       {/* Recovery */}

@@ -344,6 +344,35 @@ describe('validateVitalWrite', () => {
     expect(bare.unit).toBe('steps');
   });
 
+  it('accepts cm for every circumference and stores normalized inches', () => {
+    // 96.8 cm ≈ 38.1102 in — stored at full precision, not the 0.1 in display
+    // rounding, and always with the canonical unit.
+    const cm = repo.validateVitalWrite({
+      ...base,
+      metricKey: 'waist',
+      value: 96.8,
+      unit: 'cm',
+    });
+    expect(cm.value).toBeCloseTo(38.1102, 4);
+    expect(cm.value).not.toBe(38.1);
+    expect(cm.unit).toBe('in');
+
+    // Inch writes are byte-identical to before — no conversion, no rounding.
+    const inches = repo.validateVitalWrite({
+      ...base,
+      metricKey: 'waist',
+      value: 38.125,
+      unit: 'in',
+    });
+    expect(inches.value).toBe(38.125);
+    expect(inches.unit).toBe('in');
+
+    // Omitted unit means "already canonical".
+    const bare = repo.validateVitalWrite({ ...base, metricKey: 'left_calf', value: 15.25 });
+    expect(bare.value).toBe(15.25);
+    expect(bare.unit).toBe('in');
+  });
+
   it('rejects units that differ from the registry canonical unit', () => {
     expect(() =>
       repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, unit: 'km' }),
@@ -351,6 +380,19 @@ describe('validateVitalWrite', () => {
     expect(() =>
       repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 1, unit: 'pts' }),
     ).toThrow(/unit/);
+    // Circumferences fail closed on anything but in/cm, and the message names
+    // what IS accepted.
+    expect(() =>
+      repo.validateVitalWrite({ ...base, metricKey: 'waist', value: 96.8, unit: 'mm' }),
+    ).toThrow(/Accepted units: in, cm/);
+  });
+
+  it('rejects unknown circumference-shaped keys — the registry stays closed', () => {
+    for (const metricKey of ['left_waist', 'bicep_left', 'wrist']) {
+      expect(() =>
+        repo.validateVitalWrite({ ...base, metricKey, value: 12 }),
+      ).toThrow(/Unknown metric key/);
+    }
   });
 
   it('day-normalizes recorded_at except for intraday metrics', () => {

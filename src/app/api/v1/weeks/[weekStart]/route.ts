@@ -13,8 +13,8 @@ export async function OPTIONS() {
  * GET /api/v1/weeks/{weekStart} — the computed weekly rollup (fitness design
  * spec §API): sessions by type with labels, weigh-in aggregates + days
  * weighed, body-composition and recovery averages over the days that exist,
- * latest neck/waist, active frequency-goal progress, the check-in row, and
- * prior-week deltas. Nothing is stored; every call recomputes from source
+ * the latest reading per registered body-circumference metric, active
+ * frequency-goal progress, the check-in row, and prior-week deltas. Nothing is stored; every call recomputes from source
  * rows. weekStart must be a Monday `YYYY-MM-DD` (400 otherwise) — weeks are
  * Monday-anchored in the owner's timezone (see src/lib/fitness/rollup.ts).
  */

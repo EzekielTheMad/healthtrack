@@ -183,6 +183,97 @@ describe('POST /api/v1/vitals — validation + semantics', () => {
     expect(vital.unit).toBe('lbs');
   });
 
+  it('accepts a body-measurement key in inches, unchanged and unrounded', async () => {
+    const res = await single.POST(
+      post('/api/v1/vitals', mintToken(OWNER, ['write:vitals']), {
+        metric_key: 'left_bicep',
+        value: 14.125,
+        unit: 'in',
+        source: 'example_tape',
+        recorded_at: '2026-09-01',
+      }),
+    );
+    expect(res.status).toBe(201);
+    const { vital } = await res.json();
+    expect(vital.value).toBe(14.125);
+    expect(vital.unit).toBe('in');
+    expect(vital.recorded_at).toBe('2026-09-01T00:00:00Z');
+  });
+
+  it('accepts centimetres and persists the normalized inch value', async () => {
+    const res = await single.POST(
+      post('/api/v1/vitals', mintToken(OWNER, ['write:vitals']), {
+        metric_key: 'waist',
+        value: 96.8,
+        unit: 'cm',
+        source: 'example_tape',
+        recorded_at: '2026-09-01',
+      }),
+    );
+    expect(res.status).toBe(201);
+    const { vital } = await res.json();
+    // Response carries the normalized value and the canonical unit.
+    expect(vital.value).toBeCloseTo(38.1102, 4);
+    expect(vital.unit).toBe('in');
+
+    // ...and that is what actually landed in the row, not the submitted cm.
+    const row = ctx.sqlite
+      .prepare("select value, unit from vitals where metric_key = 'waist'")
+      .get() as { value: number; unit: string };
+    expect(row.value).toBeCloseTo(38.1102, 4);
+    expect(row.unit).toBe('in');
+  });
+
+  it('400 for a unit no metric accepts, naming the accepted ones', async () => {
+    const res = await single.POST(
+      post('/api/v1/vitals', mintToken(OWNER, ['write:vitals']), {
+        metric_key: 'waist',
+        value: 968,
+        unit: 'mm',
+        source: 'example_tape',
+        recorded_at: '2026-09-01',
+      }),
+    );
+    expect(res.status).toBe(400);
+    const { error } = await res.json();
+    expect(error).toContain('waist');
+    expect(error).toContain('in, cm');
+
+    // Nothing was written.
+    const count = ctx.sqlite.prepare('select count(*) as n from vitals').get() as { n: number };
+    expect(count.n).toBe(0);
+  });
+
+  it('stores caller metadata verbatim alongside a normalized measurement', async () => {
+    const res = await single.POST(
+      post('/api/v1/vitals', mintToken(OWNER, ['write:vitals']), {
+        metric_key: 'right_thigh',
+        value: 55,
+        unit: 'cm',
+        source: 'mobile_health_bridge',
+        recorded_at: '2026-09-01',
+        metadata: {
+          external_record_id: 'synthetic-record-1',
+          device_type: 'smart_tape',
+          original_value: 55,
+          original_unit: 'cm',
+        },
+      }),
+    );
+    expect(res.status).toBe(201);
+    const { vital } = await res.json();
+    // Provenance survives the write path untouched...
+    expect(vital.metadata).toEqual({
+      external_record_id: 'synthetic-record-1',
+      device_type: 'smart_tape',
+      original_value: 55,
+      original_unit: 'cm',
+    });
+    // ...and never overrides the canonical value/unit.
+    expect(vital.value).toBeCloseTo(21.6535, 4);
+    expect(vital.unit).toBe('in');
+  });
+
   it('re-POST of the same (metric, day, source) tuple is an update', async () => {
     const token = mintToken(OWNER, ['write:vitals']);
     const first = await single.POST(post('/api/v1/vitals', token, RECORD));
@@ -255,6 +346,108 @@ describe('POST /api/v1/vitals/batch', () => {
     expect(body.inserted).toBe(0);
     expect(body.updated).toBe(2);
     expect(body.errors).toEqual([]);
+  });
+
+  it('accepts a mixed provider-neutral circumference batch and normalizes units', async () => {
+    const token = mintToken(OWNER, ['write:vitals']);
+    const res = await batch.POST(
+      post('/api/v1/vitals/batch', token, {
+        records: [
+          // Direct (unsided, pre-existing) measurement in centimetres.
+          {
+            metric_key: 'waist',
+            value: 96.8,
+            unit: 'cm',
+            recorded_at: '2026-09-01',
+            source: 'example_tape',
+            metadata: { external_record_id: 'synthetic-record-1', device_type: 'smart_tape' },
+          },
+          // Unsided measurement in inches, no unit conversion.
+          { metric_key: 'thigh', value: 22.5, unit: 'in', recorded_at: '2026-09-01', source: 'example_tape' },
+          // Left/right pair, one per unit system - independent series.
+          { metric_key: 'left_bicep', value: 14.1, unit: 'in', recorded_at: '2026-09-01', source: 'example_tape' },
+          { metric_key: 'right_bicep', value: 36.3, unit: 'cm', recorded_at: '2026-09-01', source: 'example_tape' },
+          // New unsided/sided keys with the unit omitted -> already canonical.
+          { metric_key: 'shoulder', value: 48, recorded_at: '2026-09-01', source: 'example_tape' },
+          { metric_key: 'left_calf', value: 15.25, recorded_at: '2026-09-01', source: 'example_tape' },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toMatchObject({ inserted: 6, updated: 0, errors: [] });
+
+    const rows = ctx.sqlite
+      .prepare('select metric_key, value, unit from vitals order by metric_key')
+      .all() as { metric_key: string; value: number; unit: string }[];
+    expect(rows.map((r) => r.metric_key)).toEqual([
+      'left_bicep',
+      'left_calf',
+      'right_bicep',
+      'shoulder',
+      'thigh',
+      'waist',
+    ]);
+    // Every row lands in the canonical unit...
+    expect(rows.every((r) => r.unit === 'in')).toBe(true);
+    const value = (key: string) => rows.find((r) => r.metric_key === key)!.value;
+    expect(value('waist')).toBeCloseTo(38.1102, 4);
+    expect(value('right_bicep')).toBeCloseTo(14.2913, 4);
+    // ...and the inch inputs are stored exactly as submitted.
+    expect(value('thigh')).toBe(22.5);
+    expect(value('left_bicep')).toBe(14.1);
+    expect(value('shoulder')).toBe(48);
+    expect(value('left_calf')).toBe(15.25);
+  });
+
+  it('re-posting one circumference for the same day and source updates in place', async () => {
+    const token = mintToken(OWNER, ['write:vitals']);
+    const record = {
+      metric_key: 'left_forearm',
+      value: 11.5,
+      unit: 'in',
+      recorded_at: '2026-09-01',
+      source: 'example_tape',
+    };
+    const first = await batch.POST(post('/api/v1/vitals/batch', token, { records: [record] }));
+    expect(await first.json()).toMatchObject({ inserted: 1, updated: 0 });
+
+    // Same metric/date/source, corrected value, submitted in cm this time.
+    const second = await batch.POST(
+      post('/api/v1/vitals/batch', token, {
+        records: [{ ...record, value: 29.5, unit: 'cm' }],
+      }),
+    );
+    expect(await second.json()).toMatchObject({ inserted: 0, updated: 1 });
+
+    const rows = ctx.sqlite
+      .prepare("select value from vitals where metric_key = 'left_forearm'")
+      .all() as { value: number }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].value).toBeCloseTo(11.6142, 4);
+  });
+
+  it('fails a batch record closed on an unknown key or unsupported unit, keeping the rest', async () => {
+    const token = mintToken(OWNER, ['write:vitals']);
+    const res = await batch.POST(
+      post('/api/v1/vitals/batch', token, {
+        records: [
+          { metric_key: 'neck', value: 16.5, unit: 'in', recorded_at: '2026-09-01', source: 'example_tape' },
+          { metric_key: 'left_waist', value: 38, unit: 'in', recorded_at: '2026-09-01', source: 'example_tape' },
+          { metric_key: 'hips', value: 1010, unit: 'mm', recorded_at: '2026-09-01', source: 'example_tape' },
+        ],
+      }),
+    );
+    const body = await res.json();
+    expect(body.inserted).toBe(1);
+    expect(body.errors).toHaveLength(2);
+    expect(body.errors[0]).toMatchObject({ index: 1 });
+    expect(body.errors[0].message).toContain('left_waist');
+    expect(body.errors[1]).toMatchObject({ index: 2 });
+    expect(body.errors[1].message).toContain('in, cm');
+
+    const count = ctx.sqlite.prepare('select count(*) as n from vitals').get() as { n: number };
+    expect(count.n).toBe(1);
   });
 
   it('400 for a malformed envelope (missing records, > 500 records)', async () => {

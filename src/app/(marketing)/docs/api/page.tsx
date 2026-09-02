@@ -342,8 +342,21 @@ export default function ApiDocsPage() {
                 (blood_glucose, bp_systolic, bp_diastolic), which keep full timestamps.
               </li>
               <li>
-                <code>unit</code> is optional; when provided it must equal the metric&apos;s
-                canonical unit (no silent conversion — weight/kg is the only exception).
+                <code>unit</code> is optional; omitting it declares the value already
+                canonical. When provided it must be an accepted input unit for the metric —
+                the canonical unit, or a registered alternate converted server-side (metrics
+                stored in <code>lbs</code> accept <code>kg</code>; metrics stored in{' '}
+                <code>in</code>, which is every body circumference, accept <code>cm</code>).
+                Anything else is rejected rather than guessed at, and responses always echo
+                the normalized value with the canonical unit.
+              </li>
+              <li>
+                Body circumferences are provider-neutral: integrations map their own field
+                names onto the canonical keys (<code>waist</code>, <code>abdomen</code>,{' '}
+                <code>shoulder</code>, <code>left_bicep</code>, <code>right_calf</code>, …)
+                before submitting. Unsided keys are an unspecified or caller-derived
+                measurement; <code>left_*</code> and <code>right_*</code> are independent
+                series that are never averaged, copied or derived from one another.
               </li>
               <li>
                 Unknown <code>metric_key</code>s are rejected with 400: the registry is closed.

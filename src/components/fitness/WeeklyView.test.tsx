@@ -31,6 +31,9 @@ function makeRollup(overrides: Partial<WeekRollupWire> = {}): WeekRollupWire {
       fat_free_mass_avg: 152.6,
       neck_latest: { value: 16.5, recorded_at: '2026-07-01T00:00:00Z', source: 'manual' },
       waist_latest: null,
+      measurements_latest: {
+        neck: { value: 16.5, unit: 'in', recorded_at: '2026-07-01T00:00:00Z', source: 'manual' },
+      },
     },
     recovery: {
       hrv_rmssd_avg: 42,
@@ -93,8 +96,57 @@ describe('WeekSummary', () => {
     expect(screen.getByText('7.2 hrs')).toBeInTheDocument();
     // sleep_score_avg is null → em dash
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-    // Latest tape reading carries its as-of date
-    expect(screen.getByText(/Neck 16.5 in \(as of Jul 1\)/)).toBeInTheDocument();
+    // Latest circumference carries its as-of date
+    expect(screen.getByText(/Neck 16.5 in/)).toBeInTheDocument();
+    expect(screen.getByText('Jul 1')).toBeInTheDocument();
+  });
+
+  it('renders a full circumference set grouped by measurement day', () => {
+    render(
+      <WeekSummary
+        rollup={makeRollup({
+          body: {
+            ...makeRollup().body,
+            waist_latest: { value: 38.1, recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+            measurements_latest: {
+              waist: { value: 38.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              neck: { value: 16.5, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              left_bicep: { value: 14.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              right_bicep: { value: 14.3, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+              // A stale reading from an earlier session keeps its own date.
+              chest: { value: 42, unit: 'in', recorded_at: '2026-06-01T00:00:00Z', source: 'manual_import' },
+            },
+          },
+        })}
+      />,
+    );
+    // Newest group first, one "as of" line per measurement day.
+    const days = screen.getAllByText(/^(Jul|Jun) \d+$/).map((el) => el.textContent);
+    expect(days).toEqual(['Jul 5', 'Jun 1']);
+    expect(screen.getByText(/Waist 38.1 in · Neck 16.5 in/)).toBeInTheDocument();
+    // Left and right are independent series, both shown, neither averaged.
+    expect(screen.getByText(/Left Bicep 14.1 in/)).toBeInTheDocument();
+    expect(screen.getByText(/Right Bicep 14.3 in/)).toBeInTheDocument();
+    // The stale chest reading is separated by its older date.
+    expect(screen.getByText('Chest 42 in')).toBeInTheDocument();
+  });
+
+  it('renders nothing for the measurement block when no circumference exists', () => {
+    render(
+      <WeekSummary
+        rollup={makeRollup({
+          body: {
+            ...makeRollup().body,
+            neck_latest: null,
+            waist_latest: null,
+            measurements_latest: {},
+          },
+        })}
+      />,
+    );
+    expect(screen.queryByText(/As of/)).not.toBeInTheDocument();
+    // The rest of the Body card still renders.
+    expect(screen.getByText('212.4 lb')).toBeInTheDocument();
   });
 
   it('reads an empty week honestly', () => {

@@ -117,13 +117,88 @@ Record shape (snake_case):
 
 - `metric_key` must exist in the closed metric registry (`GET /api/v1/metrics`).
 - Ordinal metrics take `value_label` (e.g. `"solid"`) or a 1-based integer `value`.
-- `unit` is optional and must match the canonical unit (`weight` also accepts `kg`).
+- `unit` is optional. When present it must be an **accepted input unit** for the
+  metric: the canonical unit, or a registered alternate that HealthTrack
+  converts server-side (metrics stored in `lbs` accept `kg`; metrics stored in
+  `in` accept `cm`). Omitting it declares the value already canonical. Any other
+  unit is a `400` — HealthTrack never guesses. Responses always echo the
+  normalized value and the canonical unit.
 - `recorded_at` is day-normalized unless the metric is intraday-capable
   (`blood_glucose`, `bp_systolic`, `bp_diastolic`).
+- `source` is a free-form identifier for the submitting integration. Use
+  whatever names your bridge, e.g. `example_tape`, `mobile_health_bridge`,
+  `manual_import`.
+- `metadata` is opaque provenance owned by the submitting integration: stored
+  and echoed verbatim, never interpreted as a canonical value.
 - Writes are **idempotent** on `(metric_key, recorded_at, source)` — re-pushing
   updates instead of duplicating, so bridges can safely re-send.
 - Batch: `{ "records": [...] }`, max 500; per-record errors reported by index
   without aborting the rest.
+
+### Body measurements (circumferences)
+
+HealthTrack is source-agnostic: it owns the canonical vocabulary, validation,
+normalization, storage and presentation. **Integrations map their own source
+schema onto these keys before submitting** — there is no vendor-specific logic
+in the API, and no allowlist of approved sources.
+
+| Region | Unsided | Left | Right |
+| --- | --- | --- | --- |
+| Neck | `neck` | — | — |
+| Shoulder | `shoulder` | — | — |
+| Chest | `chest` | — | — |
+| Waist | `waist` | — | — |
+| Abdomen | `abdomen` | — | — |
+| Hips | `hips` | — | — |
+| Bicep | `bicep` | `left_bicep` | `right_bicep` |
+| Forearm | `forearm` | `left_forearm` | `right_forearm` |
+| Thigh | `thigh` | `left_thigh` | `right_thigh` |
+| Calf | `calf` | `left_calf` | `right_calf` |
+
+- **Side semantics.** An unsided key is an unspecified, overall or
+  caller-derived measurement. `left_*` and `right_*` are **independent series**.
+  HealthTrack never copies, averages or derives one from another — send exactly
+  the series you measured.
+- **Units.** Every circumference accepts `in` or `cm`. The canonical stored unit
+  is `in`; centimetres are converted before persistence at full precision
+  (display rounds to one decimal, storage does not).
+- **Derived values** such as waist-to-hip ratio are not stored. Compute them
+  from the canonical measurements when you need them.
+- Preserving the original submitted value in `metadata` is welcome but never
+  required.
+
+```json
+{
+  "records": [
+    {
+      "metric_key": "waist",
+      "value": 96.8,
+      "unit": "cm",
+      "recorded_at": "2026-09-01",
+      "source": "example_tape",
+      "metadata": {
+        "external_record_id": "synthetic-record-1",
+        "device_type": "smart_tape"
+      }
+    },
+    {
+      "metric_key": "left_bicep",
+      "value": 14.1,
+      "unit": "in",
+      "recorded_at": "2026-09-01",
+      "source": "example_tape"
+    }
+  ]
+}
+```
+
+Read them back per metric via `GET /api/v1/vitals?metric=left_bicep`, or as a
+week-end snapshot via `body.measurements_latest` on
+`GET /api/v1/weeks/{weekStart}` — a **sparse** object keyed by canonical metric
+key (`value`, `unit`, `recorded_at`, `source`), holding the latest reading on or
+before that week's Sunday. Metrics with no reading are **absent rather than
+null**. `body.neck_latest` / `body.waist_latest` still carry the same readings
+in their original three-field shape.
 
 ## Health Connect ingestion (Android)
 

@@ -16,7 +16,7 @@ import { db, type DB } from '@/db';
 import { vitals, vitalReferenceRanges, vitalSourcePreferences } from '@/db/schema';
 import { requireAuthz } from '@/lib/authz';
 import { getMetric } from '@/lib/metrics/registry';
-import { weightToLbs } from '@/lib/units';
+import { acceptedUnitsFor, convertToCanonicalUnit } from '@/lib/metrics/units';
 import { camelToSnakeKey } from '@/lib/api/snake';
 import { dependentFilter, requireListAuthz, type ListScope } from './_scope';
 
@@ -62,7 +62,7 @@ export async function listVitals(
  * matrix (owner/delegate write into the given scope) but validates and
  * normalizes the record through the same registry rules as the v1 ingest
  * API — closed metric registry, ordinal label resolution + metadata.label
- * stamping, canonical units (weight accepts kg), day-normalized recorded_at
+ * stamping, canonical units (kg→lbs, cm→in), day-normalized recorded_at
  * for non-intraday metrics. Scope keys in the input are stripped — row scope
  * is never client-controlled. Throws VitalWriteError (→ 400) on bad input.
  *
@@ -108,8 +108,9 @@ export interface UpsertVitalInput {
   value?: number;
   /** Ordinal metrics only — resolved to the 1-based value via the registry. */
   valueLabel?: string;
-  /** Optional; must equal the registry canonical unit when provided
-      (exception: weight accepts 'kg' and converts to lbs). */
+  /** Optional; when provided must be an accepted input unit for the metric
+      (the canonical unit, or an alternate such as 'kg' for lbs / 'cm' for in),
+      and is converted to the canonical unit before storage. */
   unit?: string | null;
   source: string;
   recordedAt: string;
@@ -162,9 +163,11 @@ const vitalWriteSchema = z
  *  - ordinal metrics: valueLabel resolves to its 1-based value (or an integer
  *    value within the label range is accepted); metadata.label is stamped;
  *  - number metrics: value required; registry min/max enforced (pain_level);
- *  - unit, when provided, must equal the registry canonical unit — except
- *    weight, which accepts 'kg' and converts via weightToLbs. The stored unit
- *    is always the canonical one;
+ *  - unit, when provided, must be an accepted input unit for the metric's
+ *    canonical unit — the canonical unit itself, or a registered alternate
+ *    (src/lib/metrics/units.ts: lbs accepts kg, in accepts cm), which is
+ *    converted server-side. An omitted unit means the value is already
+ *    canonical. The stored unit is always the canonical one;
  *  - recordedAt normalizes to `${day}T00:00:00Z` unless the metric is
  *    intraday-flagged, in which case the full timestamp is kept (ISO UTC);
  *    the year must fall within 1900–2100;
@@ -251,19 +254,23 @@ export function validateVitalWrite(input: unknown): ValidatedVitalWrite {
     }
   }
 
-  // Unit: reject anything that isn't the canonical stored unit (no silent
-  // conversion in v1) — except weight, which accepts kg for parity with
-  // manual entry. Stored unit is always canonical.
+  // Unit: an omitted (or empty) unit means "the value is already in the
+  // canonical unit". A supplied unit must be one this metric accepts — the
+  // canonical unit itself, or a registered alternate for that canonical unit
+  // (src/lib/metrics/units.ts: lbs↔kg, in↔cm), which is converted here. The
+  // stored unit is ALWAYS the canonical one, so responses and reads never
+  // vary by caller.
   if (unit != null && unit !== '' && unit !== metric.unit) {
-    if (metric.key === 'weight' && unit === 'kg') {
-      value = weightToLbs(value, 'metric');
-    } else if (metric.unit === null) {
+    if (metric.unit === null) {
       throw new VitalWriteError(`'${metricKey}' does not take a unit (got '${unit}').`);
-    } else {
+    }
+    const converted = convertToCanonicalUnit(metric.unit, unit, value);
+    if (converted === undefined) {
       throw new VitalWriteError(
-        `Unit '${unit}' does not match the canonical unit '${metric.unit}' for '${metricKey}'. Convert before sending.`,
+        `Unit '${unit}' is not accepted for '${metricKey}' — the canonical unit is '${metric.unit}'. Accepted units: ${acceptedUnitsFor(metric.unit).join(', ')}.`,
       );
     }
+    value = converted;
   }
 
   const ts = new Date(recordedAt);

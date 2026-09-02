@@ -1,8 +1,8 @@
 /**
  * Weekly rollup — the computed contract behind GET /api/v1/weeks/{weekStart}
  * (fitness design spec §API): sessions by type with labels, weigh-in and
- * body-composition aggregates, recovery averages, latest neck/waist, active
- * frequency-goal progress, the check-in row, and prior-week deltas.
+ * body-composition aggregates, recovery averages, latest body circumferences,
+ * active frequency-goal progress, the check-in row, and prior-week deltas.
  *
  * DB-touching aggregation (unlike the pure libs in this directory) — reads
  * workout_sessions, goals, weekly_checkins and vitals directly. Nothing here
@@ -17,11 +17,12 @@
  *    src/lib/dates.ts): their UTC date IS the intended local day, so the
  *    vitals window is simply the seven `YYYY-MM-DD` keys of the week.
  */
-import { and, desc, eq, gte, isNull, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt } from 'drizzle-orm';
 import { db } from '@/db';
 import { goals, vitals, weeklyCheckins, workoutSessions, SESSION_TYPES } from '@/db/schema';
 import type { SessionType } from '@/db/schema';
 import { requireAuthz } from '@/lib/authz';
+import { BODY_MEASUREMENT_KEYS } from '@/lib/metrics/registry';
 import { shiftDayKey } from '@/lib/dates';
 import { validateWeekStart } from '@/lib/repos/_fitness';
 import type { WeeklyCheckinRow } from '@/lib/repos/checkins';
@@ -64,6 +65,22 @@ export interface LatestMeasurement {
   source: string;
 }
 
+/** A body-circumference reading as reported by `body.measurementsLatest`.
+    `unit` is the registry canonical unit the row is stored in ('in'). */
+export interface LatestBodyMeasurement extends LatestMeasurement {
+  unit: string | null;
+}
+
+/**
+ * Latest circumference per canonical metric key, as of the week's end.
+ *
+ * SPARSE by design: a metric with no reading on or before the week end is
+ * ABSENT, not null. The rollup's fixed fields keep their explicit nulls; this
+ * is a dictionary keyed by an open, registry-driven vocabulary, so listing
+ * every unmeasured key would be noise for clients and for the UI.
+ */
+export type LatestBodyMeasurements = Record<string, LatestBodyMeasurement>;
+
 export interface FrequencyGoalProgress {
   goalId: string;
   sessionType: SessionType;
@@ -98,6 +115,11 @@ export interface WeekRollup {
         historical week shows the tape measurement that was current then. */
     neckLatest: LatestMeasurement | null;
     waistLatest: LatestMeasurement | null;
+    /** Every registered body-circumference metric with a reading on or before
+        the week's end, keyed by canonical metric key. Sparse (see
+        LatestBodyMeasurements); neckLatest/waistLatest are the same readings,
+        kept as dedicated fields for backward compatibility. */
+    measurementsLatest: LatestBodyMeasurements;
   };
   recovery: {
     hrvRmssdAvg: number | null;
@@ -242,26 +264,53 @@ async function computeWeek(userId: string, weekStart: string, tz: string): Promi
   };
 }
 
-/** Latest reading for a metric recorded strictly before `beforeDay`. */
-async function latestMeasurement(
+/**
+ * Latest reading per body-circumference metric recorded strictly before
+ * `beforeDay` — ONE query for the whole vocabulary, not one per metric.
+ *
+ * Rows come back newest-first and the first row seen per metric wins, so the
+ * result is the as-of-week-end series with no future readings. Same-day rows
+ * from different sources tie-break on source name, keeping the answer stable
+ * across calls.
+ */
+async function latestBodyMeasurements(
   userId: string,
-  metricKey: string,
   beforeDay: string,
-): Promise<LatestMeasurement | null> {
+): Promise<LatestBodyMeasurements> {
   const rows = await db
-    .select({ value: vitals.value, recordedAt: vitals.recordedAt, source: vitals.source })
+    .select({
+      metricKey: vitals.metricKey,
+      value: vitals.value,
+      unit: vitals.unit,
+      recordedAt: vitals.recordedAt,
+      source: vitals.source,
+    })
     .from(vitals)
     .where(
       and(
         eq(vitals.userId, userId),
         isNull(vitals.dependentId),
-        eq(vitals.metricKey, metricKey),
+        inArray(vitals.metricKey, [...BODY_MEASUREMENT_KEYS]),
         lt(vitals.recordedAt, beforeDay),
       ),
     )
-    .orderBy(desc(vitals.recordedAt))
-    .limit(1);
-  return rows[0] ?? null;
+    .orderBy(desc(vitals.recordedAt), asc(vitals.source));
+
+  const out: LatestBodyMeasurements = {};
+  for (const { metricKey, ...reading } of rows) {
+    if (metricKey in out) continue; // newest-first: first hit is the latest
+    out[metricKey] = reading;
+  }
+  // Emit in registry order so clients and the UI render a stable sequence.
+  return Object.fromEntries(
+    BODY_MEASUREMENT_KEYS.filter((k) => k in out).map((k) => [k, out[k]]),
+  );
+}
+
+/** The pre-existing neck/waist wire shape: no `unit`, key order unchanged. */
+function withoutUnit(reading: LatestBodyMeasurement | undefined): LatestMeasurement | null {
+  if (!reading) return null;
+  return { value: reading.value, recordedAt: reading.recordedAt, source: reading.source };
 }
 
 function computeDeltas(current: WeekNumericRollup, prior: WeekNumericRollup): WeekDeltas {
@@ -297,12 +346,11 @@ export async function getWeekRollup(
   const prevStart = priorWeekStart(weekStart);
   const nextMonday = shiftDayKey(weekStart, 7);
 
-  const [current, prior, neckLatest, waistLatest, activeFrequencyGoals, checkinRows] =
+  const [current, prior, measurementsLatest, activeFrequencyGoals, checkinRows] =
     await Promise.all([
       computeWeek(ownerId, weekStart, tz),
       computeWeek(ownerId, prevStart, tz),
-      latestMeasurement(ownerId, 'neck', nextMonday),
-      latestMeasurement(ownerId, 'waist', nextMonday),
+      latestBodyMeasurements(ownerId, nextMonday),
       db
         .select()
         .from(goals)
@@ -345,8 +393,9 @@ export async function getWeekRollup(
       daysWeighed: numericBody.daysWeighed,
       bodyFatPctAvg: numericBody.bodyFatPctAvg,
       fatFreeMassAvg: numericBody.fatFreeMassAvg,
-      neckLatest,
-      waistLatest,
+      neckLatest: withoutUnit(measurementsLatest.neck),
+      waistLatest: withoutUnit(measurementsLatest.waist),
+      measurementsLatest,
     },
     recovery: {
       hrvRmssdAvg: numericBody.hrvRmssdAvg,
