@@ -160,8 +160,15 @@ in the API, and no allowlist of approved sources.
   HealthTrack never copies, averages or derives one from another — send exactly
   the series you measured.
 - **Units.** Every circumference accepts `in` or `cm`. The canonical stored unit
-  is `in`; centimetres are converted before persistence at full precision
-  (display rounds to one decimal, storage does not).
+  is `in`; centimetres are divided by 2.54 before persistence and the result is
+  stored **unrounded**, at ordinary double precision — `96.8 cm` persists and
+  reads back as `38.11023622047244`, not `38.1102` or `38.1`. Rounding to the
+  metric's one-decimal display precision happens only at render time, so no
+  submitted detail is discarded on the way in.
+
+  The one exception is mass: metrics stored in `lbs` quantize a `kg` conversion
+  to a tenth of a pound. That is long-standing stored-value behaviour shared
+  with manual entry, not display rounding.
 - **Derived values** such as waist-to-hip ratio are not stored. Compute them
   from the canonical measurements when you need them.
 - Preserving the original submitted value in `metadata` is welcome but never

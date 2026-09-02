@@ -40,7 +40,7 @@ A single JSON **array** of record objects:
 | `metric_key` | yes | Must exist in the metric registry (closed registry). `GET /api/v1/metrics` on your instance returns the full list. |
 | `value` | number metrics: yes | Ordinal metrics accept `value` (1-based integer) *or* `value_label`. |
 | `value_label` | ordinal metrics only | e.g. `"solid"` for `resilience`. Resolved to its 1-based value; stored in `metadata.label`. |
-| `unit` | no | If present, must be an accepted input unit for the metric: the canonical unit, or a registered alternate converted server-side (`lbs` accepts `"kg"`; `in` — every body circumference — accepts `"cm"`). Omit it to declare the value already canonical. Anything else is rejected. |
+| `unit` | no | If present, must be an accepted input unit for the metric: the canonical unit, or a registered alternate converted server-side (`lbs` accepts `"kg"`; `in` — every body circumference — accepts `"cm"`). Omit it to declare the value already canonical. Anything else is rejected. Converted lengths are stored unrounded; only display rounds. |
 | `recorded_at` | yes | ISO date (`2026-06-01`) or datetime. Normalized to day granularity (`T00:00:00Z`) unless the metric is intraday-capable (`blood_glucose`, `bp_systolic`, `bp_diastolic`), which keep the full timestamp. |
 | `source` | yes | Device/bridge identifier, e.g. `oura`, `myair`, `renpho`, `samsung_health`, `manual`. Part of the upsert key. |
 | `metadata` | no | Free-form JSON object stored with the row. |

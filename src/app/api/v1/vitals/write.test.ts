@@ -212,16 +212,37 @@ describe('POST /api/v1/vitals — validation + semantics', () => {
     );
     expect(res.status).toBe(201);
     const { vital } = await res.json();
-    // Response carries the normalized value and the canonical unit.
-    expect(vital.value).toBeCloseTo(38.1102, 4);
+    // Response carries the normalized value and the canonical unit, at full
+    // precision - display rounding happens at render time, not on write.
+    expect(vital.value).toBe(96.8 / 2.54);
+    expect(vital.value).toBe(38.11023622047244);
     expect(vital.unit).toBe('in');
 
-    // ...and that is what actually landed in the row, not the submitted cm.
+    // ...and that is what actually landed in the row, not the submitted cm
+    // and not a rounded-down copy of it.
     const row = ctx.sqlite
       .prepare("select value, unit from vitals where metric_key = 'waist'")
       .get() as { value: number; unit: string };
-    expect(row.value).toBeCloseTo(38.1102, 4);
+    expect(row.value).toBe(38.11023622047244);
+    expect(row.value).not.toBe(38.1);
+    expect(row.value).not.toBe(38.1102);
     expect(row.unit).toBe('in');
+  });
+
+  it('accepts kg for fat_free_mass, not just weight', async () => {
+    const res = await single.POST(
+      post('/api/v1/vitals', mintToken(OWNER, ['write:vitals']), {
+        metric_key: 'fat_free_mass',
+        value: 68,
+        unit: 'kg',
+        source: 'mobile_health_bridge',
+        recorded_at: '2026-09-01',
+      }),
+    );
+    expect(res.status).toBe(201);
+    const { vital } = await res.json();
+    expect(vital.value).toBeCloseTo(149.9, 5);
+    expect(vital.unit).toBe('lbs');
   });
 
   it('400 for a unit no metric accepts, naming the accepted ones', async () => {
@@ -270,7 +291,7 @@ describe('POST /api/v1/vitals — validation + semantics', () => {
       original_unit: 'cm',
     });
     // ...and never overrides the canonical value/unit.
-    expect(vital.value).toBeCloseTo(21.6535, 4);
+    expect(vital.value).toBe(55 / 2.54);
     expect(vital.unit).toBe('in');
   });
 
@@ -391,8 +412,8 @@ describe('POST /api/v1/vitals/batch', () => {
     // Every row lands in the canonical unit...
     expect(rows.every((r) => r.unit === 'in')).toBe(true);
     const value = (key: string) => rows.find((r) => r.metric_key === key)!.value;
-    expect(value('waist')).toBeCloseTo(38.1102, 4);
-    expect(value('right_bicep')).toBeCloseTo(14.2913, 4);
+    expect(value('waist')).toBe(96.8 / 2.54);
+    expect(value('right_bicep')).toBe(36.3 / 2.54);
     // ...and the inch inputs are stored exactly as submitted.
     expect(value('thigh')).toBe(22.5);
     expect(value('left_bicep')).toBe(14.1);
@@ -424,7 +445,7 @@ describe('POST /api/v1/vitals/batch', () => {
       .prepare("select value from vitals where metric_key = 'left_forearm'")
       .all() as { value: number }[];
     expect(rows).toHaveLength(1);
-    expect(rows[0].value).toBeCloseTo(11.6142, 4);
+    expect(rows[0].value).toBe(29.5 / 2.54);
   });
 
   it('fails a batch record closed on an unknown key or unsupported unit, keeping the rest', async () => {

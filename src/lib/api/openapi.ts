@@ -127,8 +127,11 @@ export const OPENAPI_DOCUMENT = {
           'in "in" — every body_measurement circumference — accept "cm"). An ' +
           'omitted unit means the value is already in the canonical unit; any ' +
           'other unit is rejected rather than guessed at. The stored and ' +
-          'returned unit is always the canonical one. `recorded_at` is ' +
-          'normalized to day granularity unless the metric is ' +
+          'returned unit is always the canonical one, and a converted value is ' +
+          'stored unrounded at full double precision (cm/in) - rounding to a ' +
+          "metric's display precision happens only at render time; kg/lbs is " +
+          'the exception, quantizing to a tenth of a pound as it always has. ' +
+          '`recorded_at` is normalized to day granularity unless the metric is ' +
           'intraday-capable.',
         properties: {
           metric_key: { type: 'string' },

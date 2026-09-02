@@ -339,6 +339,16 @@ describe('validateVitalWrite', () => {
     const kg = repo.validateVitalWrite({ ...base, metricKey: 'weight', value: 80, unit: 'kg' });
     expect(kg.value).toBeCloseTo(176.4, 5);
     expect(kg.unit).toBe('lbs');
+    // Acceptance is keyed on the canonical unit, so the other lbs metric
+    // normalizes the same way with no per-metric branch.
+    const ffm = repo.validateVitalWrite({
+      ...base,
+      metricKey: 'fat_free_mass',
+      value: 68,
+      unit: 'kg',
+    });
+    expect(ffm.value).toBeCloseTo(149.9, 5);
+    expect(ffm.unit).toBe('lbs');
     // omitted unit → canonical filled in
     const bare = repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 100 });
     expect(bare.unit).toBe('steps');
@@ -353,8 +363,12 @@ describe('validateVitalWrite', () => {
       value: 96.8,
       unit: 'cm',
     });
-    expect(cm.value).toBeCloseTo(38.1102, 4);
+    // The exact quotient is what persists: not the 0.1 in display precision,
+    // and not a guard-rounded intermediate either.
+    expect(cm.value).toBe(96.8 / 2.54);
+    expect(cm.value).toBe(38.11023622047244);
     expect(cm.value).not.toBe(38.1);
+    expect(cm.value).not.toBe(38.1102);
     expect(cm.unit).toBe('in');
 
     // Inch writes are byte-identical to before — no conversion, no rounding.

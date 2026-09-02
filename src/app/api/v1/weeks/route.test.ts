@@ -282,7 +282,7 @@ describe('rollup contract', () => {
     // Left and right stay independent series; the cm submission was
     // normalized to inches on the way in, not on the way out.
     expect(latest.left_bicep.value).toBe(14.1);
-    expect(latest.right_bicep.value).toBeCloseTo(14.2913, 4);
+    expect(latest.right_bicep.value).toBe(36.3 / 2.54);
 
     // A stale reading is reported with its own (older) date, not suppressed.
     expect(latest.left_thigh).toMatchObject({ value: 23, source: 'example_tape' });

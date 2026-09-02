@@ -19,33 +19,28 @@
 import { cmToInches, weightToLbs } from '@/lib/units';
 
 /**
- * Guard rounding for converted values: fine enough to be lossless at any
- * display precision the app uses (circumferences render to 0.1 in), coarse
- * enough that a division never persists binary float dust. Presentation
- * rounding stays in src/lib/metrics/format.ts.
- */
-const CONVERSION_PRECISION = 4;
-
-function roundTo(value: number, decimals: number): number {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
-/**
  * canonical unit → alternate input unit → converter into the canonical unit.
  *
  * Matching is exact and case-sensitive (units arrive trimmed from the write
  * schema); an unlisted unit is a 400 rather than a guess.
+ *
+ * Converters do NOT round to a display precision. Rounding is a presentation
+ * concern and lives in src/lib/metrics/format.ts, which renders whatever a
+ * metric's `decimals` says (one decimal for circumferences). The one exception
+ * is weight, whose kg conversion has always quantized to a tenth of a pound;
+ * that is pre-existing stored-value behaviour, not display rounding, so it is
+ * preserved deliberately rather than generalized.
  */
 const ALTERNATE_INPUT_UNITS: Readonly<
   Record<string, Readonly<Record<string, (value: number) => number>>>
 > = {
-  // Body-composition mass. weightToLbs keeps the established one-decimal
-  // rounding so manual entry and the ingest API agree to the gram-ish.
+  // Body-composition mass (weight, fat_free_mass). weightToLbs keeps the
+  // established one-decimal quantization so manual entry and the ingest API
+  // agree to the gram-ish.
   lbs: { kg: (v) => weightToLbs(v, 'metric') },
-  // Body circumferences. Full precision is preserved — inches are the storage
-  // unit, not the display unit.
-  in: { cm: (v) => roundTo(cmToInches(v), CONVERSION_PRECISION) },
+  // Body circumferences. The exact quotient is stored — inches are the storage
+  // unit, not the display unit, so nothing is discarded on the way in.
+  in: { cm: cmToInches },
 };
 
 /** Every unit a metric with this canonical unit accepts, canonical first. */

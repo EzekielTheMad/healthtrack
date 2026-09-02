@@ -348,7 +348,9 @@ export default function ApiDocsPage() {
                 stored in <code>lbs</code> accept <code>kg</code>; metrics stored in{' '}
                 <code>in</code>, which is every body circumference, accept <code>cm</code>).
                 Anything else is rejected rather than guessed at, and responses always echo
-                the normalized value with the canonical unit.
+                the normalized value with the canonical unit. Converted lengths are stored
+                unrounded at full precision — rounding to a metric&apos;s display precision
+                happens only at render time.
               </li>
               <li>
                 Body circumferences are provider-neutral: integrations map their own field
