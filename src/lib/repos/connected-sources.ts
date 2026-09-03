@@ -26,18 +26,13 @@ export interface ConnectedSourceTokens {
 /** The actor's row for a source, or null. */
 export async function getConnectedSource(
   actorId: string,
-  sourceName: string,
+  sourceName: string
 ): Promise<ConnectedSourceRow | null> {
   if (!actorId) throw new NotFoundError();
   const rows = await db
     .select()
     .from(connectedSources)
-    .where(
-      and(
-        eq(connectedSources.userId, actorId),
-        eq(connectedSources.sourceName, sourceName),
-      ),
-    )
+    .where(and(eq(connectedSources.userId, actorId), eq(connectedSources.sourceName, sourceName)))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -49,7 +44,7 @@ export async function getConnectedSource(
 export async function upsertConnectedSource(
   actorId: string,
   sourceName: string,
-  tokens: ConnectedSourceTokens,
+  tokens: ConnectedSourceTokens
 ): Promise<ConnectedSourceRow> {
   if (!actorId) throw new NotFoundError();
   const existing = await getConnectedSource(actorId, sourceName);
@@ -79,7 +74,7 @@ export async function upsertConnectedSource(
 export async function updateConnectedSourceTokens(
   actorId: string,
   id: string,
-  tokens: ConnectedSourceTokens,
+  tokens: ConnectedSourceTokens
 ): Promise<void> {
   await db
     .update(connectedSources)
@@ -91,32 +86,28 @@ export async function updateConnectedSourceTokens(
 export async function setConnectedSourceStatus(
   actorId: string,
   sourceName: string,
-  status: string,
+  status: string
 ): Promise<void> {
   if (!actorId) throw new NotFoundError();
   await db
     .update(connectedSources)
     .set({ status })
-    .where(
-      and(
-        eq(connectedSources.userId, actorId),
-        eq(connectedSources.sourceName, sourceName),
-      ),
-    );
+    .where(and(eq(connectedSources.userId, actorId), eq(connectedSources.sourceName, sourceName)));
+}
+
+/** User ids with an active connection for a provider (scheduler service scope). */
+export async function listActiveConnectedSourceUserIds(sourceName: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ userId: connectedSources.userId })
+    .from(connectedSources)
+    .where(and(eq(connectedSources.sourceName, sourceName), eq(connectedSources.status, 'active')));
+  return rows.map((row) => row.userId);
 }
 
 /** Stamp last_sync_at (called by the sync job). */
-export async function touchLastSync(
-  actorId: string,
-  sourceName: string,
-): Promise<void> {
+export async function touchLastSync(actorId: string, sourceName: string): Promise<void> {
   await db
     .update(connectedSources)
     .set({ lastSyncAt: new Date().toISOString() })
-    .where(
-      and(
-        eq(connectedSources.userId, actorId),
-        eq(connectedSources.sourceName, sourceName),
-      ),
-    );
+    .where(and(eq(connectedSources.userId, actorId), eq(connectedSources.sourceName, sourceName)));
 }

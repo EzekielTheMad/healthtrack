@@ -71,5 +71,5 @@
   <Config Name="ENCRYPTION_KEY" Target="ENCRYPTION_KEY" Default="" Description="Advanced. Key used to encrypt stored OAuth tokens (Oura). Leave empty — one is auto-generated into /data/keys on first start. Set only if you want to manage it yourself." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
   <Config Name="PUID" Target="PUID" Default="99" Description="User ID that owns files under /data (Unraid default: 99 / nobody)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
   <Config Name="PGID" Target="PGID" Default="100" Description="Group ID that owns files under /data (Unraid default: 100 / users)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
-  <Config Name="TZ" Target="TZ" Default="Etc/UTC" Description="Container time zone, e.g. America/New_York." Type="Variable" Display="advanced" Required="false" Mask="false">Etc/UTC</Config>
+  <Config Name="TZ" Target="TZ" Default="Etc/UTC" Description="Valid IANA timezone for the container and Oura calendar-date sync windows, e.g. America/New_York." Type="Variable" Display="advanced" Required="false" Mask="false">Etc/UTC</Config>
 </Container>
