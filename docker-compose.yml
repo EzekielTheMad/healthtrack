@@ -42,5 +42,5 @@ services:
       ## File ownership inside ./data (Unraid defaults: 99/100).
       # PUID: "99"
       # PGID: "100"
-      # TZ: Etc/UTC
+      # TZ: Etc/UTC # IANA timezone; also defines Oura calendar sync windows
     restart: unless-stopped

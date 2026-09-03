@@ -116,12 +116,29 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 | `ANTHROPIC_MODEL_EXTRACTION` | no | current Sonnet | Claude model for PDF extraction — a cheaper model like `claude-haiku-4-5` works well |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | — | Enables "Sign in with Google" |
 | `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET` | no | — | Enables Oura Ring sync |
+| `OURA_SYNC_ENABLED` | no | `true` when Oura is configured | Startup + recurring native Oura sync toggle |
+| `OURA_SYNC_INTERVAL_HOURS` | no | `4` | Native scheduler interval; every run self-heals an inclusive 7-day window |
 | `PUID` / `PGID` | no | `99` / `100` | Ownership of files under `/data` (Unraid conventions) |
-| `TZ` | no | `Etc/UTC` | Container time zone |
+| `TZ` | no | `Etc/UTC` | Valid IANA timezone for the container and Oura calendar-date sync windows |
 
 ### Reverse proxy / HTTPS
 
 HealthTrack serves plain HTTP on port 3000; put your reverse proxy of choice (Nginx Proxy Manager, Caddy, Traefik, Cloudflare Tunnel, …) in front of it for HTTPS. **`APP_URL` must exactly match the URL users browse to** (scheme, host, port) or login callbacks will fail.
+
+### Oura architecture
+
+Oura OAuth tokens are encrypted in each user's `connected_sources` row and are
+the only credential store. Manual Sync Now and the native startup scheduler
+share the same per-user refresh lock, so concurrent requests cannot rotate a
+refresh token twice. The scheduler runs once on Node startup and at the
+configured interval (4 hours by default), isolates failures per user, and
+backfills an inclusive seven-day self-heal window. The OAuth callback keeps its
+30-day initial backfill. HealthTrack writes directly to its canonical vitals
+store with `source=oura`; no Notion or bridge writes are involved.
+
+Oura date windows use the HealthTrack `TZ` setting so a sync near UTC midnight
+still requests the owner's current local calendar day. `TZ` must be a valid IANA
+timezone (for example `America/New_York`); the portable default is `Etc/UTC`.
 
 **Serve the app on one public hostname.** If your proxy answers on both `example.com` and `www.example.com` (a common default), pick one, put it in `APP_URL`, and have the other redirect to it. Auth cookies are scoped to the exact host that set them, while OAuth redirect URIs are built from `APP_URL` — so a visitor who starts on the hostname you *didn't* configure gets sent back to the one you did, without their cookie, and Google sign-in fails with `?error=state_mismatch`. HealthTrack now redirects browser page requests to `APP_URL`'s hostname for you (API routes under `/api/` are left alone, as are localhost and LAN addresses), but fixing it at the proxy or DNS layer is still cleaner.
 

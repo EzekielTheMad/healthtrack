@@ -6,13 +6,7 @@
  * generated under the temp DATA_DIR).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  setupRepoDb,
-  insertUser,
-  OWNER,
-  VIEWER,
-  type RepoTestDb,
-} from './repo-test-harness';
+import { setupRepoDb, insertUser, OWNER, VIEWER, type RepoTestDb } from './repo-test-harness';
 
 type Repo = typeof import('./connected-sources');
 
@@ -59,7 +53,7 @@ describe('connected-sources repo', () => {
 
     const count = ctx.sqlite
       .prepare(
-        `select count(*) n from connected_sources where user_id = ? and source_name = 'oura'`,
+        `select count(*) n from connected_sources where user_id = ? and source_name = 'oura'`
       )
       .get(OWNER) as { n: number };
     expect(count.n).toBe(1);
@@ -93,9 +87,28 @@ describe('connected-sources repo', () => {
       refreshTokenEncrypted: 'r2',
       tokenExpiresAt: '2030-01-01T00:00:00.000Z',
     });
-    expect((await repo.getConnectedSource(OWNER, 'oura'))?.accessTokenEncrypted).toBe(
-      'enc2',
-    );
+    expect((await repo.getConnectedSource(OWNER, 'oura'))?.accessTokenEncrypted).toBe('enc2');
+  });
+
+  it('lists only active Oura connections for scheduler dispatch', async () => {
+    await repo.upsertConnectedSource(OWNER, 'oura', {
+      accessTokenEncrypted: 'owner-oura',
+      refreshTokenEncrypted: null,
+      tokenExpiresAt: null,
+    });
+    await repo.upsertConnectedSource(VIEWER, 'oura', {
+      accessTokenEncrypted: 'viewer-oura',
+      refreshTokenEncrypted: null,
+      tokenExpiresAt: null,
+    });
+    await repo.setConnectedSourceStatus(VIEWER, 'oura', 'expired');
+    await repo.upsertConnectedSource(VIEWER, 'google-fit', {
+      accessTokenEncrypted: 'viewer-google',
+      refreshTokenEncrypted: null,
+      tokenExpiresAt: null,
+    });
+
+    await expect(repo.listActiveConnectedSourceUserIds('oura')).resolves.toEqual([OWNER]);
   });
 
   it('crypto round-trips with a generated (file-based) encryption key', async () => {

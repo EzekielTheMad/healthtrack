@@ -13,6 +13,11 @@
   <Category>Tools: Productivity:</Category>
   <Beta>False</Beta>
   <Changes>
+### 0.8.0
+- Oura now syncs natively inside HealthTrack on startup and every four hours by default; the retired external bridge and its Notion write path are no longer required.
+- Every run self-heals the latest seven local calendar days, while a new Oura connection backfills 30 days. Calendar boundaries follow the instance TZ setting.
+- Oura OAuth tokens remain encrypted in HealthTrack, refresh automatically, and transient provider failures remain retryable.
+- Existing Oura vitals are updated idempotently with source=oura. No migration rewrites or deletes existing health data.
 ### 0.5.0
 - Health Connect ingestion (Android): receive Health Connect data from the Life Dashboard companion app over an HMAC-signed webhook (Settings &gt; Health Connect).
 - New integrations start in **inventory** mode — records are stored and catalogued, but nothing is written to your health data until you approve the exact source apps. Existing Oura, Renpho and myAir data keeps its ownership and is never overwritten.
@@ -67,9 +72,11 @@
   <Config Name="GOOGLE_CLIENT_SECRET" Target="GOOGLE_CLIENT_SECRET" Default="" Description="Optional. Google OAuth client secret (pairs with GOOGLE_CLIENT_ID)." Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="OURA_CLIENT_ID" Target="OURA_CLIENT_ID" Default="" Description="Optional. Oura OAuth client ID — enables Oura Ring sync (sleep, heart rate, activity). In the Oura developer portal, set the redirect URI to: APP_URL/api/oura/callback" Type="Variable" Display="always" Required="false" Mask="true"></Config>
   <Config Name="OURA_CLIENT_SECRET" Target="OURA_CLIENT_SECRET" Default="" Description="Optional. Oura OAuth client secret (pairs with OURA_CLIENT_ID)." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="OURA_SYNC_ENABLED" Target="OURA_SYNC_ENABLED" Default="true" Description="Advanced. Run Oura sync on HealthTrack startup and on its recurring interval. Set to false to disable native scheduled sync without disconnecting Oura." Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="OURA_SYNC_INTERVAL_HOURS" Target="OURA_SYNC_INTERVAL_HOURS" Default="4" Description="Advanced. Hours between native Oura sync runs. Every run self-heals the latest seven calendar days." Type="Variable" Display="advanced" Required="false" Mask="false">4</Config>
   <Config Name="AUTH_SECRET" Target="AUTH_SECRET" Default="" Description="Advanced. Session signing secret. Leave empty — one is auto-generated into /data/keys on first start. Set only if you want to manage it yourself." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
   <Config Name="ENCRYPTION_KEY" Target="ENCRYPTION_KEY" Default="" Description="Advanced. Key used to encrypt stored OAuth tokens (Oura). Leave empty — one is auto-generated into /data/keys on first start. Set only if you want to manage it yourself." Type="Variable" Display="advanced" Required="false" Mask="true"></Config>
   <Config Name="PUID" Target="PUID" Default="99" Description="User ID that owns files under /data (Unraid default: 99 / nobody)." Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
   <Config Name="PGID" Target="PGID" Default="100" Description="Group ID that owns files under /data (Unraid default: 100 / users)." Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
-  <Config Name="TZ" Target="TZ" Default="Etc/UTC" Description="Container time zone, e.g. America/New_York." Type="Variable" Display="advanced" Required="false" Mask="false">Etc/UTC</Config>
+  <Config Name="TZ" Target="TZ" Default="Etc/UTC" Description="Valid IANA timezone for the container and Oura calendar-date sync windows, e.g. America/New_York." Type="Variable" Display="advanced" Required="false" Mask="false">Etc/UTC</Config>
 </Container>
