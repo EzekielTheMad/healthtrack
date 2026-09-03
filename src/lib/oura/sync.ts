@@ -1,189 +1,67 @@
-// Oura Ring data sync
-// Backfill 30 days on connect, then daily sync via manual "Sync Now"
-//
-// Trusted internal path: callers always pass the session user's own id (the
-// OAuth callback / sync route), so this writes with drizzle directly instead
-// of going through the authz'd vitals repo — actor and owner are the same by
-// construction.
-
-import { OuraClient } from './client';
 import { db } from '@/db';
+import { connectedSources } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { upsertOwnVital } from '@/lib/repos/vitals';
 import { touchLastSync } from '@/lib/repos/connected-sources';
+import { OuraClient, type OuraSpO2Doc } from './client';
+import { getOuraAccessToken } from './tokens';
 
-interface SyncSummary {
-  synced: number;
-  errors: string[];
+export const OURA_LOOKBACK_DAYS = 7;
+export interface SyncSummary { synced: number; errors: string[]; }
+const UNITS: Record<string, string> = { sleep_duration: 'hours', time_in_bed: 'minutes', awake_time: 'minutes', deep_sleep: 'minutes', rem_sleep: 'minutes', light_sleep: 'minutes', sleep_latency: 'minutes', sleep_efficiency: '%', stress_high: 'minutes', recovery_high: 'minutes', hrv_rmssd: 'ms', resting_hr: 'bpm', avg_sleep_hr: 'bpm', respiratory_rate: 'breaths/min', body_temp_deviation: '°F', spo2: '%', steps: 'steps', active_calories: 'kcal' };
+const day = (d: Date) => d.toISOString().slice(0, 10);
+export function syncWindow(now = new Date(), lookbackDays = OURA_LOOKBACK_DAYS) {
+  const end = day(now); const start = day(new Date(now.getTime() - (lookbackDays - 1) * 86400000));
+  return { startDate: start, endDate: end, sleepEndDate: day(new Date(now.getTime() + 86400000)) };
+}
+const value = (obj: Record<string, unknown>, key: string) => typeof obj[key] === 'number' ? obj[key] as number : undefined;
+const byDay = <T extends { day: string }>(rows: T[]) => new Map(rows.map((r) => [r.day, r]));
+export function selectLongestSleep<T extends { day: string; total_sleep_duration: number }>(rows: T[]) {
+  const best = new Map<string, T>();
+  for (const row of rows) if (!best.has(row.day) || row.total_sleep_duration > best.get(row.day)!.total_sleep_duration) best.set(row.day, row);
+  return [...best.values()];
 }
 
-interface VitalUpsert {
-  userId: string;
-  metricKey: string;
-  value: number;
-  unit: string;
-  source: string;
-  recordedAt: string;
-  metadata: Record<string, unknown>;
-}
-
-function formatDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-/** Small delay between sequential API calls to avoid hammering Oura. */
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Upsert daily metrics keyed on (user_id, metric_key, recorded_at, source)
- * for the user's own (dependent_id IS NULL) rows — delegated to the shared
- * registry-validated repo upsert (promoted from this module).
- * Returns the number of rows written.
- */
-async function upsertVitals(rows: VitalUpsert[]): Promise<number> {
-  for (const row of rows) {
-    upsertOwnVital(db, row.userId, row);
+/** Sync all Oura daily collections into HealthTrack's canonical vitals store. */
+export async function syncOuraData(userId: string, accessToken?: string, _backfill = false, now = new Date()): Promise<SyncSummary> {
+  const token = accessToken ?? await getOuraAccessToken(userId);
+  const lookbackDays = _backfill ? 30 : OURA_LOOKBACK_DAYS;
+  const client = new OuraClient(token); const w = syncWindow(now, lookbackDays);
+  const errors: string[] = []; let synced = 0;
+  const get = async <T>(name: string, fn: () => Promise<T[]>): Promise<T[]> => { try { return await fn(); } catch (e) { errors.push(`${name} fetch error: ${e instanceof Error ? e.message : String(e)}`); return []; } };
+  const [sleep, dailySleep, readiness, spo2, stress, activity, resilience] = await Promise.all([
+    get('Sleep', () => client.getSleepData(w.startDate, w.sleepEndDate)),
+    get('Daily sleep', () => client.getDailySleep(w.startDate, w.endDate)),
+    get('Readiness', () => client.getDailyReadiness(w.startDate, w.endDate)),
+    get('SpO2', () => client.getSpO2(w.startDate, w.endDate)),
+    get('Stress', () => client.getDailyStress(w.startDate, w.endDate)),
+    get('Activity', () => client.getDailyActivity(w.startDate, w.sleepEndDate)),
+    get('Resilience', () => client.getDailyResilience(w.startDate, w.endDate)),
+  ]);
+  const sleepMap = byDay(selectLongestSleep(sleep)); const maps = { dailySleep: byDay(dailySleep), readiness: byDay(readiness), spo2: byDay(spo2), stress: byDay(stress), activity: byDay(activity), resilience: byDay(resilience) };
+  for (let i = 0; i < lookbackDays; i++) {
+    const target = day(new Date(now.getTime() - i * 86400000)); const s = sleepMap.get(target); const records: Array<{ metricKey: string; value?: number; valueLabel?: string; unit?: string; source: string; recordedAt: string; metadata: Record<string, unknown> }> = [];
+    const add = (metricKey: string, v: number | undefined, metadata: Record<string, unknown> = {}, valueLabel?: string) => { if (v != null) records.push({ metricKey, value: v, valueLabel, unit: UNITS[metricKey], source: 'oura', recordedAt: `${target}T00:00:00Z`, metadata }); };
+    const sid = s?.id;
+    const meta = sid ? { oura_id: sid } : {};
+    const ds = maps.dailySleep.get(target); add('sleep_score', value(ds ?? {}, 'score'), { ...meta, oura_daily_id: ds?.id });
+    const rd = maps.readiness.get(target); add('readiness_score', value(rd ?? {}, 'score'), { ...meta, oura_id: rd?.id });
+    const temp = value(rd ?? {}, 'temperature_deviation'); if (temp != null) add('body_temp_deviation', Math.round(temp * 9 / 5 * 100) / 100, { ...meta, source_unit: 'C' });
+    if (s) { add('sleep_duration', Math.round(s.total_sleep_duration / 3600 * 100) / 100, meta); add('time_in_bed', Math.round((s.time_in_bed ?? 0) / 60), meta); add('awake_time', Math.round(s.awake_time / 60), meta); add('deep_sleep', Math.round(s.deep_sleep_duration / 60), meta); add('rem_sleep', Math.round(s.rem_sleep_duration / 60), meta); add('light_sleep', Math.round(s.light_sleep_duration / 60), meta); add('sleep_latency', Math.round((s.latency ?? 0) / 60), meta); add('sleep_efficiency', s.efficiency ?? undefined, meta); add('hrv_rmssd', s.average_hrv ?? undefined, meta); add('resting_hr', s.lowest_heart_rate ?? undefined, meta); add('avg_sleep_hr', s.average_heart_rate ?? undefined, meta); add('respiratory_rate', s.average_breath ?? undefined, meta); add('restless_periods', s.restless_periods ?? undefined, meta); }
+    const so = maps.spo2.get(target) as OuraSpO2Doc | undefined; add('spo2', so?.spo2_percentage?.average, { oura_id: so?.id }); add('bdi', value((so ?? {}) as Record<string, unknown>, 'breathing_disturbance_index'), { oura_id: so?.id });
+    const st = maps.stress.get(target); add('stress_high', value(st ?? {}, 'stress_high') == null ? undefined : Math.round(value(st!, 'stress_high')! / 60), { oura_id: st?.id }); add('recovery_high', value(st ?? {}, 'recovery_high') == null ? undefined : Math.round(value(st!, 'recovery_high')! / 60), { oura_id: st?.id });
+    const ac = maps.activity.get(target); add('activity_score', value(ac ?? {}, 'score'), { oura_id: ac?.id }); add('steps', value(ac ?? {}, 'steps'), { oura_id: ac?.id }); add('active_calories', value(ac ?? {}, 'active_calories'), { oura_id: ac?.id });
+    const re = maps.resilience.get(target); const level = typeof re?.level === 'string' ? re.level : undefined; if (level) add('resilience', undefined, { oura_id: re?.id }, level);
+    for (const record of records) { try { upsertOwnVital(db, userId, record); synced++; } catch (e) { errors.push(`${target} ${record.metricKey} upsert error: ${e instanceof Error ? e.message : String(e)}`); } }
   }
-  return rows.length;
-}
-
-/**
- * Sync Oura data for a user. If backfill=true, fetches last 30 days;
- * otherwise fetches the last 1 day.
- */
-export async function syncOuraData(
-  userId: string,
-  accessToken: string,
-  backfill = false,
-): Promise<SyncSummary> {
-  const client = new OuraClient(accessToken);
-
-  const now = new Date();
-  const endDate = formatDate(now);
-  const startDate = formatDate(
-    new Date(now.getTime() - (backfill ? 30 : 1) * 24 * 60 * 60 * 1000),
-  );
-
-  let synced = 0;
-  const errors: string[] = [];
-
-  // --- Sleep data ---
-  // Oura may return multiple sleep sessions per day (naps + main sleep).
-  // Keep only the longest session per day to avoid duplicate-key conflicts.
-  try {
-    const sleepData = await client.getSleepData(startDate, endDate);
-
-    // Deduplicate: keep the longest sleep session per day
-    const bestByDay = new Map<string, (typeof sleepData)[number]>();
-    for (const sleep of sleepData) {
-      const existing = bestByDay.get(sleep.day);
-      if (!existing || sleep.total_sleep_duration > existing.total_sleep_duration) {
-        bestByDay.set(sleep.day, sleep);
-      }
-    }
-
-    const vitalsToUpsert: VitalUpsert[] = [];
-
-    for (const sleep of bestByDay.values()) {
-      // Sleep duration in hours
-      vitalsToUpsert.push({
-        userId,
-        metricKey: 'sleep_duration',
-        value: Math.round((sleep.total_sleep_duration / 3600) * 100) / 100,
-        unit: 'hours',
-        source: 'oura',
-        recordedAt: `${sleep.day}T00:00:00Z`,
-        metadata: {
-          oura_id: sleep.id,
-          rem: sleep.rem_sleep_duration,
-          deep: sleep.deep_sleep_duration,
-          light: sleep.light_sleep_duration,
-          awake: sleep.awake_time,
-          efficiency: sleep.efficiency,
-        },
-      });
-
-      // HRV from sleep
-      if (sleep.average_hrv != null) {
-        vitalsToUpsert.push({
-          userId,
-          metricKey: 'hrv_rmssd',
-          value: sleep.average_hrv,
-          unit: 'ms',
-          source: 'oura',
-          recordedAt: `${sleep.day}T00:00:00Z`,
-          metadata: { oura_id: sleep.id, derived_from: 'sleep' },
-        });
-      }
-
-      // Resting HR from sleep
-      if (sleep.lowest_heart_rate != null) {
-        vitalsToUpsert.push({
-          userId,
-          metricKey: 'resting_hr',
-          value: sleep.lowest_heart_rate,
-          unit: 'bpm',
-          source: 'oura',
-          recordedAt: `${sleep.day}T00:00:00Z`,
-          metadata: { oura_id: sleep.id, type: 'lowest_during_sleep' },
-        });
-      }
-    }
-
-    if (vitalsToUpsert.length > 0) {
-      try {
-        synced += await upsertVitals(vitalsToUpsert);
-      } catch (err) {
-        errors.push(
-          `Sleep upsert error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  } catch (err) {
-    errors.push(`Sleep fetch error: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
-  // --- SpO2 data (Gen 3+ rings only — 404 means unsupported, skip gracefully) ---
-  await delay(500);
-  try {
-    const spo2Data = await client.getSpO2(startDate, endDate);
-
-    const spo2Vitals: VitalUpsert[] = spo2Data
-      .filter((d) => d.spo2_percentage?.average != null)
-      .map((d) => ({
-        userId,
-        metricKey: 'spo2',
-        value: d.spo2_percentage!.average,
-        unit: '%',
-        source: 'oura',
-        recordedAt: `${d.day}T00:00:00Z`,
-        metadata: { oura_id: d.id },
-      }));
-
-    if (spo2Vitals.length > 0) {
-      try {
-        synced += await upsertVitals(spo2Vitals);
-      } catch (err) {
-        errors.push(
-          `SpO2 upsert error: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  } catch (err) {
-    // 404 means the user's ring doesn't support SpO2 — not an error
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!msg.includes('404')) {
-      errors.push(`SpO2 fetch error: ${msg}`);
-    }
-  }
-
-  // --- Update last_sync_at ---
-  try {
-    await touchLastSync(userId, 'oura');
-  } catch (err) {
-    errors.push(`last_sync_at update error: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
+  try { await touchLastSync(userId, 'oura'); } catch (e) { errors.push(`last_sync_at update error: ${e instanceof Error ? e.message : String(e)}`); }
   return { synced, errors };
+}
+
+/** Sync every active user's own OAuth connection; failures are isolated. */
+export async function syncAllOuraUsers(): Promise<void> {
+  const rows = await db.select({ userId: connectedSources.userId }).from(connectedSources).where(eq(connectedSources.sourceName, 'oura'));
+  for (const { userId } of [...new Map(rows.map((r) => [r.userId, r])).values()]) {
+    try { await syncOuraData(userId); } catch (e) { console.error(`[oura] sync failed for user ${userId}:`, e instanceof Error ? e.message : e); }
+  }
 }
