@@ -2,6 +2,14 @@
 
 All notable changes to HealthTrack are documented here for GitHub releases.
 
+## 0.8.1 - 2026-09-03
+
+### Fixed
+
+- Built Oura authorization and token-exchange callback URIs from the public
+  `APP_URL` instead of Next.js's reverse-proxy request origin, which could leak
+  an internal address such as `http://0.0.0.0:3000` into the provider redirect.
+
 ## 0.8.0 - 2026-09-03
 
 ### Fixed

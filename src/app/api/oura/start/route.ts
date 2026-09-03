@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes } from 'crypto';
 import { getUser } from '@/lib/auth/session';
 import { getCapabilities } from '@/lib/capabilities';
+import { getOuraRedirectUri } from '@/lib/oura/oauth-origin';
 
 const OURA_SCOPE = 'daily heartrate spo2 personal';
 const STATE_COOKIE = 'oura_oauth_state';
@@ -34,7 +35,7 @@ export async function GET(request: NextRequest) {
 
   const authUrl = new URL('https://cloud.ouraring.com/oauth/authorize');
   authUrl.searchParams.set('client_id', clientId);
-  authUrl.searchParams.set('redirect_uri', `${request.nextUrl.origin}/api/oura/callback`);
+  authUrl.searchParams.set('redirect_uri', getOuraRedirectUri());
   authUrl.searchParams.set('response_type', 'code');
   authUrl.searchParams.set('scope', OURA_SCOPE);
   authUrl.searchParams.set('state', state);
