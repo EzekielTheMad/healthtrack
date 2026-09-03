@@ -13,7 +13,9 @@
   <Category>Tools: Productivity:</Category>
   <Beta>False</Beta>
   <Changes>
-### 0.8.0
+    ### 0.8.1
+    - Fixed Oura Connect behind reverse proxies and Cloudflare Tunnel by using APP_URL for the OAuth callback instead of the container's internal address.
+    ### 0.8.0
 - Oura now syncs natively inside HealthTrack on startup and every four hours by default; the retired external bridge and its Notion write path are no longer required.
 - Every run self-heals the latest seven local calendar days, while a new Oura connection backfills 30 days. Calendar boundaries follow the instance TZ setting.
 - Oura OAuth tokens remain encrypted in HealthTrack, refresh automatically, and transient provider failures remain retryable.

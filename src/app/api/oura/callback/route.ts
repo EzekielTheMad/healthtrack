@@ -7,6 +7,7 @@ import { encrypt } from '@/lib/crypto/encrypt';
 import { safeError } from '@/lib/safe-log';
 import { syncOuraData } from '@/lib/oura/sync';
 import { OuraClient } from '@/lib/oura/client';
+import { getOuraRedirectUri } from '@/lib/oura/oauth-origin';
 import { upsertConnectedSource } from '@/lib/repos/connected-sources';
 import { getProfile, upsertProfile } from '@/lib/repos/profiles';
 
@@ -51,16 +52,15 @@ export async function GET(request: NextRequest) {
   }
 
   // Exchange authorization code for tokens
-  // Derive redirect_uri from the incoming request so it always matches the
-  // origin the user's browser used during the authorization step.
-  const origin = request.nextUrl.origin;
+  // Use the configured public origin, never the reverse proxy's internal URL.
+  // This must exactly match the URI sent during authorization.
   const tokenUrl = 'https://api.ouraring.com/oauth/token';
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
     client_id: process.env.OURA_CLIENT_ID!,
     client_secret: process.env.OURA_CLIENT_SECRET!,
-    redirect_uri: `${origin}/api/oura/callback`,
+    redirect_uri: getOuraRedirectUri(),
   });
 
   const tokenRes = await fetch(tokenUrl, {
