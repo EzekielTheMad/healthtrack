@@ -2,7 +2,7 @@
 
 All notable changes to HealthTrack are documented here for GitHub releases.
 
-## Unreleased
+## 0.8.0 - 2026-09-03
 
 ### Fixed
 
