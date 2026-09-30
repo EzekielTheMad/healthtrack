@@ -17,6 +17,53 @@ const emptyInput: HealthSummaryInput = {
 };
 
 describe('buildHealthSnapshot', () => {
+  it('reports body measurements as sparse readings, never as daily averages', () => {
+    const snapshot = buildHealthSnapshot(
+      {
+        ...emptyInput,
+        // Same rows in both fields: a circumference must be excluded from the
+        // 30-day aggregate block and reported point-in-time instead.
+        vitals: [
+          { metric_key: 'waist', value: 38.1, unit: 'in', recorded_at: '2026-07-07T00:00:00Z' },
+          { metric_key: 'waist', value: 38.6, unit: 'in', recorded_at: '2026-06-01T00:00:00Z' },
+        ],
+        bodyMeasurements: [
+          { metric_key: 'waist', value: 38.1, unit: 'in', source: 'example_tape', recorded_at: '2026-07-07T00:00:00Z' },
+          { metric_key: 'waist', value: 38.6, unit: 'in', source: 'example_tape', recorded_at: '2026-06-01T00:00:00Z' },
+        ],
+      },
+      NOW,
+    );
+
+    expect(snapshot).not.toContain('Device & vital metrics (30-day aggregates):');
+    expect(snapshot).not.toMatch(/Waist.*7d avg/);
+    expect(snapshot).toContain('sparse point-in-time values');
+    expect(snapshot).toContain('- Waist: 38.1 in (Jul 7, 2026)');
+    expect(snapshot).toContain('previous 38.6 in (Jun 1, 2026)');
+    expect(snapshot).toContain('2 readings');
+  });
+
+  it('labels a lone measurement as a baseline and warns the model off verdicts', () => {
+    const snapshot = buildHealthSnapshot(
+      {
+        ...emptyInput,
+        bodyMeasurements: [
+          { metric_key: 'left_bicep', value: 14.2, unit: 'in', source: 'example_tape', recorded_at: '2026-07-07T00:00:00Z' },
+          { metric_key: 'right_bicep', value: 14.6, unit: 'in', source: 'example_tape', recorded_at: '2026-07-07T00:00:00Z' },
+        ],
+      },
+      NOW,
+    );
+    expect(snapshot).toContain('baseline (first reading)');
+    expect(snapshot).toMatch(/improvement or a regression/i);
+    expect(snapshot).toMatch(/independent series/i);
+  });
+
+  it('omits the measurement block entirely when there are none', () => {
+    const snapshot = buildHealthSnapshot(emptyInput, NOW);
+    expect(snapshot).not.toContain('Body measurements');
+  });
+
   it('renders vitals as aggregate lines under the device-metrics section', () => {
     const input: HealthSummaryInput = {
       ...emptyInput,

@@ -361,6 +361,14 @@ export default function ApiDocsPage() {
                 series that are never averaged, copied or derived from one another.
               </li>
               <li>
+                Submitted circumferences are presented as sparse point-in-time readings,
+                not daily vitals: each is compared with the previous reading of that same
+                metric rather than a rolling average, a single reading reads as a baseline,
+                and changes are reported neutrally unless the user has set a goal for that
+                metric. They appear under <strong>Vitals &rarr; Measurements</strong>, and
+                the free-form <code>source</code> you send is shown there verbatim.
+              </li>
+              <li>
                 Unknown <code>metric_key</code>s are rejected with 400: the registry is closed.
                 Batch requests report per-record errors by index without aborting valid records.
               </li>
