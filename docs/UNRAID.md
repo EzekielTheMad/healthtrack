@@ -98,6 +98,23 @@ APP_URL/api/oura/callback
 Whatever `APP_URL` you choose, it must exactly match the address you browse to
 (scheme, host and port). Restart the container after changing it.
 
+## Updates and applied templates
+
+The repository template describes install defaults; an operator's applied
+`my-*.xml` template on flash stores that instance's configuration. **Do not
+replace an applied template with the repository XML**, including when using the
+manual-download option above. The host owner must back it up and merge only
+intended field changes while preserving existing values and secrets.
+
+A recreate can refill an empty field from its `Default` value. When removing an
+unwanted signup override to restore invite-only behavior, inspect both the field
+value and its default rather than assuming a blank value is enough. Do not
+blindly reconstruct desired configuration from `docker inspect`: that captures
+existing drift too. Never put secret values in a commit, issue or release report.
+After an authorized update, verify health and the intended registration behavior;
+see [release evidence and rollback](RELEASE.md#release-evidence-requirements).
+This guidance does not authorize host/template changes.
+
 ## Submitting the template to Community Applications (repo owner)
 
 CA listing is a one-time action by the repository owner, via the submission

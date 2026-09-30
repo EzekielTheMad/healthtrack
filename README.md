@@ -176,6 +176,27 @@ npm run build
 
 Local development state (SQLite db, uploads, generated keys) lives in `./data` (override with `DATA_DIR`). Database tests run in the node environment — see existing `*.test.ts` files for the environment pragma convention.
 
+For local **production-mode** testing, explicitly pin `DATA_DIR` to an isolated
+scratch directory: the default switches to `/data` when `NODE_ENV=production`,
+so otherwise you may test against a different database. Never use a live health
+data directory as a test fixture.
+
+Container implementation, image workflow, project release checks and historical
+release lessons are in [docs/RELEASE.md](docs/RELEASE.md). This is documentation,
+not deployment or publication authorization.
+
+### Medical-history extraction
+
+Large medical-history PDFs are split with `pdf-lib` into 25-page chunks once
+past the threshold in [`chunk-pdf.ts`](src/lib/import/chunk-pdf.ts). Extraction
+results are merged with duplicate collapsing and annotated against existing
+records before the user reviews and approves an import. A failed chunk becomes
+a page-range warning; if every chunk fails, extraction fails. Review warnings
+for missing information rather than treating a partial result as complete.
+`ANTHROPIC_MODEL_EXTRACTION` can differ from the reasoning model to manage cost.
+Long extraction requests must fit your proxy's timeout; the application route's
+duration setting does not override an upstream proxy limit.
+
 ## Disclaimer
 
 HealthTrack helps you **organize** health information. It is **not a medical device and does not provide medical advice**, diagnosis or treatment — always consult a qualified healthcare professional. AI-generated content can be wrong. You run this software self-hosted, on your own infrastructure, at your own responsibility; review [SECURITY.md](SECURITY.md) before exposing an instance to the internet.
