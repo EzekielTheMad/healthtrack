@@ -3,9 +3,31 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg)](LICENSE)
 [![CI](https://github.com/EzekielTheMad/healthtrack/actions/workflows/ci.yml/badge.svg)](https://github.com/EzekielTheMad/healthtrack/actions/workflows/ci.yml)
 
-**Self-hosted personal & family health tracker.** Medications, conditions, allergies, labs, vitals, procedures, vaccines, appointments and notes — for you and your dependents — in a single Docker container. All data stays in one SQLite database and an uploads folder on **your** server. No cloud services required.
+**Self-hosted personal & family health tracker.** Medications, conditions, allergies, labs, vitals, procedures, vaccines, appointments and notes — for you and your dependents — in a single Docker container. Core records and uploads are stored in SQLite and an uploads folder on **your** server. Core tracking works without cloud services. When optional AI features are configured, selected health context or uploaded documents are sent to Anthropic for processing; see [privacy and security](SECURITY.md).
 
 ![HealthTrack dashboard — AI health overview, quick stats with trends, active medications and lab flags](docs/screenshots/dashboard.webp)
+
+## Product direction and implementation
+
+HealthTrack brings health records, documents and device data into one
+self-hosted place, with review steps for imports and explicit sharing controls.
+Victor defines the PRDs, prioritizes features and UX, and guides AI-assisted
+implementation. This project includes optional AI features in the product as
+well as AI assistance in development.
+
+A product priority is avoiding unnecessary model calls and token use. The
+current [dashboard summary flow](src/app/api/health-summary/route.ts) reuses a
+cached daily summary, offers manual refresh, and generates a summary when the
+cache is missing or stale. Large [medical-history PDFs](src/lib/import/chunk-pdf.ts)
+use chunked extraction with warnings and a review step before records are written. These
+are implementation choices, not measured savings or clinical validation.
+
+The repository includes unit and integration tests, plus CI lint, build and
+container smoke checks. See [release verification](docs/RELEASE.md) for the
+checks required for a specific candidate. Review [SECURITY.md](SECURITY.md),
+including unverified email identities and legacy share-token limits, before
+using multi-user sharing or exposing an instance to the internet. AI output
+can be wrong and needs human review.
 
 ## Features
 
@@ -173,6 +195,8 @@ npm test        # vitest
 npm run lint
 npm run build
 ```
+
+The gym-import regression dataset is [independently synthetic](scripts/fixtures/gym-export/README.md). Never commit real health exports, source-page links or identifying notes as test fixtures.
 
 Local development state (SQLite db, uploads, generated keys) lives in `./data` (override with `DATA_DIR`). Database tests run in the node environment — see existing `*.test.ts` files for the environment pragma convention.
 

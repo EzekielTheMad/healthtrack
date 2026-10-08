@@ -8,8 +8,8 @@
  * objects with the exact Notion property names) and imports:
  *   - the exercise catalog seed (canonical names from the Gym Training
  *     Reference with the observed drifted Notion strings as aliases),
- *   - 30 workout sessions (title → type/label, UTC instants preserved),
- *   - 94 exercise entries (parseSets over "All sets", raw string verbatim),
+ *   - workout sessions (title → type/label, UTC instants preserved),
+ *   - exercise entries (parseSets over "All sets", raw string verbatim),
  *   - weekly check-ins (manual fields only; neck/waist written through to
  *     vitals dated to the week's Monday).
  *
@@ -139,8 +139,7 @@ export function loadExport(dir: string): ExportData {
 // is name+aliases and names must be unique per user, so same-movement machine
 // variants that need separate trend lines get a disambiguated canonical name):
 //   Leg press                              → Leg press (linear-stack and
-//     plate-loaded eras kept as ONE trend line — the owner logged both under
-//     the same title after the 2026-05-23 machine switch)
+//     plate-loaded variants share one canonical title)
 //   Incline DB press (machine)             → Incline DB press (machine)
 //   Chest-supported row                    → Chest-supported row [Hammer high]
 //   Iso-lateral high row (Hammer Strength) → Chest-supported row (alias)
@@ -156,12 +155,11 @@ export function loadExport(dir: string): ExportData {
 //   Romanian deadlift                      → Romanian deadlift (alias RDL)
 //   Overhead press [Variant=Machine]       → Overhead press [Machine]
 //   Overhead press [Variant=Iso-lateral]   → Overhead press (iso-lateral)
-//     — per-arm Hammer iso press is a separate trend (35-40/arm vs 65-70
-//     stack); routed by the row's Variant select, judgment call documented.
+//     — per-arm and stack variants use separate trends, routed by Variant.
 //   Lat pulldown                           → Lat pulldown
 //   Leg curl [Variant=Prone]               → Leg curl [Prone]
 //   Leg curl [Variant=Hoist seated]        → Leg curl (seated) [Hoist seated]
-//     — owner's own notes: "Track separately from prone leg curl numbers".
+//     — seated and prone variants use separate trends.
 //   Face pulls                             → Face pulls
 //   Triceps / Tricep extension / Triceps pressdown → Triceps pressdown [Machine]
 //   Calf raise                             → Calf raise
@@ -278,7 +276,7 @@ export function mapExerciseName(exercise: string, variant: string | null): Mappe
 // Field parsers
 // ---------------------------------------------------------------------------
 
-/** "Day A - 2026-07-08" → strength/"Day A"; "Cardio - …" → cardio/"Cardio". */
+/** "Day A - 2000-01-06" → strength/"Day A"; "Cardio - …" → cardio/"Cardio". */
 export function sessionTitleToTypeLabel(
   title: string,
   daySelect: string | null,
@@ -315,8 +313,8 @@ export function notionDateToIso(date: NotionDate | null, fallback: string): stri
  * Importer-side normalization in front of parseSets — rawSets stays verbatim,
  * only the parse INPUT is cleaned:
  *   - "(warmup)" → " warmup" (the parser's inline warmup flag)
- *   - one trailing parenthetical annotation is stripped ("(ramp to find
- *     working weight)", "(Hoist seated/sliding-seat machine)", "(failed)", …);
+ *   - one trailing parenthetical annotation is stripped ("(synthetic ramp)",
+ *     "(synthetic example)", "(failed)", …);
  *     if it mentions a per-arm/side load, every parsed set gets perSide:true
  *   - comma separators become the parser's " / " separator
  */
@@ -370,7 +368,7 @@ export function parseCardioNotes(notes: string | null): CardioNotesMetrics {
   const out: CardioNotesMetrics = {};
   if (!notes) return out;
 
-  // Duration "42:47" (mm:ss) or "1:05:08" (h:mm:ss), rounded to the minute.
+  // Duration "34:20" (mm:ss) or "1:04:40" (h:mm:ss), rounded to the minute.
   const hms = /\b(\d{1,2}):(\d{2}):(\d{2})\b/.exec(notes);
   const ms = /\b(\d{1,3}):(\d{2})\b/.exec(notes);
   if (hms) {
