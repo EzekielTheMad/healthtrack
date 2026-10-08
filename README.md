@@ -18,8 +18,8 @@ well as AI assistance in development.
 A product priority is avoiding unnecessary model calls and token use. The
 current [dashboard summary flow](src/app/api/health-summary/route.ts) reuses a
 cached daily summary, offers manual refresh, and generates a summary when the
-cache is missing or stale. [PDF imports](src/lib/import/chunk-pdf.ts) use chunked
-extraction with warnings and a review step before records are written. These
+cache is missing or stale. Large [medical-history PDFs](src/lib/import/chunk-pdf.ts)
+use chunked extraction with warnings and a review step before records are written. These
 are implementation choices, not measured savings or clinical validation.
 
 The repository includes unit and integration tests, plus CI lint, build and
