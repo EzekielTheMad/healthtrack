@@ -1,14 +1,9 @@
 // @vitest-environment node
 /**
- * Notion gym-data importer — pure transform tests over a fixture copied from
- * the real export (scripts/fixtures/gym-export), plus a live end-to-end
- * import against a temp-file SQLite database via the repo test harness.
- *
- * Fixture coverage: warmup strings (inline + parenthesized), per-arm loads,
- * time-based sets ("75s / 75s / 75s" and single "75 sec"), an x3 multiplier
- * (synthetic row — the shape is documented but no x3 string survives in the
- * real export), a cardio session with parseable notes, a filled check-in and
- * a skeleton check-in week.
+ * Pure transform and temp-SQLite integration tests using independently
+ * synthetic gym data. No records or notes are copied from a real export.
+ * Covers warmups, per-arm loads, timed sets, multipliers, relation ordering,
+ * mismatches, cardio notes, populated/skeleton weeks and repeat imports.
  */
 import path from 'path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -26,6 +21,7 @@ import {
   EXERCISE_SEEDS,
   type ExportData,
 } from './import-gym-backfill';
+import { syntheticGymExport } from './generate-synthetic-gym-fixtures';
 import {
   setupRepoDb,
   insertUser,
@@ -35,95 +31,155 @@ import {
 
 const FIXTURE_DIR = path.join(process.cwd(), 'scripts', 'fixtures', 'gym-export');
 
+// Abort before value-bearing assertions if a real export is accidentally copied
+// into the fixture directory. Never echo replacement records in the failure.
+const fixtureIsSynthetic =
+  JSON.stringify(loadExport(FIXTURE_DIR)) === JSON.stringify(syntheticGymExport());
+if (!fixtureIsSynthetic) {
+  throw new Error(
+    'Gym fixtures differ from the synthetic generator. Regenerate fictional fixtures before running importer tests.'
+  );
+}
+
+describe('synthetic fixture privacy guard', () => {
+  const data = loadExport(FIXTURE_DIR);
+
+  it('matches the independently authored generator exactly', () => {
+    // Boolean comparison avoids printing potentially private replacement rows
+    // into CI logs if someone accidentally copies a real export here.
+    expect(JSON.stringify(data) === JSON.stringify(syntheticGymExport())).toBe(true);
+  });
+
+  it('uses fictional IDs/dates and contains no source URLs or contact addresses', () => {
+    const rows = [...data.sessions, ...data.exerciseLog, ...data.checkins];
+    expect(rows.every((r) => /^synthetic-(session|exercise|checkin)-\d+$/.test(r.notionId))).toBe(
+      true
+    );
+    expect(new Set(rows.map((r) => r.notionId)).size).toBe(rows.length);
+    expect(rows.every((r) => /^2000-01-\d{2}T/.test(r.createdTime))).toBe(true);
+    expect(rows.every((r) => r.Date?.start?.startsWith('2000-01-'))).toBe(true);
+    expect(rows.every((r) => !('notionUrl' in r))).toBe(true);
+    expect(
+      /https?:\/\/|notion\.(so|site)|[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(JSON.stringify(data))
+    ).toBe(false);
+    expect(data.sessions.every((r) => r.Notes?.startsWith('Synthetic case:'))).toBe(true);
+    expect(data.exerciseLog.every((r) => r.Notes?.startsWith('Synthetic case:'))).toBe(true);
+    expect(
+      data.checkins.every((r) => r.Working === null || r.Working.startsWith('Synthetic case:'))
+    ).toBe(true);
+    expect(
+      data.checkins.every(
+        (r) => r['Not working'] === null || r['Not working'].startsWith('Synthetic case:')
+      )
+    ).toBe(true);
+  });
+
+  it('keeps every relation within the fictional dataset', () => {
+    const sessions = new Map(data.sessions.map((r) => [r.notionId, r]));
+    const entries = new Map(data.exerciseLog.map((r) => [r.notionId, r]));
+    const weeks = new Set(data.checkins.map((r) => r.notionId));
+    expect(data.sessions.every((s) => s.Week.every((id) => weeks.has(id)))).toBe(true);
+    expect(
+      data.sessions.every((s) =>
+        s['Exercise log'].every((id) => entries.get(id)?.['Workout session'].includes(s.notionId))
+      )
+    ).toBe(true);
+    expect(
+      data.exerciseLog.every(
+        (r) =>
+          r['Workout session'].length === 1 && r['Workout session'].every((id) => sessions.has(id))
+      )
+    ).toBe(true);
+    expect(data.checkins.every((r) => new Date(r.Date!.start!).getUTCDay() === 1)).toBe(true);
+  });
+});
+
 describe('sessionTitleToTypeLabel', () => {
-  it('maps Day/Cardio titles to type + label', () => {
-    expect(sessionTitleToTypeLabel('Day A - 2026-07-08', 'A')).toMatchObject({
+  it('maps Day/Cardio titles to type and label', () => {
+    expect(sessionTitleToTypeLabel('Day A - 2000-01-06', 'A')).toMatchObject({
       type: 'strength',
       label: 'Day A',
     });
-    expect(sessionTitleToTypeLabel('Day B - 2026-04-30', 'B')).toMatchObject({
+    expect(sessionTitleToTypeLabel('Day B - 2000-01-05', 'B')).toMatchObject({
       type: 'strength',
       label: 'Day B',
     });
-    expect(
-      sessionTitleToTypeLabel('Day A - Session 1 (return to gym)', 'A'),
-    ).toMatchObject({ type: 'strength', label: 'Day A', fromFallback: false });
-    expect(
-      sessionTitleToTypeLabel('Cardio - 2026-05-14 (post-Day B)', 'Cardio'),
-    ).toMatchObject({ type: 'cardio', label: 'Cardio' });
+    expect(sessionTitleToTypeLabel('Day A - Session 1 (synthetic)', 'A')).toMatchObject({
+      type: 'strength',
+      label: 'Day A',
+      fromFallback: false,
+    });
+    expect(sessionTitleToTypeLabel('Cardio - 2000-01-08 (synthetic)', 'Cardio')).toMatchObject({
+      type: 'cardio',
+      label: 'Cardio',
+    });
   });
-
   it('falls back to the Day select, then to type other', () => {
-    expect(sessionTitleToTypeLabel('Leg day', 'B')).toMatchObject({
+    expect(sessionTitleToTypeLabel('Synthetic strength', 'B')).toMatchObject({
       type: 'strength',
       label: 'Day B',
       fromFallback: true,
     });
-    expect(sessionTitleToTypeLabel('Evening walk', 'Cardio')).toMatchObject({
+    expect(sessionTitleToTypeLabel('Synthetic walk', 'Cardio')).toMatchObject({
       type: 'cardio',
       label: 'Cardio',
       fromFallback: true,
     });
-    expect(sessionTitleToTypeLabel('Something else', null)).toMatchObject({
+    expect(sessionTitleToTypeLabel('Synthetic activity', null)).toMatchObject({
       type: 'other',
-      label: 'Something else',
+      label: 'Synthetic activity',
     });
   });
 });
 
-describe('parseEnergy', () => {
-  it('parses Notion select labels like "4 - good"', () => {
-    expect(parseEnergy('4 - good')).toBe(4);
-    expect(parseEnergy('1 - drained')).toBe(1);
-    expect(parseEnergy('5 - great')).toBe(5);
+describe('parseEnergy / notionDateToIso', () => {
+  it('parses energy selects and rejects missing or unnumbered labels', () => {
+    expect(parseEnergy('3 - moderate')).toBe(3);
+    expect(parseEnergy('1 - low')).toBe(1);
+    expect(parseEnergy('5 - high')).toBe(5);
     expect(parseEnergy(null)).toBeNull();
-    expect(parseEnergy('great')).toBeNull();
+    expect(parseEnergy('high')).toBeNull();
   });
-});
-
-describe('notionDateToIso', () => {
-  it('preserves UTC instants and defaults date-only starts to midnight UTC', () => {
+  it('preserves UTC instants, date-only starts and creation-time fallback', () => {
     expect(
-      notionDateToIso({ start: '2026-07-09 00:40:00Z', end: null, is_datetime: true }, ''),
-    ).toBe('2026-07-09T00:40:00.000Z');
-    expect(
-      notionDateToIso({ start: '2026-04-30', end: null, is_datetime: false }, ''),
-    ).toBe('2026-04-30T00:00:00.000Z');
-    expect(notionDateToIso(null, '2026-04-29 17:15:28Z')).toBe('2026-04-29T17:15:28.000Z');
+      notionDateToIso({ start: '2000-01-06T18:00:00.000Z', end: null, is_datetime: true }, '')
+    ).toBe('2000-01-06T18:00:00.000Z');
+    expect(notionDateToIso({ start: '2000-01-03', end: null, is_datetime: false }, '')).toBe(
+      '2000-01-03T00:00:00.000Z'
+    );
+    expect(notionDateToIso(null, '2000-01-04 19:00:00Z')).toBe('2000-01-04T19:00:00.000Z');
   });
 });
 
 describe('mapExerciseName', () => {
-  it('maps every drifted string from the explicit table', () => {
-    expect(mapExerciseName('Lateral raises (machine)', 'Pin-stack').name).toBe('Lateral raises');
-    expect(mapExerciseName('Lateral raises', null).name).toBe('Lateral raises');
-    expect(mapExerciseName('Iso-lateral high row (Hammer Strength)', 'Hammer high').name).toBe(
-      'Chest-supported row',
-    );
-    expect(mapExerciseName('Iso-lateral high row', null).name).toBe('Chest-supported row');
-    expect(mapExerciseName('Iso-lateral low row (Hammer Strength)', 'Hammer low').name).toBe(
-      'Chest-supported row (Hammer low)',
-    );
-    expect(mapExerciseName('Triceps', null).name).toBe('Triceps pressdown');
-    expect(mapExerciseName('Tricep extension', null).name).toBe('Triceps pressdown');
-    expect(mapExerciseName('Triceps pressdown', 'Machine').name).toBe('Triceps pressdown');
-    expect(mapExerciseName('Calf raise', null).name).toBe('Calf raise');
-    expect(mapExerciseName('Decline chest press', 'Machine').name).toBe('Decline chest press');
+  it('maps the explicit alias table', () => {
+    const aliases = [
+      ['Lateral raises (machine)', 'Pin-stack', 'Lateral raises'],
+      ['Lateral raises', null, 'Lateral raises'],
+      ['Iso-lateral high row (Hammer Strength)', 'Hammer high', 'Chest-supported row'],
+      ['Iso-lateral high row', null, 'Chest-supported row'],
+      ['Iso-lateral low row (Hammer Strength)', 'Hammer low', 'Chest-supported row (Hammer low)'],
+      ['Triceps', null, 'Triceps pressdown'],
+      ['Tricep extension', null, 'Triceps pressdown'],
+      ['Triceps pressdown', 'Machine', 'Triceps pressdown'],
+      ['Calf raise', null, 'Calf raise'],
+      ['Decline chest press', 'Machine', 'Decline chest press'],
+    ] as const;
+    for (const [name, variant, expected] of aliases)
+      expect(mapExerciseName(name, variant).name).toBe(expected);
     expect(mapExerciseName('Plank', null)).toMatchObject({ name: 'Plank', mode: 'time' });
   });
-
-  it('routes same-title machine variants by the Variant select', () => {
+  it('routes same-title variants separately', () => {
     expect(mapExerciseName('Leg curl', 'Prone').name).toBe('Leg curl');
     expect(mapExerciseName('Leg curl', 'Hoist seated').name).toBe('Leg curl (seated)');
     expect(mapExerciseName('Overhead press', 'Machine').name).toBe('Overhead press');
     expect(mapExerciseName('Overhead press', 'Iso-lateral').name).toBe(
-      'Overhead press (iso-lateral)',
+      'Overhead press (iso-lateral)'
     );
   });
-
   it('passes unknown names through for unreviewed auto-create', () => {
-    expect(mapExerciseName('Bicep curls', null)).toMatchObject({
-      name: 'Bicep curls',
+    expect(mapExerciseName('Synthetic exercise', null)).toMatchObject({
+      name: 'Synthetic exercise',
       mapped: false,
       mode: 'weight',
     });
@@ -132,238 +188,198 @@ describe('mapExerciseName', () => {
 
 describe('normalizeSetString / parseAllSets', () => {
   it('handles inline and parenthesized warmups', () => {
-    expect(parseAllSets('200x12 warmup / 330x12 / 330x12 / 330x12').sets).toEqual([
-      { weight: 200, reps: 12, warmup: true },
-      { weight: 330, reps: 12 },
-      { weight: 330, reps: 12 },
-      { weight: 330, reps: 12 },
-    ]);
-    expect(parseAllSets('95x8 (warmup) / 135x8 / 135x8 / 135x8').sets).toEqual([
-      { weight: 95, reps: 8, warmup: true },
-      { weight: 135, reps: 8 },
-      { weight: 135, reps: 8 },
-      { weight: 135, reps: 8 },
+    for (const raw of ['80x8 warmup / 150x8 / 150x6', '80x8 (warmup) / 150x8 / 150x6']) {
+      expect(parseAllSets(raw).sets).toEqual([
+        { weight: 80, reps: 8, warmup: true },
+        { weight: 150, reps: 8 },
+        { weight: 150, reps: 6 },
+      ]);
+    }
+  });
+  it('handles commas with and without warmups', () => {
+    expect(parseAllSets('30x8, 30x8, 30x6').sets).toHaveLength(3);
+    expect(parseAllSets('10x8 (warmup), 30x8, 30x6').sets).toEqual([
+      { weight: 10, reps: 8, warmup: true },
+      { weight: 30, reps: 8 },
+      { weight: 30, reps: 6 },
     ]);
   });
-
-  it('handles comma separators, including with a parenthesized warmup', () => {
-    expect(parseAllSets('30x15, 30x15, 30x15').sets).toHaveLength(3);
-    expect(parseAllSets('160x8 (warmup), 220x8, 220x8, 250x15').sets).toEqual([
-      { weight: 160, reps: 8, warmup: true },
-      { weight: 220, reps: 8 },
-      { weight: 220, reps: 8 },
-      { weight: 250, reps: 15 },
+  it('strips a trailing annotation and retains per-arm hints', () => {
+    expect(parseAllSets('10x8 / 20x8 / 30x8 (synthetic ramp)').sets).toEqual([
+      { weight: 10, reps: 8 },
+      { weight: 20, reps: 8 },
+      { weight: 30, reps: 8 },
+    ]);
+    expect(parseAllSets('25x8 / 25x8 (synthetic per arm)').sets).toEqual([
+      { weight: 25, reps: 8, perSide: true },
+      { weight: 25, reps: 8, perSide: true },
+    ]);
+    expect(parseAllSets('120x8, 140x8, 160x1 (failed)').sets).toEqual([
+      { weight: 120, reps: 8 },
+      { weight: 140, reps: 8 },
+      { weight: 160, reps: 1 },
     ]);
   });
-
-  it('strips one trailing annotation and keeps per-arm hints', () => {
-    expect(parseAllSets('90x10 / 130x10 / 170x10 (ramp to find working weight)').sets).toEqual([
-      { weight: 90, reps: 10 },
-      { weight: 130, reps: 10 },
-      { weight: 170, reps: 10 },
+  it('handles per-arm tokens, timed sets and a multiplier', () => {
+    expect(parseAllSets('25/arm x8 / 25/arm x8').sets).toEqual([
+      { weight: 25, reps: 8, perSide: true },
+      { weight: 25, reps: 8, perSide: true },
     ]);
-    expect(
-      parseAllSets('35x10 / 35x10 / 35x10 (Hammer Strength iso-lateral, per arm)').sets,
-    ).toEqual([
-      { weight: 35, reps: 10, perSide: true },
-      { weight: 35, reps: 10, perSide: true },
-      { weight: 35, reps: 10, perSide: true },
+    expect(parseAllSets('25 sec').sets).toEqual([{ seconds: 25 }]);
+    expect(parseAllSets('20s / 25s / 30s').sets).toEqual([
+      { seconds: 20 },
+      { seconds: 25 },
+      { seconds: 30 },
     ]);
-    expect(parseAllSets('303x10, 333x10, 373x1 (failed)').sets).toEqual([
-      { weight: 303, reps: 10 },
-      { weight: 333, reps: 10 },
-      { weight: 373, reps: 1 },
-    ]);
+    expect(parseAllSets('22.5x8 x3').sets).toEqual(
+      Array.from({ length: 3 }, () => ({ weight: 22.5, reps: 8 }))
+    );
   });
-
-  it('handles per-arm tokens, time-based sets, and the x3 multiplier', () => {
-    expect(parseAllSets('50/arm x12 / 50/arm x12 / 50/arm x12').sets).toEqual([
-      { weight: 50, reps: 12, perSide: true },
-      { weight: 50, reps: 12, perSide: true },
-      { weight: 50, reps: 12, perSide: true },
-    ]);
-    expect(parseAllSets('75 sec').sets).toEqual([{ seconds: 75 }]);
-    expect(parseAllSets('60s / 75s / 45s').sets).toEqual([
-      { seconds: 60 },
-      { seconds: 75 },
-      { seconds: 45 },
-    ]);
-    expect(parseAllSets('47.5x15 x3').sets).toEqual([
-      { weight: 47.5, reps: 15 },
-      { weight: 47.5, reps: 15 },
-      { weight: 47.5, reps: 15 },
-    ]);
-  });
-
-  it('returns sets: [] with the unparsed tokens on failure (never partial)', () => {
-    const result = parseAllSets('felt strong / 330x12');
-    expect(result.sets).toEqual([]);
-    expect(result.unparsed).toEqual(['felt strong']);
+  it('returns no partial sets on failure', () => {
+    expect(parseAllSets('synthetic invalid token / 20x8')).toEqual({
+      sets: [],
+      unparsed: ['synthetic invalid token'],
+    });
     expect(parseAllSets(null)).toEqual({ sets: [], unparsed: [] });
   });
-
-  it('normalizeSetString reports the per-side hint', () => {
-    expect(normalizeSetString('40x12 / 40x12 / 40x12 (per arm)')).toEqual({
-      normalized: '40x12 / 40x12 / 40x12',
+  it('reports the per-side normalization hint', () => {
+    expect(normalizeSetString('25x8 / 25x8 (per arm)')).toEqual({
+      normalized: '25x8 / 25x8',
       perSideHint: true,
     });
   });
 });
 
 describe('parseCardioNotes', () => {
-  it('extracts duration, avg HR, calories, steps and machine from real notes', () => {
-    const notes =
-      'Treadmill walk. 42:47, 0.22 mi, avg speed 0.3 mph, avg HR 106 bpm, 222 Cal, avg cadence 12 spm, 543 steps. HR stayed below target zone 2 range of 112-131, so treat as light cardio / active recovery rather than true zone 2.';
-    expect(parseCardioNotes(notes)).toEqual({
-      durationMin: 43,
-      avgHr: 106,
-      calories: 222,
-      steps: 543,
-      machine: 'Treadmill',
-    });
+  it('extracts metrics from fictional notes', () => {
+    expect(
+      parseCardioNotes(
+        'Synthetic: Treadmill, 34:20, 1.4 mi, avg speed 2.5 mph, avg HR 108 bpm, 190 Cal, avg cadence 92 spm, 3200 steps. Ignore the fictional target HR range 120-130.'
+      )
+    ).toEqual({ durationMin: 34, avgHr: 108, calories: 190, steps: 3200, machine: 'Treadmill' });
   });
-
-  it('handles h:mm:ss durations, "bpm avg HR" order, comma thousands and watch steps', () => {
-    const notes =
-      'Desk treadmill zone 2 walk at speed 2.0. Duration 1:05:08, avg HR 124 bpm, 334 Cal, 720 watch steps.';
-    expect(parseCardioNotes(notes)).toEqual({
-      durationMin: 65,
-      avgHr: 124,
-      calories: 334,
-      steps: 720,
-      machine: 'Treadmill',
-    });
-    expect(parseCardioNotes('Walking, 28:24, 539 steps, 142 cal, 103 bpm avg HR.')).toEqual({
-      durationMin: 28,
-      avgHr: 103,
-      calories: 142,
-      steps: 539,
-    });
-    expect(parseCardioNotes('Incline walk, 1.29 mi, avg HR 121 bpm (zone 2), 225 cal, 3,152 steps')).toEqual(
-      { avgHr: 121, calories: 225, steps: 3152 },
-    );
+  it('handles h:mm:ss, reversed HR labels, thousands separators and watch steps', () => {
+    expect(
+      parseCardioNotes('Synthetic: Treadmill, 1:04:40, avg HR 112 bpm, 260 Cal, 5,100 watch steps.')
+    ).toEqual({ durationMin: 65, avgHr: 112, calories: 260, steps: 5100, machine: 'Treadmill' });
+    expect(
+      parseCardioNotes('Synthetic: Walking, 21:10, 2300 steps, 125 cal, 105 bpm avg HR.')
+    ).toEqual({ durationMin: 21, avgHr: 105, calories: 125, steps: 2300 });
+    expect(
+      parseCardioNotes('Synthetic: Incline walk, 1.2 mi, avg HR 116 bpm, 180 cal, 2,400 steps.')
+    ).toEqual({ avgHr: 116, calories: 180, steps: 2400 });
   });
-
-  it('leaves machine unset when no unambiguous machine word appears', () => {
-    expect(parseCardioNotes('Walk, tracked w/ Oura. Avg HR 119 bpm.').machine).toBeUndefined();
+  it('leaves machine unset without an unambiguous machine word', () => {
+    expect(parseCardioNotes('Synthetic: walk, avg HR 106 bpm.').machine).toBeUndefined();
     expect(parseCardioNotes(null)).toEqual({});
   });
 });
 
-describe('buildPlan (fixture copied from the real export)', () => {
+describe('buildPlan (independently synthetic fixtures)', () => {
   const data = loadExport(FIXTURE_DIR);
   const plan = buildPlan(data);
-
-  it('plans every session and entry with relation-array ordering', () => {
+  it('plans all rows in relation-array order, then back-link order', () => {
     expect(plan.sessions).toHaveLength(4);
     expect(plan.sessions.reduce((n, s) => n + s.entries.length, 0)).toBe(11);
-
-    const day622 = plan.sessions.find((s) => s.title === 'Day A - 2026-06-22')!;
-    // Relation-array order first, then the back-link-only row by created order.
-    expect(day622.entries.map((e) => e.exerciseName)).toEqual([
+    const session = plan.sessions.find((s) => s.notionId === 'synthetic-session-2')!;
+    expect(session.entries.map((e) => e.exerciseName)).toEqual([
       'Leg press',
       'Triceps pressdown',
       'Plank',
       'Face pulls',
     ]);
-    expect(day622.entries.map((e) => e.orderedByFallback)).toEqual([false, false, false, true]);
+    expect(session.entries.map((e) => e.orderedByFallback)).toEqual([false, false, false, true]);
     expect(plan.report.fallbackOrdered).toHaveLength(1);
-    // The x3 multiplier row expands to three identical sets.
-    expect(day622.entries[3].sets).toHaveLength(3);
-    // "75 sec" single time-based set.
-    expect(day622.entries[2].sets).toEqual([{ seconds: 75 }]);
+    expect(session.entries[3].sets).toHaveLength(3);
+    expect(session.entries[2].sets).toEqual([{ seconds: 25 }]);
   });
-
-  it('preserves instants, parses energy, and fills cardio columns from notes', () => {
-    const day78 = plan.sessions.find((s) => s.title === 'Day A - 2026-07-08')!;
-    expect(day78.startedAt).toBe('2026-07-09T00:40:00.000Z');
-    expect(day78).toMatchObject({ type: 'strength', label: 'Day A', energy: 5 });
-
+  it('preserves instants and energy while preferring the explicit cardio duration', () => {
+    expect(plan.sessions[0]).toMatchObject({
+      startedAt: '2000-01-06T18:00:00.000Z',
+      type: 'strength',
+      label: 'Day A',
+      energy: 3,
+    });
     const cardio = plan.sessions.find((s) => s.type === 'cardio')!;
     expect(cardio).toMatchObject({
       label: 'Cardio',
-      durationMin: 43, // Notion Duration column wins over the notes-derived value
-      avgHr: 106,
-      calories: 222,
-      steps: 543,
+      durationMin: 36,
+      avgHr: 108,
+      calories: 190,
+      steps: 3200,
       machine: 'Treadmill',
     });
-    expect(cardio.notes).toContain('42:47'); // notes stay verbatim
+    expect(cardio.notes).toBe(data.sessions[3].Notes);
   });
-
-  it('keeps rawSets verbatim and marks per-arm sets', () => {
-    const day78 = plan.sessions.find((s) => s.title === 'Day A - 2026-07-08')!;
-    const row = day78.entries.find((e) => e.exerciseName === 'Chest-supported row')!;
-    expect(row.rawSets).toBe('50/arm x12 / 50/arm x12 / 50/arm x12');
+  it('preserves raw sets and per-arm flags', () => {
+    const row = plan.sessions[0].entries.find((e) => e.exerciseName === 'Chest-supported row')!;
+    expect(row.rawSets).toBe('25/arm x8 / 25/arm x8 / 25/arm x8');
+    expect(row.sets).toHaveLength(3);
     expect(row.sets.every((s) => s.perSide)).toBe(true);
   });
-
-  it('reports working-weight mismatches (derived wins) without failing', () => {
+  it('reports the intentional weight mismatch without losing valid records', () => {
     expect(plan.report.weightMismatches).toEqual([
       {
-        session: 'Day A - 2026-05-23',
+        session: 'Day A - 2000-01-03 (synthetic)',
         exercise: 'Leg press',
-        derived: 373, // the failed 373x1 single beats Notion's 333
-        notion: 333,
+        derived: 160,
+        notion: 140,
       },
     ]);
     expect(plan.report.parseFailures).toEqual([]);
     expect(plan.report.unmappedExercises).toEqual([]);
     expect(plan.report.orphanEntries).toEqual([]);
+    expect(plan.report.missingRelationIds).toEqual([]);
   });
-
-  it('imports the filled check-in, skips the skeleton week, and dates vitals to the Monday', () => {
+  it('imports a populated week, skips a skeleton, and dates vitals to Monday', () => {
     expect(plan.checkins).toHaveLength(2);
-    const filled = plan.checkins.find((c) => c.weekStart === '2026-05-25')!;
+    const filled = plan.checkins[0];
     expect(filled.skipped).toBe(false);
-    expect(filled.fields).toMatchObject({
-      daysLogged: 7,
-      avgCalories: 2003,
-      avgProteinG: 166.5,
-      avgCarbsG: 211.4,
-      avgFatG: 57.8,
-      avgFiberG: 23.5,
+    expect(filled.fields).toEqual({
+      daysLogged: 4,
+      avgCalories: 2100,
+      avgProteinG: 110,
+      avgCarbsG: 280,
+      avgFatG: 60,
+      avgFiberG: 30,
+      working: 'Synthetic case: import populated weekly fields.',
+      notWorking: 'Synthetic case: preserve this fictional review note.',
     });
-    expect(filled.fields.working).toContain('Lifts progressing on schedule');
-    // Pruned Notion fields are reported, not imported.
     expect(filled.dropped.join(' ')).toContain('Sleep avg');
-
-    const skeleton = plan.checkins.find((c) => c.weekStart === '2026-06-01')!;
-    expect(skeleton.skipped).toBe(true);
-    expect(plan.report.skippedCheckins).toEqual(['2026-06-01']);
-
+    expect(plan.checkins[1].skipped).toBe(true);
+    expect(plan.report.skippedCheckins).toEqual(['2000-01-10']);
     expect(plan.vitals).toEqual([
-      { metricKey: 'neck', value: 17, recordedAt: '2026-05-25', source: 'manual' },
-      { metricKey: 'waist', value: 41, recordedAt: '2026-05-25', source: 'manual' },
+      { metricKey: 'neck', value: 14, recordedAt: '2000-01-03', source: 'manual' },
+      { metricKey: 'waist', value: 32, recordedAt: '2000-01-03', source: 'manual' },
     ]);
   });
 });
 
 describe('parseCliArgs', () => {
   it('parses flags and rejects unknown arguments', () => {
-    expect(
-      parseCliArgs(['--dir', 'x', '--user', 'u1', '--dry-run', '--data-dir', 'd']),
-    ).toEqual({ dir: 'x', user: 'u1', dryRun: true, dataDir: 'd' });
+    expect(parseCliArgs(['--dir', 'x', '--user', 'u1', '--dry-run', '--data-dir', 'd'])).toEqual({
+      dir: 'x',
+      user: 'u1',
+      dryRun: true,
+      dataDir: 'd',
+    });
     expect(() => parseCliArgs(['--nope'])).toThrow(/Unknown argument/);
   });
 });
 
-describe('live import into temp SQLite (repo harness)', () => {
+describe('live synthetic import into temp SQLite', () => {
   let ctx: RepoTestDb;
   let mod: typeof import('./import-gym-backfill');
   let data: ExportData;
-
   beforeEach(async () => {
-    ctx = await setupRepoDb('healthtrack-gym-import-');
-    // Import AFTER the temp DATA_DIR is set so the module binds the temp DB.
+    ctx = await setupRepoDb('healthtrack-synthetic-gym-');
     mod = await import('./import-gym-backfill');
     insertUser(ctx.sqlite, OWNER);
     data = mod.loadExport(FIXTURE_DIR);
   });
+  afterEach(() => ctx?.restore());
 
-  afterEach(() => ctx.restore());
-
-  it('imports the fixture end-to-end and verifies counts', async () => {
+  it('imports the fictional dataset end-to-end and verifies stored values', async () => {
     const plan = mod.buildPlan(data);
     const result = await mod.executePlan(plan, OWNER);
     expect(result).toMatchObject({
@@ -376,103 +392,73 @@ describe('live import into temp SQLite (repo harness)', () => {
       checkinsSkipped: 1,
       vitalsWritten: 2,
     });
-
-    // Alias-driven resolution: "Tricep extension" landed on Triceps pressdown.
     const entryNames = ctx.sqlite
-      .prepare(
-        `select e.name, ee.raw_sets from exercise_entries ee
-         join exercises e on e.id = ee.exercise_id
-         order by e.name, ee.raw_sets`,
-      )
-      .all() as { name: string; raw_sets: string }[];
+      .prepare('select e.name from exercise_entries ee join exercises e on e.id = ee.exercise_id')
+      .all() as { name: string }[];
     expect(entryNames.filter((r) => r.name === 'Triceps pressdown')).toHaveLength(2);
     expect(entryNames.filter((r) => r.name === 'Leg press')).toHaveLength(3);
-
-    // Sets survived as structured JSON with the raw string verbatim.
     const plank = ctx.sqlite
       .prepare(
-        `select ee.sets, ee.raw_sets from exercise_entries ee
-         join exercises e on e.id = ee.exercise_id
-         where e.name = 'Plank' and ee.raw_sets = '75 sec'`,
+        "select ee.sets, ee.raw_sets from exercise_entries ee join exercises e on e.id = ee.exercise_id where e.name = 'Plank' and ee.raw_sets = '25 sec'"
       )
       .get() as { sets: string; raw_sets: string };
-    expect(JSON.parse(plank.sets)).toEqual([{ seconds: 75 }]);
-
-    // Session instants preserved (UTC, not shifted).
+    expect(JSON.parse(plank.sets)).toEqual([{ seconds: 25 }]);
     const started = ctx.sqlite
       .prepare('select started_at from workout_sessions order by started_at desc limit 1')
       .get() as { started_at: string };
-    expect(started.started_at).toBe('2026-07-09T00:40:00.000Z');
-
-    // Cardio columns extracted from notes; notes verbatim.
+    expect(started.started_at).toBe('2000-01-08T10:00:00.000Z');
     const cardio = ctx.sqlite
       .prepare(
-        "select duration_min, avg_hr, calories, steps, machine, notes from workout_sessions where type = 'cardio'",
+        "select duration_min, avg_hr, calories, steps, machine, notes from workout_sessions where type = 'cardio'"
       )
-      .get() as {
-      duration_min: number;
-      avg_hr: number;
-      calories: number;
-      steps: number;
-      machine: string;
-      notes: string;
-    };
-    expect(cardio).toMatchObject({
-      duration_min: 43,
-      avg_hr: 106,
-      calories: 222,
-      steps: 543,
+      .get();
+    expect(cardio).toEqual({
+      duration_min: 36,
+      avg_hr: 108,
+      calories: 190,
+      steps: 3200,
       machine: 'Treadmill',
+      notes: data.sessions[3].Notes,
     });
-    expect(cardio.notes).toContain('42:47');
-
-    // Check-in row + Monday-dated neck/waist vitals.
-    const checkins = ctx.sqlite
-      .prepare('select week_start, days_logged, avg_calories from weekly_checkins')
-      .all() as { week_start: string; days_logged: number; avg_calories: number }[];
-    expect(checkins).toEqual([
-      { week_start: '2026-05-25', days_logged: 7, avg_calories: 2003 },
+    expect(
+      ctx.sqlite.prepare('select week_start, days_logged, avg_calories from weekly_checkins').all()
+    ).toEqual([{ week_start: '2000-01-03', days_logged: 4, avg_calories: 2100 }]);
+    expect(
+      ctx.sqlite
+        .prepare(
+          "select metric_key, value, recorded_at, source from vitals where metric_key in ('neck','waist') order by metric_key"
+        )
+        .all()
+    ).toEqual([
+      { metric_key: 'neck', value: 14, recorded_at: '2000-01-03T00:00:00Z', source: 'manual' },
+      { metric_key: 'waist', value: 32, recorded_at: '2000-01-03T00:00:00Z', source: 'manual' },
     ]);
-    const vitalRows = ctx.sqlite
-      .prepare(
-        "select metric_key, value, recorded_at, source from vitals where metric_key in ('neck','waist') order by metric_key",
-      )
-      .all() as { metric_key: string; value: number; recorded_at: string; source: string }[];
-    expect(vitalRows).toEqual([
-      { metric_key: 'neck', value: 17, recorded_at: '2026-05-25T00:00:00Z', source: 'manual' },
-      { metric_key: 'waist', value: 41, recorded_at: '2026-05-25T00:00:00Z', source: 'manual' },
-    ]);
-
-    // Verification block agrees with the plan and fixture counts.
-    const verification = await mod.formatVerification(plan, data, OWNER);
-    expect(verification.ok).toBe(true);
+    expect((await mod.formatVerification(plan, data, OWNER)).ok).toBe(true);
   });
-
-  it('is idempotent: a re-run dedupes sessions and upserts the rest', async () => {
+  it('deduplicates sessions and upserts other records on rerun', async () => {
     const plan = mod.buildPlan(data);
     await mod.executePlan(plan, OWNER);
-    const second = await mod.executePlan(plan, OWNER);
-    expect(second).toMatchObject({
+    expect(await mod.executePlan(plan, OWNER)).toMatchObject({
       seedsCreated: 0,
       seedsSkipped: EXERCISE_SEEDS.length,
       sessionsCreated: 0,
       sessionsDeduped: 4,
       entriesImported: 0,
-      checkinsUpserted: 1, // PUT-style upsert onto the same row
-      vitalsWritten: 2, // (metric, day, source) upsert
+      checkinsUpserted: 1,
+      vitalsWritten: 2,
     });
-
-    const counts = ctx.sqlite
-      .prepare(
-        `select
-           (select count(*) from workout_sessions) as sessions,
-           (select count(*) from exercise_entries) as entries,
-           (select count(*) from weekly_checkins) as checkins,
-           (select count(*) from vitals) as vitals,
-           (select count(*) from exercises) as exercises`,
-      )
-      .get() as Record<string, number>;
-    expect(counts).toEqual({
+    expect(
+      ctx.sqlite
+        .prepare(
+          `select
+      (select count(*) from workout_sessions) as sessions,
+      (select count(*) from exercise_entries) as entries,
+      (select count(*) from weekly_checkins) as checkins,
+      (select count(*) from vitals) as vitals,
+      (select count(*) from exercises) as exercises`
+        )
+        .get()
+    ).toEqual({
       sessions: 4,
       entries: 11,
       checkins: 1,
