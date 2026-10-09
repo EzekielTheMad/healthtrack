@@ -1,11 +1,13 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useWeekRollup } from '@/hooks/useWeekRollup';
 import { priorWeekStart, weekStartOf } from '@/lib/fitness/weeks';
 import { shiftDayKey, formatUtcDay, formatUtcDayYear } from '@/lib/dates';
 import { formatMetricValue } from '@/lib/metrics/format';
-import { getMetric } from '@/lib/metrics/registry';
+import { buildWeeklyMeasurementSummary } from '@/lib/metrics/measurements';
+import { vitalsViewHref } from '@/lib/metrics/vitals-view-param';
 import {
   SESSION_TYPE_OPTIONS,
   type LatestBodyMeasurementsWire,
@@ -115,41 +117,68 @@ function GoalProgressBar({
 }
 
 /**
- * Latest circumferences, grouped by the day they were recorded (newest group
- * first). `measurements_latest` is sparse — unmeasured metrics are absent — so
- * this renders only what exists and never a wall of blanks. Grouping keeps the
- * mobile line count low when a whole tape session lands on one day, and makes
- * a stale reading obvious: it carries its own older date.
+ * Compact measurement summary: the measurement date, the first few populated
+ * circumferences in registry order, and a count of the rest behind a link to
+ * the full Measurements view.
+ *
+ * `measurements_latest` is sparse — unmeasured metrics are absent — so this
+ * renders only what exists and never a wall of blanks. Measurements are
+ * point-in-time readings taken occasionally, so nothing here compares them to
+ * the previous calendar week; a reading older than the newest one keeps its
+ * own date rather than borrowing the header's.
  */
-function MeasurementLines({ measurements }: { measurements: LatestBodyMeasurementsWire }) {
-  const entries = Object.entries(measurements);
-  if (entries.length === 0) return null;
-
-  const byDay = new Map<string, string[]>();
-  for (const [key, m] of entries) {
-    // Labels and display precision come from the registry, so a new
-    // circumference metric renders here the moment it is registered.
-    const metric = getMetric(key);
-    const text = `${metric?.label ?? key} ${formatMetricValue(m.value, metric?.decimals ?? 1)}${
-      m.unit ? ` ${m.unit}` : ''
-    }`;
-    const group = byDay.get(m.recorded_at) ?? [];
-    group.push(text);
-    byDay.set(m.recorded_at, group);
-  }
-  const days = [...byDay.keys()].sort().reverse();
+export function MeasurementSummary({
+  measurements,
+}: {
+  measurements: LatestBodyMeasurementsWire;
+}) {
+  const summary = buildWeeklyMeasurementSummary(measurements);
+  if (!summary) return null;
 
   return (
-    <dl className="mt-3 space-y-1">
-      {days.map((day) => (
-        <div key={day} className="text-[11px] leading-snug" style={{ color: 'var(--color-text-muted)' }}>
-          <dt className="inline font-medium">
-            As of <time dateTime={day.slice(0, 10)}>{formatUtcDay(day)}</time>:{' '}
-          </dt>
-          <dd className="inline">{byDay.get(day)!.join(' · ')}</dd>
-        </div>
-      ))}
-    </dl>
+    <div
+      className="mt-3 pt-3 border-t text-[11px] leading-snug"
+      style={{ borderColor: 'var(--border-card)', color: 'var(--color-text-muted)' }}
+    >
+      <p className="font-medium">
+        Measurements &middot;{' '}
+        <time dateTime={summary.asOf.slice(0, 10)}>{formatUtcDay(summary.asOf)}</time>
+      </p>
+      <p className="mt-0.5">
+        {summary.items.map((item, i) => (
+          <React.Fragment key={item.key}>
+            {i > 0 && ' · '}
+            <span style={{ color: 'var(--color-text-primary)' }}>
+              {item.label} {item.display}
+              {item.unit ? ` ${item.unit}` : ''}
+            </span>
+            {item.stale && (
+              <>
+                {' '}
+                <time dateTime={item.recordedAt.slice(0, 10)}>
+                  ({formatUtcDay(item.recordedAt)})
+                </time>
+              </>
+            )}
+          </React.Fragment>
+        ))}
+      </p>
+      <p className="mt-0.5">
+        {summary.moreCount > 0 && (
+          <>
+            {summary.moreCount} more measurement{summary.moreCount === 1 ? '' : 's'}
+            {' · '}
+          </>
+        )}
+        <Link
+          href={vitalsViewHref('measurements')}
+          className="underline underline-offset-2"
+          style={{ color: 'var(--color-sage)' }}
+        >
+          View details
+        </Link>
+      </p>
+    </div>
   );
 }
 
@@ -253,7 +282,7 @@ export function WeekSummary({ rollup }: WeekSummaryProps) {
             },
           ]}
         />
-        <MeasurementLines measurements={body.measurements_latest ?? {}} />
+        <MeasurementSummary measurements={body.measurements_latest ?? {}} />
       </section>
 
       {/* Recovery */}

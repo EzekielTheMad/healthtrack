@@ -215,6 +215,20 @@ function formatLine(agg: MetricAggregate): string {
 }
 
 /**
+ * Categories this block deliberately does NOT format.
+ *
+ * Body circumferences are sparse point-in-time readings taken every few
+ * weeks, so a "7d avg / 30d avg / trend" line invents a density they do not
+ * have — a single tape session would read as both averages and a flat trend.
+ * They are formatted separately by formatMeasurementsForPrompt
+ * (src/lib/metrics/measurements.ts), which reports latest vs previous with
+ * dates and a sample count instead.
+ */
+const NON_AGGREGATE_CATEGORIES: ReadonlySet<MetricCategory> = new Set([
+  'body_measurement',
+]);
+
+/**
  * One line per metric, grouped under category headers in CATEGORY_ORDER:
  *
  *   Sleep:
@@ -225,6 +239,7 @@ function formatLine(agg: MetricAggregate): string {
 export function formatAggregatesForPrompt(aggs: MetricAggregate[]): string {
   const blocks: string[] = [];
   for (const category of CATEGORY_ORDER) {
+    if (NON_AGGREGATE_CATEGORIES.has(category)) continue;
     const inCategory = aggs.filter((a) => a.category === category);
     if (inCategory.length === 0) continue;
     blocks.push(
