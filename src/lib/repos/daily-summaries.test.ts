@@ -7,14 +7,9 @@
  * (an instant just after UTC midnight is still "yesterday" in Phoenix).
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  setupRepoDb,
-  insertUser,
-  OWNER,
-  VIEWER,
-  type RepoTestDb,
-} from './repo-test-harness';
+import { setupRepoDb, insertUser, OWNER, VIEWER, type RepoTestDb } from './repo-test-harness';
 import type { HealthSummary } from '@/lib/claude/health-summary';
+import { OWNER_AI_CONTEXT_VERSION } from '@/lib/claude/owner-context';
 
 type Repo = typeof import('./daily-summaries');
 type CacheMod = typeof import('@/lib/claude/summary-cache');
@@ -46,6 +41,7 @@ describe('daily-summaries repo', () => {
     const row = await repo.getCachedSummary(OWNER, '2026-07-10');
     expect(row).not.toBeNull();
     expect(row!.model).toBe('model-x');
+    expect(row!.contextVersion).toBe(OWNER_AI_CONTEXT_VERSION);
     expect(repo.parseCachedSummary(row!)).toEqual(SUMMARY_A);
   });
 
@@ -73,7 +69,55 @@ describe('daily-summaries repo', () => {
     expect(repo.parseCachedSummary(latest!)).toEqual(SUMMARY_B);
   });
 
-  it('is owner-scoped — one user never reads another user\'s cache', async () => {
+  it('excludes legacy today and fallback rows, including newer unrecognized versions', async () => {
+    const legacy = JSON.stringify({ summary: 'Synthetic pooled legacy', highlights: [] });
+    const insert = ctx.sqlite.prepare(`
+      insert into daily_summaries
+        (id, user_id, summary_date, summary_json, generated_at, model, context_version)
+      values (?, ?, ?, ?, '2026-07-10T12:00:00Z', 'synthetic', ?)
+    `);
+    insert.run('legacy-today', OWNER, '2026-07-10', legacy, 0);
+    insert.run('legacy-yesterday', OWNER, '2026-07-09', legacy, 0);
+    expect(await repo.getCachedSummary(OWNER, '2026-07-10')).toBeNull();
+    expect(await repo.getLatestCachedSummary(OWNER)).toBeNull();
+
+    await repo.upsertCachedSummary(OWNER, '2026-07-08', SUMMARY_A, 'm');
+    await repo.upsertCachedSummary(VIEWER, '2026-07-11', SUMMARY_B, 'm');
+    insert.run('unknown-policy', OWNER, '2026-07-12', legacy, 99);
+    const fallback = await repo.getLatestCachedSummary(OWNER);
+    expect(fallback?.summaryDate).toBe('2026-07-08');
+    expect(repo.parseCachedSummary(fallback!)).toEqual(SUMMARY_A);
+    expect(await repo.getCachedSummary(OWNER, '2026-07-12')).toBeNull();
+    expect(
+      ctx.sqlite
+        .prepare('select summary_json from daily_summaries where id = ?')
+        .get('legacy-today')
+    ).toEqual({ summary_json: legacy });
+  });
+
+  it('refreshes the current version while preserving legacy content on the same day', async () => {
+    ctx.sqlite
+      .prepare(
+        `
+      insert into daily_summaries
+        (id, user_id, summary_date, summary_json, generated_at, model)
+      values ('legacy', ?, '2026-07-10', ?, '2026-07-10T00:00:00Z', 'old-model')
+    `
+      )
+      .run(OWNER, JSON.stringify({ summary: 'Legacy pooled summary', highlights: [] }));
+    const legacy = ctx.sqlite.prepare('select * from daily_summaries where id = ?').get('legacy');
+    await repo.upsertCachedSummary(OWNER, '2026-07-10', SUMMARY_A, 'm1');
+    await repo.upsertCachedSummary(OWNER, '2026-07-10', SUMMARY_B, 'm2');
+    expect(ctx.sqlite.prepare('select * from daily_summaries where id = ?').get('legacy')).toEqual(
+      legacy
+    );
+    expect(ctx.sqlite.prepare('select count(*) as n from daily_summaries').get()).toEqual({ n: 2 });
+    const current = await repo.getCachedSummary(OWNER, '2026-07-10');
+    expect(current?.contextVersion).toBe(OWNER_AI_CONTEXT_VERSION);
+    expect(repo.parseCachedSummary(current!)).toEqual(SUMMARY_B);
+  });
+
+  it("is owner-scoped — one user never reads another user's cache", async () => {
     await repo.upsertCachedSummary(OWNER, '2026-07-10', SUMMARY_A, 'm');
     expect(await repo.getCachedSummary(VIEWER, '2026-07-10')).toBeNull();
     expect(await repo.getLatestCachedSummary(VIEWER)).toBeNull();

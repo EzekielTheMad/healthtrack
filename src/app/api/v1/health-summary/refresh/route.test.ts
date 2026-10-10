@@ -17,12 +17,15 @@ import {
   OWNER,
   type RepoTestDb,
 } from '@/lib/repos/repo-test-harness';
+import { seedOwnerAiSentinels } from '@/lib/claude/owner-context-test-fixtures';
+import { makeOwnerAiContext } from '@/lib/claude/owner-context';
 import type { HealthSummary, HealthSummaryInput } from '@/lib/claude/health-summary';
 
 const { captured } = vi.hoisted(() => ({
   captured: {
     result: { summary: 'Cron-warmed overview.', highlights: [] } as HealthSummary,
     calls: 0,
+    input: null as HealthSummaryInput | null,
   },
 }));
 
@@ -30,7 +33,8 @@ vi.mock('@/lib/claude/health-summary', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/claude/health-summary')>();
   return {
     ...actual,
-    generateHealthSummary: async (_input: HealthSummaryInput) => {
+    generateHealthSummary: async (input: HealthSummaryInput) => {
+      captured.input = input;
       captured.calls += 1;
       return captured.result;
     },
@@ -59,7 +63,7 @@ function seedCondition() {
   ctx.sqlite
     .prepare(
       `insert into conditions (id, user_id, name, status, created_at, updated_at)
-       values (?, ?, 'Hypertension', 'active', ?, ?)`,
+       values (?, ?, 'Hypertension', 'active', ?, ?)`
     )
     .run(crypto.randomUUID(), OWNER, now, now);
 }
@@ -73,6 +77,7 @@ beforeEach(async () => {
   dailyRepo = await import('@/lib/repos/daily-summaries');
   insertUser(ctx.sqlite, OWNER);
   captured.calls = 0;
+  captured.input = null;
   captured.result = { summary: 'Cron-warmed overview.', highlights: [] };
 });
 
@@ -108,7 +113,7 @@ describe('POST /api/v1/health-summary/refresh — auth', () => {
 });
 
 describe('POST /api/v1/health-summary/refresh — behavior', () => {
-  it('happy path: regenerates and caches today\'s owner-local row', async () => {
+  it("happy path: regenerates and caches today's owner-local row", async () => {
     seedCondition();
     const res = await route.POST(post(mintApiToken(ctx.sqlite, OWNER, ['write:all'])));
     expect(res.status).toBe(200);
@@ -148,5 +153,61 @@ describe('CORS', () => {
     seedCondition();
     const res = await route.POST(post(mintApiToken(ctx.sqlite, OWNER, ['write:all'])));
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+  });
+});
+
+describe('PAT owner isolation', () => {
+  it('the PAT warm uses only the key owner across every summary domain', async () => {
+    seedOwnerAiSentinels(ctx.sqlite);
+    const res = await route.POST(post(mintApiToken(ctx.sqlite, OWNER, ['write:all'])));
+    expect(res.status).toBe(200);
+    expect((await res.json()).context).toEqual(makeOwnerAiContext(OWNER));
+    const input = JSON.stringify(captured.input);
+    for (const domain of ['MED', 'CONDITION', 'LAB', 'ALERT', 'GOAL', 'WORKOUT'])
+      expect(input).toContain(`SELF_SENTINEL_${domain}`);
+    for (const tag of [
+      'DEP_ONE_SENTINEL',
+      'DEP_TWO_SENTINEL',
+      'OTHER_ACCOUNT_SENTINEL',
+      'MISMATCH',
+    ])
+      expect(input).not.toContain(tag);
+    expect(captured.input!.vitals.map((v) => v.value)).toEqual([181]);
+    expect((await dailyRepo.getLatestCachedSummary(OWNER))!.contextVersion).toBe(1);
+  });
+
+  it('dependent-only records do not generate/cache an owner summary', async () => {
+    seedOwnerAiSentinels(ctx.sqlite, false);
+    const res = await route.POST(post(mintApiToken(ctx.sqlite, OWNER, ['write:all'])));
+    expect((await res.json()).generated).toBe(false);
+    expect(captured.calls).toBe(0);
+    expect(await dailyRepo.getLatestCachedSummary(OWNER)).toBeNull();
+  });
+
+  it.each(['dependent_id=all', 'owner_id=another-account', 'dependentId=dependent-one'])(
+    'rejects URL selectors before generation: %s',
+    async (selector) => {
+      const token = mintApiToken(ctx.sqlite, OWNER, ['write:all']);
+      const request = new NextRequest(
+        `http://localhost/api/v1/health-summary/refresh?${selector}`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } }
+      );
+      const res = await route.POST(request);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('unsupported_context');
+      expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*');
+      expect(captured.calls).toBe(0);
+    }
+  );
+
+  it('rejects JSON selectors before generation', async () => {
+    const token = mintApiToken(ctx.sqlite, OWNER, ['write:all']);
+    const request = new NextRequest('http://localhost/api/v1/health-summary/refresh', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ dependent_id: 'dependent-one' }),
+    });
+    expect((await route.POST(request)).status).toBe(400);
+    expect(captured.calls).toBe(0);
   });
 });

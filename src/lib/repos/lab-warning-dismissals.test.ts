@@ -10,28 +10,32 @@ import { z } from 'zod';
 import {
   setupRepoDb,
   insertUser,
+  insertDependent,
   OWNER,
   VIEWER,
   type RepoTestDb,
 } from './repo-test-harness';
-import {
-  filterDismissedLabHighlights,
-  type LabTaggedHighlight,
-} from '@/lib/claude/lab-warnings';
+import { filterDismissedLabHighlights, type LabTaggedHighlight } from '@/lib/claude/lab-warnings';
+
+import { OWNER_AI_CONTEXT_VERSION } from '@/lib/claude/owner-context';
 
 type Repo = typeof import('./lab-warning-dismissals');
 
 let ctx: RepoTestDb;
 let repo: Repo;
 
-function insertLabVisit(userId: string, visitDate: string): string {
+function insertLabVisit(
+  userId: string,
+  visitDate: string,
+  dependentId: string | null = null
+): string {
   const id = crypto.randomUUID();
   ctx.sqlite
     .prepare(
-      `insert into lab_visits (id, user_id, visit_date, created_at)
-       values (?, ?, ?, ?)`,
+      `insert into lab_visits (id, user_id, visit_date, dependent_id, created_at)
+       values (?, ?, ?, ?, ?)`
     )
-    .run(id, userId, visitDate, new Date().toISOString());
+    .run(id, userId, visitDate, dependentId, new Date().toISOString());
   return id;
 }
 
@@ -55,7 +59,104 @@ describe('lab-warning-dismissals repo', () => {
 
   it('rejects a dismissal when the user has no lab data', async () => {
     await expect(repo.dismissLabWarnings(OWNER, ['LDL Cholesterol'])).rejects.toBeInstanceOf(
-      repo.NoLabDataError,
+      repo.NoLabDataError
+    );
+  });
+
+  it('uses only owner lab dates despite newer visits for two dependents and another account', async () => {
+    insertDependent(ctx.sqlite, 'dep-one', OWNER);
+    insertDependent(ctx.sqlite, 'dep-two', OWNER);
+    insertLabVisit(OWNER, '2026-05-26');
+    insertLabVisit(OWNER, '2026-06-01', 'dep-one');
+    insertLabVisit(OWNER, '2026-07-01', 'dep-two');
+    insertLabVisit(VIEWER, '2026-08-01');
+    expect(await repo.latestLabVisitDate(OWNER)).toBe('2026-05-26');
+    expect(await repo.dismissLabWarnings(OWNER, ['LDL'])).toEqual({
+      keys: ['ldl'],
+      labVisitDate: '2026-05-26',
+    });
+    const [dismissal] = await repo.listLabWarningDismissals(OWNER);
+    expect(dismissal.contextVersion).toBe(OWNER_AI_CONTEXT_VERSION);
+    const warning: LabTaggedHighlight = {
+      type: 'attention',
+      text: 'Owner warning',
+      labTests: ['LDL'],
+    };
+
+    // A child's new import must not undo an owner's dismissal.
+    insertLabVisit(OWNER, '2026-09-01', 'dep-one');
+    expect(
+      filterDismissedLabHighlights([warning], [dismissal], await repo.latestLabVisitDate(OWNER))
+    ).toEqual([]);
+    // A genuinely new OWNER draw does make the warning eligible again.
+    insertLabVisit(OWNER, '2026-05-27');
+    expect(
+      filterDismissedLabHighlights([warning], [dismissal], await repo.latestLabVisitDate(OWNER))
+    ).toEqual([warning]);
+  });
+
+  it('cannot create owner dismissals when only dependents or another account have lab visits', async () => {
+    insertDependent(ctx.sqlite, 'dep-one', OWNER);
+    insertDependent(ctx.sqlite, 'dep-two', OWNER);
+    insertLabVisit(OWNER, '2026-06-01', 'dep-one');
+    insertLabVisit(OWNER, '2026-07-01', 'dep-two');
+    insertLabVisit(VIEWER, '2026-08-01');
+    expect(await repo.latestLabVisitDate(OWNER)).toBeNull();
+    await expect(repo.dismissLabWarnings(OWNER, ['LDL'])).rejects.toBeInstanceOf(
+      repo.NoLabDataError
+    );
+    expect(ctx.sqlite.prepare('select count(*) as n from ai_lab_warning_dismissals').get()).toEqual(
+      { n: 0 }
+    );
+  });
+
+  it('ignores legacy and unknown-policy dismissals without overwriting them on re-dismissal', async () => {
+    insertLabVisit(OWNER, '2026-05-26');
+    ctx.sqlite
+      .prepare(
+        `insert into ai_lab_warning_dismissals
+      (id, user_id, warning_key, lab_visit_date, created_at, updated_at)
+      values ('legacy', ?, 'ldl', '2099-01-01', '2026-05-01', '2026-05-01')`
+      )
+      .run(OWNER);
+    ctx.sqlite
+      .prepare(
+        `insert into ai_lab_warning_dismissals
+      (id, user_id, warning_key, lab_visit_date, context_version, created_at, updated_at)
+      values ('unknown', ?, 'vitamin d', '2099-01-01', 99, '2026-05-01', '2026-05-01')`
+      )
+      .run(OWNER);
+    const legacy = ctx.sqlite
+      .prepare('select * from ai_lab_warning_dismissals where id = ?')
+      .get('legacy');
+    const warning: LabTaggedHighlight = {
+      type: 'attention',
+      text: 'Owner warning',
+      labTests: ['LDL'],
+    };
+    expect(await repo.listLabWarningDismissals(OWNER)).toEqual([]);
+    expect(
+      filterDismissedLabHighlights(
+        [warning],
+        await repo.listLabWarningDismissals(OWNER),
+        '2026-05-26'
+      )
+    ).toEqual([warning]);
+
+    await repo.dismissLabWarnings(OWNER, ['LDL']);
+    insertLabVisit(OWNER, '2026-05-27');
+    await repo.dismissLabWarnings(OWNER, ['LDL']);
+    const current = await repo.listLabWarningDismissals(OWNER);
+    expect(current).toHaveLength(1);
+    expect(current[0]).toMatchObject({
+      labVisitDate: '2026-05-27',
+      contextVersion: OWNER_AI_CONTEXT_VERSION,
+    });
+    expect(
+      ctx.sqlite.prepare('select * from ai_lab_warning_dismissals where id = ?').get('legacy')
+    ).toEqual(legacy);
+    expect(ctx.sqlite.prepare('select count(*) as n from ai_lab_warning_dismissals').get()).toEqual(
+      { n: 3 }
     );
   });
 
@@ -113,7 +214,7 @@ describe('lab-warning-dismissals repo', () => {
     expect(filterDismissedLabHighlights([warning, plain], dismissals, latest)).toEqual([plain]);
   });
 
-  it('dismissals are per-user: one user cannot hide another user\'s warnings', async () => {
+  it("dismissals are per-user: one user cannot hide another user's warnings", async () => {
     insertLabVisit(OWNER, '2026-05-26');
     insertLabVisit(VIEWER, '2026-05-26');
     await repo.dismissLabWarnings(VIEWER, ['LDL Cholesterol']);
@@ -126,14 +227,18 @@ describe('lab-warning-dismissals repo', () => {
       text: 'x',
       labTests: ['LDL Cholesterol'],
     };
-    expect(
-      filterDismissedLabHighlights([warning], ownerDismissals, '2026-05-26'),
-    ).toEqual([warning]);
+    expect(filterDismissedLabHighlights([warning], ownerDismissals, '2026-05-26')).toEqual([
+      warning,
+    ]);
   });
 
   it('a multi-test dismissal writes one row per normalized key', async () => {
     insertLabVisit(OWNER, '2026-05-26');
-    const result = await repo.dismissLabWarnings(OWNER, ['LDL Cholesterol', 'Vitamin D', 'vitamin d']);
+    const result = await repo.dismissLabWarnings(OWNER, [
+      'LDL Cholesterol',
+      'Vitamin D',
+      'vitamin d',
+    ]);
     expect(result.keys.sort()).toEqual(['ldl cholesterol', 'vitamin d']);
     expect(await repo.listLabWarningDismissals(OWNER)).toHaveLength(2);
   });

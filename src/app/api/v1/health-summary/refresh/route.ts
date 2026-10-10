@@ -15,6 +15,12 @@ import { validateApiKey, unauthorized, forbidden } from '@/lib/api-auth';
 import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
 import { generateAndCacheSummary, ownerLocalDayKey } from '@/lib/claude/summary-cache';
 
+import {
+  makeOwnerAiContext,
+  OWNER_AI_ONLY_MESSAGE,
+  supportsOwnerAiContext,
+} from '@/lib/claude/owner-context';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -37,12 +43,34 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: AI_NOT_CONFIGURED }, { status: 501, headers: corsHeaders });
   }
 
+  let body: Record<string, unknown> | undefined;
+  try {
+    const text = await request.text();
+    if (text) {
+      const parsed: unknown = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        throw new Error('invalid body');
+      body = parsed as Record<string, unknown>;
+    }
+  } catch {
+    return Response.json({ error: 'invalid_body' }, { status: 400, headers: corsHeaders });
+  }
+  if (!supportsOwnerAiContext(ctx.userId, request.nextUrl.searchParams, body)) {
+    return Response.json(
+      { error: 'unsupported_context', message: OWNER_AI_ONLY_MESSAGE },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+
   try {
     const date = ownerLocalDayKey();
     const { cached } = await generateAndCacheSummary(ctx.userId);
     // `cached` is false only when the owner has no data to summarize yet (the
     // welcome message is intentionally never cached).
-    return Response.json({ generated: cached, date }, { headers: corsHeaders });
+    return Response.json(
+      { generated: cached, date, context: makeOwnerAiContext(ctx.userId) },
+      { headers: corsHeaders }
+    );
   } catch (error) {
     // Never reflect internal error details to API clients (respond.ts policy).
     console.error('v1 health-summary refresh error:', error);

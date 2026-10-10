@@ -196,7 +196,8 @@ export interface QueryHistoryEntry {
   user_id: string;
   query_text: string;
   response_text: string;
-  dependent_id?: string | null;
+  dependent_id: string | null;
+  context_version: number;
   created_at: string;
 }
 

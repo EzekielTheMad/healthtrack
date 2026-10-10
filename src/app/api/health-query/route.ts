@@ -11,10 +11,7 @@ import {
   formatAggregatesForPrompt,
   formatIntradayReadings,
 } from '@/lib/metrics/aggregate';
-import {
-  formatGoalsForPrompt,
-  formatRecentTrainingForPrompt,
-} from '@/lib/claude/fitness-context';
+import { formatGoalsForPrompt, formatRecentTrainingForPrompt } from '@/lib/claude/fitness-context';
 import { listGoals } from '@/lib/repos/goals';
 import { listWorkouts } from '@/lib/repos/workouts';
 import { getProfile } from '@/lib/repos/profiles';
@@ -26,6 +23,12 @@ import { listNotes } from '@/lib/repos/notes';
 import { listAppointments } from '@/lib/repos/appointments';
 import { createQueryHistoryEntry } from '@/lib/repos/query-history';
 import type { QueryHistoryEntry } from '@/lib/types';
+import {
+  makeOwnerAiContext,
+  OWNER_AI_CONTEXT_VERSION,
+  OWNER_AI_ONLY_MESSAGE,
+  supportsOwnerAiContext,
+} from '@/lib/claude/owner-context';
 
 // ---------------------------------------------------------------------------
 // Simple in-memory rate limiter: max 30 queries per user per hour.
@@ -84,35 +87,38 @@ export async function POST(request: Request) {
     return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
   }
 
-  // Rate limit check
-  if (!checkRateLimit(userId)) {
-    return apiError(429, 'rate_limited', 'You have exceeded the maximum of 30 queries per hour. Please try again later.');
-  }
-
-  let query: string;
+  let body: Record<string, unknown>;
   try {
-    const body = await request.json();
-    query = body.query;
+    const parsed: unknown = await request.json();
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+      throw new Error('invalid body');
+    body = parsed as Record<string, unknown>;
   } catch {
     return apiError(400, 'invalid_body', 'Invalid JSON request body');
   }
+  if (!supportsOwnerAiContext(userId, new URL(request.url).searchParams, body)) {
+    return apiError(400, 'unsupported_context', OWNER_AI_ONLY_MESSAGE);
+  }
+  const queryText = body.query;
 
-  if (!query || typeof query !== 'string' || query.trim().length === 0) {
+  if (typeof queryText !== 'string' || queryText.trim().length === 0) {
     return apiError(400, 'invalid_query', 'Query text is required');
   }
 
-  query = query.trim();
+  const query = queryText.trim();
+
+  // Validate context before consuming a generation attempt.
+  if (!checkRateLimit(userId)) {
+    return apiError(
+      429,
+      'rate_limited',
+      'You have exceeded the maximum of 30 queries per hour. Please try again later.'
+    );
+  }
 
   try {
-    // ------------------------------------------------------------------
-    // Gather health context via the repos. The legacy queries filtered on
-    // user_id only (no dependent filter) — scope 'all' preserves that.
-    // ------------------------------------------------------------------
-    const scope = { ownerId: userId, dependentId: 'all' as const };
-    // VITALS are the exception: aggregates present per-metric stats as ONE
-    // person's trends, so blending a dependent's readings into the owner's
-    // averages would be clinically wrong. Owner rows only (dependent IS NULL).
-    const ownVitalsScope = { ownerId: userId, dependentId: null };
+    // Single-person clinical context: every domain belongs to the owner.
+    const scope = { ownerId: userId, dependentId: null };
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -142,27 +148,27 @@ export async function POST(request: Request) {
       // Visits are ordered visit_date desc; the last 2 are sliced below
       listLabVisitsWithResults(userId, scope),
       // Recent vitals (last 30 days), recorded_at desc
-      listVitals(userId, ownVitalsScope, { startDate: thirtyDaysAgoISO }),
+      listVitals(userId, scope, { startDate: thirtyDaysAgoISO }),
       listConditions(userId, scope),
       listNotes(userId, scope),
       listAppointments(userId, scope),
       // Fitness context is owner-scoped like the vitals aggregates: goals
       // are strictly per-user, and sessions read owner rows only.
       listGoals(userId, userId, { active: true }),
-      listWorkouts(userId, ownVitalsScope, { from: fourteenDaysAgoISO }),
+      listWorkouts(userId, scope, { from: fourteenDaysAgoISO }),
     ]);
 
     // Recent lab visits (last 2) with results, test_name asc within a visit
     const labVisits = allLabVisits.slice(0, 2).map((v) => ({
       ...v,
-      labResults: [...v.labResults].sort((a, b) =>
-        a.testName.localeCompare(b.testName),
-      ),
+      labResults: v.labResults
+        .filter((result) => result.userId === userId && result.dependentId === null)
+        .sort((a, b) => a.testName.localeCompare(b.testName)),
     }));
     // Each result carries its visit's draw date so lab-derived findings can
     // be date-framed (spec §AI #2).
     const labResultsData = labVisits.flatMap((v) =>
-      v.labResults.map((r) => ({ ...r, visitDate: v.visitDate })),
+      v.labResults.map((r) => ({ ...r, visitDate: v.visitDate }))
     );
 
     // Active conditions, name asc (legacy: status in (...), order name)
@@ -288,7 +294,9 @@ export async function POST(request: Request) {
     } catch (err) {
       if (
         err instanceof Error &&
-        (err.message.includes('timeout') || err.message.includes('ETIMEDOUT') || err.message.includes('AbortError'))
+        (err.message.includes('timeout') ||
+          err.message.includes('ETIMEDOUT') ||
+          err.message.includes('AbortError'))
       ) {
         return apiError(
           504,
@@ -314,22 +322,26 @@ export async function POST(request: Request) {
       const entry: QueryHistoryEntry = {
         id: saved.id,
         user_id: saved.userId,
+        dependent_id: null,
+        context_version: OWNER_AI_CONTEXT_VERSION,
         query_text: saved.queryText,
         response_text: saved.responseText,
         created_at: saved.createdAt,
       };
-      return NextResponse.json(entry);
+      return NextResponse.json({ ...entry, context: makeOwnerAiContext(userId) });
     } catch (saveError) {
       // If save fails, still return the response but log the error
       safeError('Failed to save query history', saveError);
       const fallback: QueryHistoryEntry = {
         id: '',
         user_id: userId,
+        dependent_id: null,
+        context_version: OWNER_AI_CONTEXT_VERSION,
         query_text: query,
         response_text: responseText,
         created_at: new Date().toISOString(),
       };
-      return NextResponse.json(fallback);
+      return NextResponse.json({ ...fallback, context: makeOwnerAiContext(userId) });
     }
   } catch (err) {
     safeError('Health query error', err);

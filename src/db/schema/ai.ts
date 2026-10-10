@@ -11,7 +11,7 @@
  * Strictly owner-scoped: dismissals are UI preferences on the owner's own AI
  * summary card (no dependent/delegate surface).
  */
-import { sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, unique } from 'drizzle-orm/sqlite-core';
 import { user } from './auth';
 import { uuidPk, timestampNow } from './_shared';
 
@@ -47,8 +47,16 @@ export const dailySummaries = sqliteTable(
     generatedAt: text('generated_at').notNull(),
     /** Reasoning model id used to generate it. */
     model: text('model').notNull(),
+    // 0 preserves untrusted legacy rows; trusted owner-only generation writes 1.
+    contextVersion: integer('context_version').notNull().default(0),
   },
-  (t) => [unique('daily_summaries_user_date_unique').on(t.userId, t.summaryDate)],
+  (t) => [
+    unique('daily_summaries_user_date_context_unique').on(
+      t.userId,
+      t.summaryDate,
+      t.contextVersion
+    ),
+  ]
 );
 
 export const aiLabWarningDismissals = sqliteTable(
@@ -62,8 +70,16 @@ export const aiLabWarningDismissals = sqliteTable(
     warningKey: text('warning_key').notNull(),
     /** Latest lab_visits.visit_date at dismissal time (YYYY-MM-DD). */
     labVisitDate: text('lab_visit_date').notNull(),
+    // Legacy dismissals may have used dependent labs; never promote on read.
+    contextVersion: integer('context_version').notNull().default(0),
     createdAt: timestampNow('created_at'),
     updatedAt: timestampNow('updated_at'),
   },
-  (t) => [unique('ai_lab_warning_dismissals_user_key_unique').on(t.userId, t.warningKey)],
+  (t) => [
+    unique('ai_lab_warning_dismissals_user_key_context_unique').on(
+      t.userId,
+      t.warningKey,
+      t.contextVersion
+    ),
+  ]
 );

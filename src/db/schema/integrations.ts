@@ -38,6 +38,8 @@ export const queryHistory = sqliteTable('query_history', {
     .references(() => user.id, { onDelete: 'cascade' }),
   queryText: text('query_text').notNull(),
   responseText: text('response_text').notNull(),
+  // 0 is legacy: these answers may have pooled multiple people's records.
+  contextVersion: integer('context_version').notNull().default(0),
   dependentId: text('dependent_id').references(() => dependents.id, { onDelete: 'cascade' }),
   createdAt: timestampNow('created_at'),
 });
