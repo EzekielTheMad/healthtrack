@@ -12,12 +12,13 @@
  * still >= the current latest visit date — a newer lab import auto-clears it
  * at read time. Re-dismissing after new labs upserts the fresh stamp.
  */
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { aiLabWarningDismissals, labVisits } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
 import { normalizeLabTestKey } from '@/lib/claude/lab-warnings';
+import { OWNER_AI_CONTEXT_VERSION } from '@/lib/claude/owner-context';
 
 export type LabWarningDismissalRow = typeof aiLabWarningDismissals.$inferSelect;
 
@@ -33,28 +34,31 @@ export class NoLabDataError extends Error {
 const testsSchema = z.array(z.string().trim().min(1).max(200)).min(1).max(20);
 
 /**
- * Newest lab visit date for the user (YYYY-MM-DD, any dependent scope —
- * matching the 'all' scope the AI summary reads labs with), or null.
+ * Newest lab visit date for the owner (YYYY-MM-DD, dependent_id IS NULL),
+ * matching the exact owner-only scope used by AI summaries, or null.
  */
 export async function latestLabVisitDate(userId: string): Promise<string | null> {
   if (!userId) throw new NotFoundError();
   const rows = await db
     .select({ visitDate: labVisits.visitDate })
     .from(labVisits)
-    .where(eq(labVisits.userId, userId))
+    .where(and(eq(labVisits.userId, userId), isNull(labVisits.dependentId)))
     .orderBy(desc(labVisits.visitDate))
     .limit(1);
   return rows[0]?.visitDate ?? null;
 }
 
-export async function listLabWarningDismissals(
-  userId: string,
-): Promise<LabWarningDismissalRow[]> {
+export async function listLabWarningDismissals(userId: string): Promise<LabWarningDismissalRow[]> {
   if (!userId) throw new NotFoundError();
   return db
     .select()
     .from(aiLabWarningDismissals)
-    .where(eq(aiLabWarningDismissals.userId, userId));
+    .where(
+      and(
+        eq(aiLabWarningDismissals.userId, userId),
+        eq(aiLabWarningDismissals.contextVersion, OWNER_AI_CONTEXT_VERSION)
+      )
+    );
 }
 
 export interface DismissLabWarningsResult {
@@ -71,7 +75,7 @@ export interface DismissLabWarningsResult {
  */
 export async function dismissLabWarnings(
   userId: string,
-  tests: unknown,
+  tests: unknown
 ): Promise<DismissLabWarningsResult> {
   if (!userId) throw new NotFoundError();
   const names = testsSchema.parse(tests);
@@ -84,10 +88,19 @@ export async function dismissLabWarnings(
   for (const key of keys) {
     await db
       .insert(aiLabWarningDismissals)
-      .values({ userId, warningKey: key, labVisitDate: stamp })
+      .values({
+        userId,
+        warningKey: key,
+        labVisitDate: stamp,
+        contextVersion: OWNER_AI_CONTEXT_VERSION,
+      })
       .onConflictDoUpdate({
-        target: [aiLabWarningDismissals.userId, aiLabWarningDismissals.warningKey],
-        set: { labVisitDate: stamp, updatedAt: now },
+        target: [
+          aiLabWarningDismissals.userId,
+          aiLabWarningDismissals.warningKey,
+          aiLabWarningDismissals.contextVersion,
+        ],
+        set: { labVisitDate: stamp, updatedAt: now, contextVersion: OWNER_AI_CONTEXT_VERSION },
       });
   }
   return { keys, labVisitDate: stamp };

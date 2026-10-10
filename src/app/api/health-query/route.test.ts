@@ -3,7 +3,7 @@
  * POST /api/health-query — pins the clinical-correctness fix (review I1):
  * the VITALS fetch is owner-scoped (dependent_id NULL) so the per-metric
  * aggregates in the system prompt never blend a dependent's readings into
- * the owner's trends. Other domains keep the legacy unfiltered scope.
+ * the owner's trends. All clinical domains now share that exact-owner scope.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import crypto from 'crypto';
@@ -15,6 +15,8 @@ import {
   OWNER,
   type RepoTestDb,
 } from '@/lib/repos/repo-test-harness';
+import { seedOwnerAiSentinels } from '@/lib/claude/owner-context-test-fixtures';
+import { makeOwnerAiContext } from '@/lib/claude/owner-context';
 import type { HealthContext } from '@/lib/claude/query';
 
 const { authState, captured } = vi.hoisted(() => ({
@@ -93,7 +95,7 @@ function insertVital(opts: {
   ctx.sqlite
     .prepare(
       `insert into vitals (id, user_id, metric_key, value, unit, source, recorded_at, metadata, dependent_id, created_at)
-       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`,
+       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`
     )
     .run(
       crypto.randomUUID(),
@@ -103,7 +105,7 @@ function insertVital(opts: {
       opts.unit,
       opts.recordedAt,
       opts.dependentId,
-      new Date().toISOString(),
+      new Date().toISOString()
     );
 }
 
@@ -151,5 +153,102 @@ describe('POST /api/health-query — vitals scope (I1)', () => {
     authState.userId = null;
     const res = await route.POST(post({ query: 'hi' }));
     expect(res.status).toBe(401);
+  });
+});
+
+describe('owner AI query isolation', () => {
+  it('includes only owner sentinels and owner labs even when dependent visits are newer', async () => {
+    const { ownerDate } = seedOwnerAiSentinels(ctx.sqlite);
+    const res = await route.POST(post({ query: 'Synthetic owner context?', dependent_id: 'self' }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.context).toEqual(makeOwnerAiContext(OWNER));
+    expect(body.context_version).toBe(1);
+    expect(body.dependent_id).toBeNull();
+    const context = JSON.stringify(captured.context);
+    for (const domain of [
+      'MED',
+      'CONDITION',
+      'LAB',
+      'NOTE',
+      'APPOINTMENT',
+      'PROFILE',
+      'GOAL',
+      'WORKOUT',
+    ]) {
+      expect(context).toContain(`SELF_SENTINEL_${domain}`);
+    }
+    for (const tag of [
+      'DEP_ONE_SENTINEL',
+      'DEP_TWO_SENTINEL',
+      'OTHER_ACCOUNT_SENTINEL',
+      'MISMATCH',
+    ]) {
+      expect(context).not.toContain(tag);
+    }
+    expect(captured.context!.lab_results_data).toContain(ownerDate);
+    expect(captured.context!.flagged_data).toContain(ownerDate);
+    expect(captured.context!.vitals_data).toContain('181');
+    expect(
+      ctx.sqlite.prepare('SELECT user_id,dependent_id,context_version FROM query_history').all()
+    ).toEqual([{ user_id: OWNER, dependent_id: null, context_version: 1 }]);
+  });
+
+  it('empty owner gets empty context despite dependent and other-account records', async () => {
+    seedOwnerAiSentinels(ctx.sqlite, false);
+    const res = await route.POST(post({ query: 'What records do I have?' }));
+    expect(res.status).toBe(200);
+    expect(Object.values(captured.context!)).toEqual(Array(9).fill(''));
+  });
+
+  it('save-failure fallback still identifies the trusted owner context', async () => {
+    ctx.sqlite.exec('DROP TABLE query_history');
+    const res = await route.POST(post({ query: 'Synthetic question' }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.id).toBe('');
+    expect(body.context).toEqual(makeOwnerAiContext(OWNER));
+    expect(body.context_version).toBe(1);
+    expect(body.dependent_id).toBeNull();
+  });
+
+  it.each([
+    { dependent_id: 'all' },
+    { dependent_id: 'dependent-one' },
+    { dependentId: 'dependent-two' },
+    { owner_id: 'another-account' },
+    { ownerId: 'another-account' },
+    { scope: 'household' },
+    { delegate_id: 'delegate-one' },
+    { context_version: 0 },
+  ])('rejects unsupported body selectors before AI/history writes: %j', async (selector) => {
+    const res = await route.POST(post({ query: 'Synthetic question', ...selector }));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('unsupported_context');
+    expect(captured.context).toBeNull();
+    expect(ctx.sqlite.prepare('SELECT count(*) n FROM query_history').get()).toEqual({ n: 0 });
+  });
+
+  it('rejects URL selectors even when JSON requests self', async () => {
+    const request = new NextRequest('http://localhost/api/health-query?dependent_id=all', {
+      method: 'POST',
+      body: JSON.stringify({ query: 'Synthetic question', dependent_id: 'self' }),
+    });
+    expect((await route.POST(request)).status).toBe(400);
+    expect(captured.context).toBeNull();
+  });
+
+  it.each([null, [], 'self'])('rejects malformed JSON shapes %j', async (body) => {
+    expect((await route.POST(post(body))).status).toBe(400);
+    expect(captured.context).toBeNull();
+  });
+
+  it('capability gate follows authentication and prevents model/history work', async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    authState.userId = null;
+    expect((await route.POST(post({ query: 'Hi' }))).status).toBe(401);
+    authState.userId = OWNER;
+    expect((await route.POST(post({ query: 'Hi' }))).status).toBe(501);
+    expect(captured.context).toBeNull();
   });
 });

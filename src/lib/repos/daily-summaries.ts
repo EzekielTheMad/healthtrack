@@ -16,6 +16,7 @@ import { db } from '@/db';
 import { dailySummaries } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
 import type { HealthSummary } from '@/lib/claude/health-summary';
+import { OWNER_AI_CONTEXT_VERSION } from '@/lib/claude/owner-context';
 
 export type DailySummaryRow = typeof dailySummaries.$inferSelect;
 
@@ -28,54 +29,71 @@ export function parseCachedSummary(row: DailySummaryRow): HealthSummary {
   };
 }
 
-/** The cached summary row for a specific owner-local day, or null. */
+/** Current owner-only context cache for a specific owner-local day, or null. */
 export async function getCachedSummary(
   userId: string,
-  date: string,
+  date: string
 ): Promise<DailySummaryRow | null> {
   if (!userId) throw new NotFoundError();
   const rows = await db
     .select()
     .from(dailySummaries)
-    .where(and(eq(dailySummaries.userId, userId), eq(dailySummaries.summaryDate, date)))
+    .where(
+      and(
+        eq(dailySummaries.userId, userId),
+        eq(dailySummaries.summaryDate, date),
+        eq(dailySummaries.contextVersion, OWNER_AI_CONTEXT_VERSION)
+      )
+    )
     .limit(1);
   return rows[0] ?? null;
 }
 
-/** The most recent cached summary for the owner (any day), or null. */
-export async function getLatestCachedSummary(
-  userId: string,
-): Promise<DailySummaryRow | null> {
+/** The newest trusted owner-only cache (any day), excluding legacy pooled rows. */
+export async function getLatestCachedSummary(userId: string): Promise<DailySummaryRow | null> {
   if (!userId) throw new NotFoundError();
   const rows = await db
     .select()
     .from(dailySummaries)
-    .where(eq(dailySummaries.userId, userId))
+    .where(
+      and(
+        eq(dailySummaries.userId, userId),
+        eq(dailySummaries.contextVersion, OWNER_AI_CONTEXT_VERSION)
+      )
+    )
     .orderBy(desc(dailySummaries.summaryDate))
     .limit(1);
   return rows[0] ?? null;
 }
 
 /**
- * Insert or refresh the cache row for (user, date). Only ever called with a
- * freshly generated summary — a failed generation must never reach here, so a
+ * Insert or refresh the current-version cache row for (user, date). Legacy
+ * rows remain intact under a separate versioned uniqueness key. Only ever called
+ * with a freshly generated summary — a failed generation must never reach here, so a
  * good cached row is never overwritten with garbage.
  */
 export async function upsertCachedSummary(
   userId: string,
   date: string,
   summary: HealthSummary,
-  model: string,
+  model: string
 ): Promise<DailySummaryRow> {
   if (!userId) throw new NotFoundError();
   const generatedAt = new Date().toISOString();
   const summaryJson = JSON.stringify(summary);
   const [row] = await db
     .insert(dailySummaries)
-    .values({ userId, summaryDate: date, summaryJson, generatedAt, model })
+    .values({
+      userId,
+      summaryDate: date,
+      summaryJson,
+      generatedAt,
+      model,
+      contextVersion: OWNER_AI_CONTEXT_VERSION,
+    })
     .onConflictDoUpdate({
-      target: [dailySummaries.userId, dailySummaries.summaryDate],
-      set: { summaryJson, generatedAt, model },
+      target: [dailySummaries.userId, dailySummaries.summaryDate, dailySummaries.contextVersion],
+      set: { summaryJson, generatedAt, model, contextVersion: OWNER_AI_CONTEXT_VERSION },
     })
     .returning();
   return row;

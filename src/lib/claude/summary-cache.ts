@@ -27,7 +27,7 @@ import {
 import { upsertCachedSummary } from '@/lib/repos/daily-summaries';
 import { listMedications } from '@/lib/repos/medications';
 import { listConditions } from '@/lib/repos/conditions';
-import { listLabResults } from '@/lib/repos/labs';
+import { listLabVisitsWithResults } from '@/lib/repos/labs';
 import { listVitals } from '@/lib/repos/vitals';
 import { listActiveInteractionAlerts } from '@/lib/repos/interaction-alerts';
 import { listGoals } from '@/lib/repos/goals';
@@ -67,16 +67,10 @@ export function hasSummaryData(input: HealthSummaryInput): boolean {
 /**
  * Assemble the model input snapshot for a user — the owner's meds, conditions,
  * flagged labs, 30-day vitals, active goals, recent training, and interaction
- * alerts. Scoping notes (unchanged from the legacy route):
- *   - Most domains use the legacy user-only scope ('all') to preserve the
- *     original behavior.
- *   - VITALS and fitness are owner-only (dependent_id NULL): per-metric
- *     aggregates present ONE person's trends, so a dependent's rows must never
- *     blend into the owner's averages.
+ * alerts. Every clinical domain describes exactly the signed-in owner; no
+ * dependent or delegate records may be included in this single-person input.
  */
-export async function buildSummaryInputForUser(
-  userId: string,
-): Promise<HealthSummaryInput> {
+export async function buildSummaryInputForUser(userId: string): Promise<HealthSummaryInput> {
   // Only consider data from the last 12 months for the summary.
   const cutoff = new Date();
   cutoff.setFullYear(cutoff.getFullYear() - 1);
@@ -93,34 +87,33 @@ export async function buildSummaryInputForUser(
   workoutsCutoff.setDate(workoutsCutoff.getDate() - 14);
   const workoutsCutoffISO = workoutsCutoff.toISOString();
 
-  // The legacy queries filtered on user_id only — scope 'all' preserves that.
-  const scope = { ownerId: userId, dependentId: 'all' as const };
-  // VITALS are the exception: aggregates present per-metric stats as ONE
-  // person's trends, so blending a dependent's readings into the owner's
-  // averages would be clinically wrong. Owner rows only (dependent IS NULL).
-  const ownVitalsScope = { ownerId: userId, dependentId: null };
+  const scope = { ownerId: userId, dependentId: null };
 
-  const [meds, conditions, allLabResults, vitals, alerts, activeGoals, recentWorkouts] =
+  const [meds, conditions, labVisits, vitals, alerts, activeGoals, recentWorkouts] =
     await Promise.all([
       listMedications(userId, scope, { active: true }),
       listConditions(userId, scope),
-      listLabResults(userId, scope),
-      listVitals(userId, ownVitalsScope, { startDate: vitalsCutoffISO, limit: 2000 }),
-      // Interaction alerts now require one exact person, even though the
-      // other legacy summary domains above still need separate isolation work.
-      listActiveInteractionAlerts(userId, ownVitalsScope),
+      listLabVisitsWithResults(userId, scope),
+      listVitals(userId, scope, { startDate: vitalsCutoffISO, limit: 2000 }),
+      listActiveInteractionAlerts(userId, scope),
       // Fitness context is owner-scoped like the vitals aggregates: goals are
       // strictly per-user, and sessions read owner rows only.
       listGoals(userId, userId, { active: true }),
-      listWorkouts(userId, ownVitalsScope, { from: workoutsCutoffISO }),
+      listWorkouts(userId, scope, { from: workoutsCutoffISO }),
     ]);
 
-  const recentLabFlags = allLabResults
+  // Verify both visit and result attribution. Older imports may contain
+  // denormalized result rows whose person differs from the parent visit.
+  const recentLabFlags = labVisits
+    .flatMap((visit) =>
+      visit.labResults
+        .filter((result) => result.userId === userId && result.dependentId === null)
+        .map((result) => ({ ...result, visitDate: visit.visitDate }))
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .filter(
       (r) =>
-        r.flag !== null &&
-        ['high', 'low', 'critical'].includes(r.flag) &&
-        r.createdAt >= cutoffISO,
+        r.flag !== null && ['high', 'low', 'critical'].includes(r.flag) && r.createdAt >= cutoffISO
     )
     .slice(0, 10);
 
@@ -187,7 +180,7 @@ export interface GenerateResult {
  */
 export async function generateAndCacheSummary(
   userId: string,
-  now: Date = new Date(),
+  now: Date = new Date()
 ): Promise<GenerateResult> {
   const input = await buildSummaryInputForUser(userId);
   if (!hasSummaryData(input)) {

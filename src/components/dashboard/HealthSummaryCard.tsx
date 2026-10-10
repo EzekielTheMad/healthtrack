@@ -5,17 +5,29 @@ import type { HealthSummary, HealthSummaryHighlight } from '@/lib/claude/health-
 import { useCapabilities } from '@/hooks/useCapabilities';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
+import { OWNER_AI_NOTICE, useOwnerAiContext } from '@/hooks/useOwnerAiContext';
 
 /** Server adds cache metadata alongside the HealthSummary payload. */
 type SummaryResponse = HealthSummary & {
+  context: unknown;
   cached?: boolean;
   stale?: boolean;
   generated_at?: string | null;
 };
 
 const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 /** `2026-05-26` → `May 26, 2026` — split manually to avoid TZ day-shift. */
@@ -62,14 +74,39 @@ const HIGHLIGHT_STYLES: Record<string, { bg: string; border: string; icon: strin
 
 export default function HealthSummaryCard() {
   const { capabilities } = useCapabilities();
-  const [data, setData] = useState<SummaryResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const { token, available, isOwnerProfile, capture, matchesContext } = useOwnerAiContext(
+    Boolean(capabilities?.ai)
+  );
+  const [view, setView] = useState<{
+    token: object;
+    data: SummaryResponse | null;
+    loading: boolean;
+    refreshing: boolean;
+    error: string | null;
+    hasLoaded: boolean;
+    dismissingIndex: number | null;
+  }>({
+    token,
+    data: null,
+    loading: false,
+    refreshing: false,
+    error: null,
+    hasLoaded: false,
+    dismissingIndex: null,
+  });
   const [collapsed, setCollapsed] = useState(false);
-
-  const [dismissingIndex, setDismissingIndex] = useState<number | null>(null);
+  // Mask old data during render, before any effect for the new profile runs.
+  const { data, loading, refreshing, error, hasLoaded, dismissingIndex } =
+    available && view.token === token
+      ? view
+      : {
+          data: null,
+          loading: false,
+          refreshing: false,
+          error: null,
+          hasLoaded: false,
+          dismissingIndex: null,
+        };
 
   // Restore today's collapse choice (ignore a key stored on a previous day).
   useEffect(() => {
@@ -100,59 +137,103 @@ export default function HealthSummaryCard() {
   // the card simply stays, matching the card's overall soft-fail posture.
   const dismissHighlight = useCallback(
     async (index: number, highlight: HealthSummaryHighlight) => {
-      if (!highlight.labTests || highlight.labTests.length === 0) return;
-      setDismissingIndex(index);
+      const request = capture();
+      if (!request.isCurrent() || !highlight.labTests?.length) return;
+      setView((prev) => ({ ...prev, dismissingIndex: index }));
       try {
-        const res = await fetch('/api/lab-warning-dismissals', {
+        const res = await fetch('/api/lab-warning-dismissals?dependent_id=self', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tests: highlight.labTests }),
+          body: JSON.stringify({ tests: highlight.labTests, dependent_id: 'self' }),
+          signal: request.signal,
         });
+        if (!request.isCurrent()) return;
         if (!res.ok) throw new Error('Failed to dismiss');
-        setData((prev) =>
-          prev
-            ? { ...prev, highlights: prev.highlights.filter((_, i) => i !== index) }
-            : prev,
+        const result = await res.json();
+        if (!request.isCurrent() || !matchesContext(result?.context)) return;
+        setView((prev) =>
+          prev.token === token && prev.data
+            ? {
+                ...prev,
+                data: {
+                  ...prev.data,
+                  highlights: prev.data.highlights.filter((item) => item !== highlight),
+                },
+              }
+            : prev
         );
       } catch {
         // Leave the card in place; the user can retry.
       } finally {
-        setDismissingIndex(null);
+        if (request.isCurrent()) setView((prev) => ({ ...prev, dismissingIndex: null }));
       }
     },
-    [],
+    [capture, token, matchesContext]
   );
 
-  const fetchSummary = useCallback(async (isRefresh: boolean) => {
-    setError(null);
-    // Only the very first load shows the full-card spinner; a manual refresh
-    // keeps the existing summary visible and shows a subtle "updating…".
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
-    try {
-      const res = await fetch(isRefresh ? '/api/health-summary?refresh=1' : '/api/health-summary');
-      if (!res.ok) throw new Error('Failed to load summary');
-      const json = (await res.json()) as SummaryResponse;
-      setData(json);
-      setHasLoaded(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const fetchSummary = useCallback(
+    async (isRefresh: boolean) => {
+      const request = capture();
+      if (!request.isCurrent()) return;
+      setView((prev) => ({
+        token,
+        data: isRefresh && prev.token === token ? prev.data : null,
+        loading: !isRefresh,
+        refreshing: isRefresh,
+        error: null,
+        hasLoaded: isRefresh && prev.token === token && prev.hasLoaded,
+        dismissingIndex: null,
+      }));
+      try {
+        const res = await fetch(
+          `/api/health-summary?dependent_id=self${isRefresh ? '&refresh=1' : ''}`,
+          { signal: request.signal }
+        );
+        if (!request.isCurrent()) return;
+        if (!res.ok) throw new Error('Failed to load summary');
+        const json = (await res.json()) as SummaryResponse;
+        if (!request.isCurrent()) return;
+        if (!matchesContext(json?.context)) throw new Error('Mismatched summary context');
+        setView((prev) => ({ ...prev, token, data: json, hasLoaded: true }));
+      } catch (err) {
+        if (request.isCurrent()) {
+          setView((prev) => ({
+            ...prev,
+            error: err instanceof Error ? err.message : 'Something went wrong',
+          }));
+        }
+      } finally {
+        if (request.isCurrent()) {
+          setView((prev) => ({ ...prev, loading: false, refreshing: false }));
+        }
+      }
+    },
+    [capture, matchesContext, token]
+  );
 
-  // Fetch once per page visit — but only after capabilities confirm the
-  // instance has AI configured (avoids a guaranteed 501).
+  // One initial request per owner-profile visit, only after AI and auth are ready.
   useEffect(() => {
-    if (capabilities?.ai && !hasLoaded) {
-      fetchSummary(false);
-    }
-  }, [capabilities?.ai, hasLoaded, fetchSummary]);
+    if (available) void fetchSummary(false);
+  }, [available, fetchSummary]);
 
   // AI not configured on this instance — the card has nothing to offer.
   if (!capabilities?.ai) return null;
+  if (!isOwnerProfile) {
+    return (
+      <section
+        className="rounded-xl border p-5"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+      >
+        <h2 className="text-lg font-semibold mb-3" style={{ color: 'var(--color-text-primary)' }}>
+          Health Overview
+        </h2>
+        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          {OWNER_AI_NOTICE}
+        </p>
+      </section>
+    );
+  }
+  if (!available) return null;
 
   // "updating…" affordance: a background regeneration is in flight (server
   // served a stale row) or the user just triggered a manual refresh.
@@ -297,7 +378,7 @@ export default function HealthSummaryCard() {
                       <button
                         type="button"
                         onClick={() => dismissHighlight(i, h)}
-                        disabled={dismissingIndex === i}
+                        disabled={dismissingIndex !== null}
                         aria-label="Dismiss until new lab results"
                         title="Dismiss until new lab results"
                         className="shrink-0 text-xs mt-0.5 cursor-pointer leading-none disabled:opacity-50"
@@ -312,10 +393,7 @@ export default function HealthSummaryCard() {
             </div>
           )}
 
-          <p
-            className="text-xs italic pt-1"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
+          <p className="text-xs italic pt-1" style={{ color: 'var(--color-text-muted)' }}>
             {AI_DISCLAIMER}
           </p>
         </div>

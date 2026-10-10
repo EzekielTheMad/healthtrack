@@ -220,9 +220,35 @@ missing information is unknown, and a result is not a safety clearance.
 The exact-profile update retains older interaction alerts/checks in storage but
 excludes them from displayed results because they may have combined profiles.
 Run a fresh check for each profile. Existing snoozes on these legacy results are
-not carried forward. This change does not correct the separate legacy context
-pooling in general AI summaries/chat or regenerate previously cached summaries.
-These automated tests verify software isolation, not clinical accuracy.
+not carried forward. These automated tests verify software isolation, not clinical
+accuracy.
+
+### My Health AI summary and chat scope
+
+The AI Health Overview and health chat describe only the signed-in account
+owner's records. All clinical reads, including medications, conditions, labs,
+notes and appointments, use the exact owner profile. These features are unavailable
+while a dependent or delegate profile is selected; switch to My Health to use
+them. They do not provide household aggregation or dependent clinical advice.
+
+The session APIs and PAT summary refresh reject explicit dependent, delegate or
+foreign-owner selectors. Omitted selectors remain owner-only for older clients;
+`dependent_id=self` explicitly requests that same context. Successful summary,
+chat and lab-dismissal responses identify the owner and generation-context
+version. Chat history includes only current-version owner answers, so older
+answers are retained in storage but are neither displayed nor reused for repeated
+questions. Cached summary fallback and lab-warning dismissals follow the same
+version boundary. A failed regeneration never serves a legacy pooled summary.
+
+Migration `0011_owner-only-ai-context.sql` follows the exact-profile interaction
+migration (`0010`). It retains old rows as context version 0 and permits separate
+current-version summary/dismissal rows for the same date or warning key. Take a
+database backup and stop/drain all older application instances before applying
+these migrations and starting the updated build. Old two-column summary/dismissal
+upserts deliberately fail against the new versioned unique indexes; mixed-version
+rolling operation is unsupported. Reverting only the application binary is not a
+supported rollback. Boot-time migration is idempotent. No backfill relabels old
+AI output as isolated, and a fresh owner-only summary may require a model call.
 
 ### Medical-history extraction
 

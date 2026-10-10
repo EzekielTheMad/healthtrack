@@ -10,11 +10,13 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
-import { safeError } from '@/lib/safe-log';
 import {
-  dismissLabWarnings,
-  NoLabDataError,
-} from '@/lib/repos/lab-warning-dismissals';
+  makeOwnerAiContext,
+  OWNER_AI_ONLY_MESSAGE,
+  supportsOwnerAiContext,
+} from '@/lib/claude/owner-context';
+import { safeError } from '@/lib/safe-log';
+import { dismissLabWarnings, NoLabDataError } from '@/lib/repos/lab-warning-dismissals';
 
 export async function POST(request: Request) {
   let userId: string;
@@ -30,6 +32,10 @@ export async function POST(request: Request) {
   let tests: unknown;
   try {
     const body = await request.json();
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new Error('invalid body');
+    if (!supportsOwnerAiContext(userId, new URL(request.url).searchParams, body)) {
+      return apiError(400, 'unsupported_context', OWNER_AI_ONLY_MESSAGE);
+    }
     tests = body.tests;
   } catch {
     return apiError(400, 'invalid_body', 'Invalid JSON request body');
@@ -37,7 +43,11 @@ export async function POST(request: Request) {
 
   try {
     const result = await dismissLabWarnings(userId, tests);
-    return NextResponse.json({ dismissed: result.keys, labVisitDate: result.labVisitDate });
+    return NextResponse.json({
+      dismissed: result.keys,
+      labVisitDate: result.labVisitDate,
+      context: makeOwnerAiContext(userId),
+    });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return apiError(400, 'invalid_tests', 'tests must be a non-empty array of test names');
