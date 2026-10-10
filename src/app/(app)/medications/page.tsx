@@ -9,6 +9,7 @@ import Skeleton from '@/components/shared/Skeleton';
 import MedCard from '@/components/medications/MedCard';
 import AddMedForm, { type AddMedFormData } from '@/components/medications/AddMedForm';
 import InteractionAlert from '@/components/medications/InteractionAlert';
+import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
 
 /** Friendly absolute date for the last interaction check, e.g. "Jul 13, 2026". */
 function formatCheckDate(iso: string): string {
@@ -27,6 +28,8 @@ export default function MedicationsPage() {
     status: interactionStatus,
     snoozedCount,
     checking,
+    canCheck,
+    error: interactionError,
     snoozeAlert,
     checkInteractions,
   } = useInteractionAlerts();
@@ -114,8 +117,10 @@ export default function MedicationsPage() {
           runs automatically on med add/remove; this also offers an on-demand
           re-check. Alerts snooze temporarily (severity-capped) instead of being
           dismissed forever, and the summary line persists an "all clear" state. */}
-      {capabilities?.ai && activeMeds.length >= 2 && (
+      {capabilities?.ai && canCheck && !loading && activeMeds.length >= 2 && (
         <div className="space-y-3">
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{AI_DISCLAIMER} This check uses only this profile’s recorded active medications; other clinical context is unknown.</p>
+          {interactionError && <p role="alert">{interactionError}</p>}
           {interactionAlerts.map((alert) => (
             <InteractionAlert key={alert.id} alert={alert} onSnooze={snoozeAlert} />
           ))}
@@ -130,7 +135,9 @@ export default function MedicationsPage() {
                 : snoozedCount > 0
                   ? `No active interactions — ${snoozedCount} snoozed`
                   : interactionStatus
-                    ? '✓ No interactions found among your active medications'
+                    ? interactionStatus.has_interactions
+                      ? 'The last check reported interactions. Check again to refresh the details.'
+                      : 'No interactions reported for this profile’s recorded active medications'
                     : 'Interactions haven’t been checked yet'}
               {interactionStatus && (
                 <span> · checked {formatCheckDate(interactionStatus.checked_at)}</span>

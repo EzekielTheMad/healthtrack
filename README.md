@@ -209,6 +209,21 @@ Container implementation, image workflow, project release checks and historical
 release lessons are in [docs/RELEASE.md](docs/RELEASE.md). This is documentation,
 not deployment or publication authorization.
 
+### Medication interaction scope
+
+Interaction checks use only the selected owner or dependent profile's recorded
+active medications. An omitted profile in an older client request means the
+owner only. Delegate-mode checks and ambiguous/all-family contexts are rejected.
+The checker does not receive age, diagnoses, allergies or other clinical context;
+missing information is unknown, and a result is not a safety clearance.
+
+The exact-profile update retains older interaction alerts/checks in storage but
+excludes them from displayed results because they may have combined profiles.
+Run a fresh check for each profile. Existing snoozes on these legacy results are
+not carried forward. This change does not correct the separate legacy context
+pooling in general AI summaries/chat or regenerate previously cached summaries.
+These automated tests verify software isolation, not clinical accuracy.
+
 ### Medical-history extraction
 
 Large medical-history PDFs are split with `pdf-lib` into 25-page chunks once

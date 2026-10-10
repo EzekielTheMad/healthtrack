@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { InteractionAlert, InteractionStatus } from '@/lib/types';
 
@@ -9,159 +9,161 @@ interface InteractionPayload {
   status: InteractionStatus | null;
   snoozed_count: number;
 }
+const EMPTY: InteractionPayload = { alerts: [], status: null, snoozed_count: 0 };
+interface ViewState {
+  scope: string;
+  data: InteractionPayload;
+  loading: boolean;
+  checking: boolean;
+  error: string | null;
+}
 
 export function useInteractionAlerts() {
-  const [alerts, setAlerts] = useState<InteractionAlert[]>([]);
-  const [status, setStatus] = useState<InteractionStatus | null>(null);
-  const [snoozedCount, setSnoozedCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Distinct from `loading` (initial fetch): true while an interaction check
-  // is running, so a manual "Check interactions" button can show progress.
-  const [checking, setChecking] = useState(false);
   const { dependentId, delegateOwnerId } = useActiveProfile();
+  const scope = JSON.stringify([delegateOwnerId, dependentId]);
+  const [view, setView] = useState<ViewState>({
+    scope,
+    data: EMPTY,
+    loading: true,
+    checking: false,
+    error: null,
+  });
+  // A generation, rather than just an ID comparison, also handles A -> B -> A
+  // while an old A request is still pending.
+  const generation = useRef(0);
+  const token = useMemo(() => ({ scope }), [scope]);
+  const activeToken = useRef<object | null>(null);
 
-  // Scope params mirror the old PostgREST query: delegate mode targets the
-  // owner with no dependent filter (the API returns empty there — the data is
-  // owner-only); otherwise exact dependent (or self) filter.
-  const buildUrl = useCallback(() => {
+  const fetchStatus = useCallback(async (): Promise<InteractionPayload> => {
     const params = new URLSearchParams();
-    if (delegateOwnerId) {
-      params.set('owner_id', delegateOwnerId);
-    } else if (dependentId) {
-      params.set('dependent_id', dependentId);
-    }
-    const qs = params.toString();
-    return qs ? `/api/interaction-alerts?${qs}` : '/api/interaction-alerts';
+    if (delegateOwnerId) params.set('owner_id', delegateOwnerId);
+    else if (dependentId) params.set('dependent_id', dependentId);
+    const res = await fetch(`/api/interaction-alerts${params.size ? `?${params}` : ''}`);
+    if (!res.ok) throw new Error('Failed to fetch interaction status');
+    return (await res.json()) as InteractionPayload;
   }, [dependentId, delegateOwnerId]);
 
-  const fetchStatus = useCallback(async (): Promise<InteractionPayload | null> => {
-    const res = await fetch(buildUrl());
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      throw new Error(body?.message ?? 'Failed to fetch interaction status');
-    }
-    return (await res.json()) as InteractionPayload;
-  }, [buildUrl]);
-
-  const applyPayload = useCallback((data: InteractionPayload) => {
-    setAlerts(data.alerts ?? []);
-    setStatus(data.status ?? null);
-    setSnoozedCount(data.snoozed_count ?? 0);
-  }, []);
-
   useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await fetchStatus();
-        if (!cancelled && data) applyPayload(data);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch interaction status');
-        }
-      }
-      if (!cancelled) setLoading(false);
+    const current = ++generation.current;
+    activeToken.current = token;
+    setView({ scope, data: EMPTY, loading: true, checking: false, error: null });
+    if (delegateOwnerId) {
+      setView({ scope, data: EMPTY, loading: false, checking: false, error: null });
+    } else {
+      fetchStatus()
+        .then((data) => {
+          if (generation.current === current) {
+            setView((prev) => ({ ...prev, data, loading: false }));
+          }
+        })
+        .catch(() => {
+          if (generation.current === current) {
+            setView((prev) => ({
+              ...prev,
+              loading: false,
+              error: 'Failed to fetch interaction status',
+            }));
+          }
+        });
     }
-
-    load();
     return () => {
-      cancelled = true;
+      generation.current = current + 1;
+      activeToken.current = null;
     };
-  }, [fetchStatus, applyPayload]);
+  }, [scope, token, delegateOwnerId, fetchStatus]);
 
-  /** Snooze an alert for `days`; the server clamps to the severity cap. */
   const snoozeAlert = useCallback(
     async (alertId: string, days: number) => {
-      // Optimistic: drop it from the active list and bump the snoozed count.
-      setAlerts((prev) => prev.filter((a) => a.id !== alertId));
-      setSnoozedCount((n) => n + 1);
-
-      const res = await fetch(
-        `/api/interaction-alerts/${encodeURIComponent(alertId)}`,
-        {
+      if (delegateOwnerId || activeToken.current !== token) return;
+      const current = generation.current;
+      setView((prev) => ({
+        ...prev,
+        data: {
+          ...prev.data,
+          alerts: prev.data.alerts.filter((alert) => alert.id !== alertId),
+          snoozed_count: prev.data.snoozed_count + 1,
+        },
+      }));
+      try {
+        const res = await fetch(`/api/interaction-alerts/${encodeURIComponent(alertId)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ snooze_days: days }),
-        },
-      );
-
-      if (!res.ok) {
-        // Revert by re-fetching authoritative state.
-        const body = await res.json().catch(() => null);
-        setError(body?.message ?? 'Failed to snooze alert');
+        });
+        if (!res.ok) throw new Error('Failed to snooze alert');
+      } catch {
+        if (generation.current !== current) return;
+        setView((prev) => ({ ...prev, error: 'Failed to snooze alert' }));
         try {
           const data = await fetchStatus();
-          if (data) applyPayload(data);
+          if (generation.current === current) setView((prev) => ({ ...prev, data }));
         } catch {
-          // keep optimistic state if refresh also fails
+          /* Preserve the error if the authoritative refresh also fails. */
         }
       }
     },
-    [fetchStatus, applyPayload],
+    [delegateOwnerId, token, fetchStatus]
   );
 
-  /**
-   * Run the interaction check. Returns `{ hasInteractions }` on success (so a
-   * manual caller can show an "all clear" confirmation) or `null` on failure.
-   * Auto-triggers on med add/toggle ignore the return value.
-   */
   const checkInteractions = useCallback(
     async (triggerMedId?: string): Promise<{ hasInteractions: boolean } | null> => {
-      setError(null);
-      setChecking(true);
-
+      if (delegateOwnerId || activeToken.current !== token) return null;
+      const current = generation.current;
+      setView((prev) => ({ ...prev, error: null, checking: true }));
       try {
-        const body: Record<string, unknown> = {};
-        if (triggerMedId) {
-          body.trigger_id = triggerMedId;
-          body.medication_ids = [triggerMedId];
-        }
-        if (!delegateOwnerId && dependentId) {
-          body.dependent_id = dependentId;
-        }
-        if (delegateOwnerId) {
-          body.delegate_owner_id = delegateOwnerId;
-        }
-
         const res = await fetch('/api/check-interactions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            dependent_id: dependentId,
+            ...(triggerMedId ? { trigger_id: triggerMedId } : {}),
+          }),
         });
-
+        if (generation.current !== current) return null;
         if (!res.ok) {
-          // Background auto-checks stay silent (501 = AI off, or a transient
-          // AI error). A manual caller gets `null` and decides what to show.
+          if (res.status !== 501)
+            setView((prev) => ({
+              ...prev,
+              error: 'Failed to check interactions. Please try again.',
+            }));
           return null;
         }
-
-        const result = (await res.json()) as { has_interactions?: boolean };
-
-        // Refresh the whole status (alerts + last-check + snoozed count).
+        const result = (await res.json()) as {
+          dependent_id?: string | null;
+          has_interactions?: boolean;
+        };
+        if (result.dependent_id !== dependentId || typeof result.has_interactions !== 'boolean') {
+          throw new Error('Mismatched interaction result');
+        }
         const data = await fetchStatus();
-        if (data) applyPayload(data);
-        return { hasInteractions: Boolean(result.has_interactions) };
+        if (generation.current !== current) return null;
+        setView((prev) => ({ ...prev, data }));
+        return { hasInteractions: result.has_interactions };
       } catch {
-        setError('Failed to check interactions');
+        if (generation.current === current)
+          setView((prev) => ({ ...prev, error: 'Failed to check interactions' }));
         return null;
       } finally {
-        setChecking(false);
+        if (generation.current === current) setView((prev) => ({ ...prev, checking: false }));
       }
     },
-    [dependentId, delegateOwnerId, fetchStatus, applyPayload],
+    [dependentId, delegateOwnerId, token, fetchStatus]
   );
 
+  // Hide old-profile data on the very first render of a profile change, before
+  // effects run. Late loads, checks, snooze failures and unmounts are gated above.
+  const visible =
+    view.scope === scope && !delegateOwnerId
+      ? view
+      : { data: EMPTY, checking: false, loading: !delegateOwnerId, error: null };
   return {
-    alerts,
-    status,
-    snoozedCount,
-    loading,
-    error,
-    checking,
+    alerts: visible.data.alerts,
+    status: visible.data.status,
+    snoozedCount: visible.data.snoozed_count,
+    loading: visible.loading,
+    error: visible.error,
+    checking: visible.checking,
+    canCheck: !delegateOwnerId,
     snoozeAlert,
     checkInteractions,
   };
