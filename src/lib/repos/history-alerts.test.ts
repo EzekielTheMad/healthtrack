@@ -189,8 +189,8 @@ describe('interaction-alerts repo', () => {
     ctx.sqlite
       .prepare(
         `insert into interaction_alerts
-           (id, user_id, trigger_medication_id, alert_text, severity, dismissed, checked_at, medication_snapshot, dependent_id)
-         values (?, ?, ?, 'dep alert', 'warning', 0, ?, '{}', ?)`,
+           (id, user_id, trigger_medication_id, alert_text, severity, dismissed, checked_at, medication_snapshot, dependent_id, context_version)
+         values (?, ?, ?, 'dep alert', 'warning', 0, ?, '{}', ?, 1)`,
       )
       .run(crypto.randomUUID(), OWNER, medId, new Date().toISOString(), depId);
 
@@ -206,11 +206,33 @@ describe('interaction-alerts repo', () => {
         dependentId: null,
       }),
     ).toHaveLength(0);
-    expect(
-      await alerts.listActiveInteractionAlerts(OWNER, {
-        ownerId: OWNER,
-        dependentId: 'all',
-      }),
-    ).toHaveLength(1);
+    await expect(alerts.listActiveInteractionAlerts(OWNER, {
+      ownerId: OWNER, dependentId: 'all',
+    })).rejects.toThrow('Not found');
   });
+  it('hides legacy pooled results and never inherits their snoozes during a scoped recheck', async () => {
+    const medId = insertMedication(OWNER);
+    const own = { ownerId: OWNER, dependentId: null };
+    const legacyId = crypto.randomUUID();
+    ctx.sqlite.prepare(`insert into interaction_alerts
+      (id, user_id, trigger_medication_id, alert_text, severity, signature, snoozed_until, medication_snapshot, checked_at)
+      values (?, ?, ?, 'Legacy pooled result', 'warning', 'a|b', '2099-01-01', '{}', '2026-10-10')`).run(legacyId, OWNER, medId);
+    ctx.sqlite.prepare(`insert into interaction_checks (id, user_id, has_interactions, checked_at) values (?, ?, 0, '2026-10-10')`).run(crypto.randomUUID(), OWNER);
+    expect(await alerts.listActiveInteractionAlerts(OWNER, own)).toEqual([]);
+    expect(await alerts.countSnoozedInteractionAlerts(OWNER, own)).toBe(0);
+    expect(await alerts.getInteractionCheck(OWNER, own)).toBeNull();
+    await alerts.reconcileInteractionAlerts(OWNER, null, [{ signature: 'a|b', triggerMedicationId: medId,
+      alertText: 'New exact-profile result', severity: 'warning', medicationSnapshot: {} }]);
+    await alerts.recordInteractionCheck(OWNER, null, true);
+    const visible = await alerts.listActiveInteractionAlerts(OWNER, own);
+    expect(visible).toHaveLength(1);
+    expect(visible[0].snoozedUntil).toBeNull();
+    expect(visible[0].id).not.toBe(legacyId);
+    expect(await alerts.getInteractionCheck(OWNER, own)).toMatchObject({ hasInteractions: true });
+    expect(ctx.sqlite.prepare('select * from interaction_alerts where id = ?').get(legacyId)).toMatchObject({
+      alert_text: 'Legacy pooled result', snoozed_until: '2099-01-01', context_version: 0,
+    });
+    expect(ctx.sqlite.prepare('select * from interaction_checks where context_version = 0').all()).toHaveLength(1);
+  });
+
 });

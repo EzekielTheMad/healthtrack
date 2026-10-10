@@ -19,8 +19,16 @@
 import { and, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { db } from '@/db';
 import { interactionAlerts, interactionChecks } from '@/db/schema';
-import { NotFoundError } from '@/lib/authz';
+import { NotFoundError, requireAuthz } from '@/lib/authz';
 import { dependentFilter, type ListScope } from './_scope';
+
+// Only results produced by the exact-profile checker may be displayed. Legacy
+// rows remain stored for history, but cannot produce alerts or an all-clear.
+const CONTEXT_VERSION = 1;
+async function requireExactScope(actorId: string, dependentId: string | null) {
+  if (dependentId === 'all') throw new NotFoundError();
+  await requireAuthz(actorId, { ownerId: actorId, dependentId }, 'medications', 'read');
+}
 
 export type InteractionAlertRow = typeof interactionAlerts.$inferSelect;
 
@@ -49,6 +57,7 @@ export async function listActiveInteractionAlerts(
 ): Promise<InteractionAlertRow[]> {
   if (!actorId) throw new NotFoundError();
   if (actorId !== scope.ownerId) return []; // RLS-empty parity, see header
+  await requireExactScope(actorId, scope.dependentId);
   const now = new Date().toISOString();
   return db
     .select()
@@ -56,6 +65,7 @@ export async function listActiveInteractionAlerts(
     .where(
       and(
         eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, CONTEXT_VERSION),
         dependentFilter(interactionAlerts.dependentId, scope.dependentId),
         or(
           isNull(interactionAlerts.snoozedUntil),
@@ -73,6 +83,7 @@ export async function countSnoozedInteractionAlerts(
 ): Promise<number> {
   if (!actorId) throw new NotFoundError();
   if (actorId !== scope.ownerId) return 0;
+  await requireExactScope(actorId, scope.dependentId);
   const now = new Date().toISOString();
   const rows = await db
     .select({ id: interactionAlerts.id })
@@ -80,6 +91,7 @@ export async function countSnoozedInteractionAlerts(
     .where(
       and(
         eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, CONTEXT_VERSION),
         dependentFilter(interactionAlerts.dependentId, scope.dependentId),
         gt(interactionAlerts.snoozedUntil, now),
       ),
@@ -134,6 +146,7 @@ export async function createInteractionAlerts(
     .values(
       alerts.map((a) => ({
         userId: actorId,
+        contextVersion: CONTEXT_VERSION,
         triggerMedicationId: a.triggerMedicationId,
         alertText: a.alertText,
         severity: a.severity,
@@ -163,6 +176,7 @@ export async function reconcileInteractionAlerts(
   detected: DetectedInteraction[],
 ): Promise<void> {
   if (!actorId) throw new NotFoundError();
+  await requireExactScope(actorId, dependentId);
   const now = new Date().toISOString();
 
   const existing = await db
@@ -171,6 +185,7 @@ export async function reconcileInteractionAlerts(
     .where(
       and(
         eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, CONTEXT_VERSION),
         dependentFilter(interactionAlerts.dependentId, dependentId),
       ),
     );
@@ -196,6 +211,7 @@ export async function reconcileInteractionAlerts(
     } else {
       await db.insert(interactionAlerts).values({
         userId: actorId,
+        contextVersion: CONTEXT_VERSION,
         dependentId,
         triggerMedicationId: d.triggerMedicationId,
         alertText: d.alertText,
@@ -216,6 +232,7 @@ export async function reconcileInteractionAlerts(
       .where(
         and(
           eq(interactionAlerts.userId, actorId),
+          eq(interactionAlerts.contextVersion, CONTEXT_VERSION),
           inArray(interactionAlerts.id, toDelete),
         ),
       );
@@ -236,12 +253,14 @@ export async function getInteractionCheck(
 ): Promise<InteractionCheckStatus | null> {
   if (!actorId) throw new NotFoundError();
   if (actorId !== scope.ownerId) return null;
+  await requireExactScope(actorId, scope.dependentId);
   const [row] = await db
     .select()
     .from(interactionChecks)
     .where(
       and(
         eq(interactionChecks.userId, actorId),
+        eq(interactionChecks.contextVersion, CONTEXT_VERSION),
         dependentFilter(interactionChecks.dependentId, scope.dependentId),
       ),
     )
@@ -257,6 +276,7 @@ export async function recordInteractionCheck(
   hasInteractions: boolean,
 ): Promise<void> {
   if (!actorId) throw new NotFoundError();
+  await requireExactScope(actorId, dependentId);
   const now = new Date().toISOString();
   const [existing] = await db
     .select({ id: interactionChecks.id })
@@ -264,6 +284,7 @@ export async function recordInteractionCheck(
     .where(
       and(
         eq(interactionChecks.userId, actorId),
+        eq(interactionChecks.contextVersion, CONTEXT_VERSION),
         dependentFilter(interactionChecks.dependentId, dependentId),
       ),
     )
@@ -276,7 +297,7 @@ export async function recordInteractionCheck(
   } else {
     await db
       .insert(interactionChecks)
-      .values({ userId: actorId, dependentId, hasInteractions, checkedAt: now });
+      .values({ userId: actorId, dependentId, hasInteractions, checkedAt: now, contextVersion: CONTEXT_VERSION });
   }
 }
 

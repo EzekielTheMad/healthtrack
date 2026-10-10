@@ -9,6 +9,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth/session';
+import { apiError } from '@/lib/api-error';
 import { errorResponse } from '@/lib/api/respond';
 import { rowsToSnake } from '@/lib/api/snake';
 import { scopeFromParams } from '@/lib/repos/_scope';
@@ -21,6 +22,10 @@ import {
 export async function GET(request: NextRequest) {
   try {
     const user = await requireUser();
+    const dependentId = request.nextUrl.searchParams.get('dependent_id');
+    if (dependentId !== null && (!dependentId.trim() || dependentId === 'all')) {
+      return apiError(400, 'invalid_context', 'Select one valid profile.');
+    }
     const scope = scopeFromParams(user.id, request.nextUrl.searchParams);
     const [rows, status, snoozedCount] = await Promise.all([
       listActiveInteractionAlerts(user.id, scope),

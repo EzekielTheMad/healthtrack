@@ -66,6 +66,8 @@ export const interactionAlerts = sqliteTable(
     // 006 — stable key for one interaction (sorted, lowercased med names), so a
     // re-check preserves an existing alert's snooze instead of wiping/recreating.
     signature: text('signature'),
+    // 0 is legacy: these results may have pooled multiple people's records.
+    contextVersion: integer('context_version').notNull().default(0),
     checkedAt: timestampNow('checked_at'),
     // jsonb not null (no default)
     medicationSnapshot: text('medication_snapshot', { mode: 'json' })
@@ -88,6 +90,8 @@ export const interactionChecks = sqliteTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     dependentId: text('dependent_id').references(() => dependents.id, { onDelete: 'cascade' }),
     hasInteractions: integer('has_interactions', { mode: 'boolean' }).notNull().default(false),
+    // 0 is legacy: these results may have pooled multiple people's records.
+    contextVersion: integer('context_version').notNull().default(0),
     checkedAt: timestampNow('checked_at'),
   },
   (t) => [index('idx_interaction_checks_user').on(t.userId, t.dependentId)],

@@ -106,7 +106,9 @@ export async function buildSummaryInputForUser(
       listConditions(userId, scope),
       listLabResults(userId, scope),
       listVitals(userId, ownVitalsScope, { startDate: vitalsCutoffISO, limit: 2000 }),
-      listActiveInteractionAlerts(userId, scope),
+      // Interaction alerts now require one exact person, even though the
+      // other legacy summary domains above still need separate isolation work.
+      listActiveInteractionAlerts(userId, ownVitalsScope),
       // Fitness context is owner-scoped like the vitals aggregates: goals are
       // strictly per-user, and sessions read owner rows only.
       listGoals(userId, userId, { active: true }),
