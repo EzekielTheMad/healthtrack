@@ -96,7 +96,8 @@ do not test account creation or imports against production health records.
    `501` behavior, cache/refresh and repeat-query deduplication where applicable,
    and review-before-write with partial-extraction warnings. Do not infer that
    every AI endpoint implements caching from this requirement.
-8. Before authorized promotion, preserve a consistent stopped-container backup
+8. Follow the [upgrade and rollback preflight](UPGRADING.md). Before authorized
+   promotion, preserve a consistent stopped-container backup
    of `/data` and the effective configuration, plus the prior immutable image
    identity. Test restore in isolation. Because startup applies migrations,
    reverting an image alone may be unsafe; use a compatible image/data pair or
