@@ -6,6 +6,14 @@
  * The DB-backed behaviour (recompute the day from retained records, overwrite
  * the canonical row) is covered end to end in the webhook route test.
  */
+import {
+  beforeEach as beforeCalendarFixture,
+  afterEach as afterCalendarFixture,
+  vi as calendarFixtureVi,
+} from 'vitest';
+beforeCalendarFixture(() => calendarFixtureVi.stubEnv('TZ', 'America/Phoenix'));
+afterCalendarFixture(() => calendarFixtureVi.unstubAllEnvs());
+
 import { describe, it, expect } from 'vitest';
 import { METERS_PER_MILE, metersToMiles } from './normalize-activity';
 import { computeDayTotals, phoenixDate, phoenixDayWindow } from './normalize-nutrition';
@@ -13,7 +21,7 @@ import type { HealthConnectRawRecordRow } from '@/lib/repos/health-connect';
 
 function rawRecord(
   payload: Record<string, unknown>,
-  startAt = String(payload.start_time),
+  startAt = String(payload.start_time)
 ): HealthConnectRawRecordRow {
   return {
     id: `row-${Math.random()}`,
@@ -73,10 +81,22 @@ describe('computeDayTotals — sum_items', () => {
   it('sums every record for the day', () => {
     const totals = computeDayTotals(
       [
-        rawRecord({ calories: 520, protein_grams: 42.5, carbs_grams: 38, fat_grams: 18.5, start_time: '2026-09-01T14:05:00Z' }),
-        rawRecord({ calories: 740, protein_grams: 55, carbs_grams: 61, fat_grams: 24, start_time: '2026-09-01T19:30:00Z' }),
+        rawRecord({
+          calories: 520,
+          protein_grams: 42.5,
+          carbs_grams: 38,
+          fat_grams: 18.5,
+          start_time: '2026-09-01T14:05:00Z',
+        }),
+        rawRecord({
+          calories: 740,
+          protein_grams: 55,
+          carbs_grams: 61,
+          fat_grams: 24,
+          start_time: '2026-09-01T19:30:00Z',
+        }),
       ],
-      'sum_items',
+      'sum_items'
     );
     expect(totals).toEqual({
       calories: 1260,
@@ -90,7 +110,7 @@ describe('computeDayTotals — sum_items', () => {
   it('keeps an unreported nutrient NULL rather than zero', () => {
     const totals = computeDayTotals(
       [rawRecord({ calories: 300, start_time: '2026-09-01T14:05:00Z' })],
-      'sum_items',
+      'sum_items'
     );
     expect(totals.calories).toBe(300);
     expect(totals.proteinGrams).toBeNull();
@@ -101,7 +121,7 @@ describe('computeDayTotals — sum_items', () => {
   it('distinguishes a reported zero from an absent nutrient', () => {
     const totals = computeDayTotals(
       [rawRecord({ calories: 0, protein_grams: null, start_time: '2026-09-01T14:05:00Z' })],
-      'sum_items',
+      'sum_items'
     );
     expect(totals.calories).toBe(0);
     expect(totals.proteinGrams).toBeNull();
@@ -125,8 +145,8 @@ describe('computeDayTotals — sum_items', () => {
           rawRecord({ protein_grams: 0.1, start_time: '2026-09-01T14:00:00Z' }),
           rawRecord({ protein_grams: 0.2, start_time: '2026-09-01T15:00:00Z' }),
         ],
-        'sum_items',
-      ).proteinGrams,
+        'sum_items'
+      ).proteinGrams
     ).toBe(0.3);
 
     // …but three-decimal source values survive the sum intact: storage keeps
@@ -137,8 +157,8 @@ describe('computeDayTotals — sum_items', () => {
           rawRecord({ calories: 135.731, start_time: '2026-09-01T14:00:00Z' }),
           rawRecord({ calories: 402.368, start_time: '2026-09-01T15:00:00Z' }),
         ],
-        'sum_items',
-      ).calories,
+        'sum_items'
+      ).calories
     ).toBe(538.099);
   });
 
@@ -149,7 +169,7 @@ describe('computeDayTotals — sum_items', () => {
   it('ignores records whose payload does not match the nutrition shape', () => {
     const totals = computeDayTotals(
       [rawRecord({ calories: 500 } as Record<string, unknown>, '2026-09-01T14:00:00Z')],
-      'sum_items',
+      'sum_items'
     );
     // No start_time → not a valid nutrition record → contributes nothing.
     expect(totals.recordCount).toBe(0);
@@ -164,7 +184,7 @@ describe('computeDayTotals — latest_summary', () => {
         rawRecord({ calories: 520, start_time: '2026-09-01T14:05:00Z' }),
         rawRecord({ calories: 1260, start_time: '2026-09-01T23:59:00Z' }),
       ],
-      'latest_summary',
+      'latest_summary'
     );
     expect(totals.calories).toBe(1260);
     expect(totals.recordCount).toBe(1);

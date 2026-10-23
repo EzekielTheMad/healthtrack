@@ -11,7 +11,15 @@ import {
 import { attachLabProvenance } from './lab-warnings';
 
 export interface HealthSummaryInput {
-  medications: Array<{ name: string; dosage: string | null; frequency: string | null }>;
+  medications: Array<{
+    name: string;
+    dosage: string | null;
+    frequency: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+  }>;
+  nutritionContext?: string;
+  contextMetadata?: import('@/lib/health-context-types').QueryContextMetadata;
   conditions: Array<{ name: string }>;
   recentLabFlags: Array<{
     test_name: string;
@@ -54,6 +62,7 @@ export interface HealthSummaryHighlight {
 }
 
 export interface HealthSummary {
+  contextMetadata?: import('@/lib/health-context-types').QueryContextMetadata;
   summary: string;
   highlights: HealthSummaryHighlight[];
 }
@@ -92,19 +101,23 @@ Rules:
  */
 export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): string {
   const parts: string[] = [];
+  if (input.contextMetadata)
+    parts.push(
+      `Coverage: ${JSON.stringify(input.contextMetadata.coverage)}. Missing days are unknown. Do not infer causation or combine competing sources.`
+    );
+  if (input.nutritionContext)
+    parts.push(`Nutrition (separate daily source snapshots): ${input.nutritionContext}`);
 
   if (input.medications.length > 0) {
     parts.push(
-      `Active medications (${input.medications.length}): ${input.medications.map((m) => m.name).join(', ')}`,
+      `Active medications (${input.medications.length}): ${input.medications.map((m) => m.name).join(', ')}`
     );
   } else {
     parts.push('No active medications recorded.');
   }
 
   if (input.conditions.length > 0) {
-    parts.push(
-      `Conditions: ${input.conditions.map((c) => c.name).join(', ')}`,
-    );
+    parts.push(`Conditions: ${input.conditions.map((c) => c.name).join(', ')}`);
   }
 
   if (input.recentLabFlags.length > 0) {
@@ -113,9 +126,9 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
         input.recentLabFlags
           .map(
             (r) =>
-              `- ${r.test_name}: ${r.value} ${r.unit ?? ''} (${r.flag}${r.reference_range_low != null && r.reference_range_high != null ? `, ref: ${r.reference_range_low}-${r.reference_range_high}` : ''}) — drawn ${r.visit_date}`,
+              `- ${r.test_name}: ${r.value} ${r.unit ?? ''} (${r.flag}${r.reference_range_low != null && r.reference_range_high != null ? `, ref: ${r.reference_range_low}-${r.reference_range_high}` : ''}) — drawn ${r.visit_date}`
           )
-          .join('\n'),
+          .join('\n')
     );
   }
 
@@ -129,7 +142,7 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
         recordedAt: v.recorded_at,
         metadata: v.metadata,
       })),
-      now,
+      now
     );
     const block = formatAggregatesForPrompt(aggregates);
     if (block) {
@@ -140,7 +153,7 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
   if (input.interactionAlerts.length > 0) {
     parts.push(
       'Active medication alerts:\n' +
-        input.interactionAlerts.map((a) => `- [${a.severity}] ${a.alert_text}`).join('\n'),
+        input.interactionAlerts.map((a) => `- [${a.severity}] ${a.alert_text}`).join('\n')
     );
   }
 
@@ -151,7 +164,7 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
   const trainingBlock = formatRecentTrainingForPrompt(
     input.recentWorkouts ?? [],
     input.goals ?? [],
-    now,
+    now
   );
   if (trainingBlock) parts.push(trainingBlock);
 
@@ -188,9 +201,7 @@ export function extractSummaryJson(responseText: string): HealthSummary | undefi
   return undefined;
 }
 
-export async function generateHealthSummary(
-  input: HealthSummaryInput,
-): Promise<HealthSummary> {
+export async function generateHealthSummary(input: HealthSummaryInput): Promise<HealthSummary> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY is not configured');
@@ -224,7 +235,7 @@ export async function generateHealthSummary(
   if (!parsed) {
     console.error(
       'Health summary parse failed. Raw response (first 800 chars):',
-      responseText.slice(0, 800),
+      responseText.slice(0, 800)
     );
     throw new Error('Failed to parse health summary response');
   }
@@ -239,7 +250,7 @@ export async function generateHealthSummary(
     ...parsed,
     highlights: attachLabProvenance(
       parsed.highlights,
-      input.recentLabFlags.map((f) => ({ testName: f.test_name, visitDate: f.visit_date })),
+      input.recentLabFlags.map((f) => ({ testName: f.test_name, visitDate: f.visit_date }))
     ),
   };
 }

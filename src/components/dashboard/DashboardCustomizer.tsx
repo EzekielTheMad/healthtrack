@@ -1,7 +1,8 @@
 'use client';
 
-import { METRIC_CATALOG, getMetricDefinition, buildLabResultDefinition } from '@/lib/dashboard-metrics';
+import { METRIC_CATALOG, getMetricDefinition } from '@/lib/dashboard-metrics';
 import type { DashboardStatPreference } from '@/lib/types';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 
 interface AvailableLabTest {
   testName: string;
@@ -31,19 +32,22 @@ export default function DashboardCustomizer({
   onReorder,
   onClose,
 }: DashboardCustomizerProps) {
+  const { delegateOwnerId } = useActiveProfile();
+  if (delegateOwnerId) return null;
+
   const sorted = [...stats].sort((a, b) => a.position - b.position);
   const visible = sorted.filter((s) => s.visible);
   const hidden = sorted.filter((s) => !s.visible);
 
   // Vitals not yet added
   const addedVitalKeys = new Set(
-    stats.filter((s) => s.widget_type === 'vital').map((s) => s.metric_key),
+    stats.filter((s) => s.widget_type === 'vital').map((s) => s.metric_key)
   );
   const availableVitals = METRIC_CATALOG.filter((m) => !addedVitalKeys.has(m.metricKey));
 
   // Lab tests not yet added
   const addedLabKeys = new Set(
-    stats.filter((s) => s.widget_type === 'lab_result').map((s) => s.metric_key),
+    stats.filter((s) => s.widget_type === 'lab_result').map((s) => s.metric_key)
   );
   const availableLabs = availableLabTests.filter((t) => !addedLabKeys.has(t.testName));
 
@@ -90,7 +94,10 @@ export default function DashboardCustomizer({
       {/* Active stats */}
       {visible.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+          <p
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
             Active
           </p>
           <ul className="space-y-1">
@@ -125,7 +132,10 @@ export default function DashboardCustomizer({
                 </div>
 
                 {/* Label + type badge */}
-                <span className="flex-1 text-sm font-medium truncate flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+                <span
+                  className="flex-1 text-sm font-medium truncate flex items-center gap-2"
+                  style={{ color: 'var(--color-text-primary)' }}
+                >
                   {getLabel(stat)}
                   {getTypeBadge(stat)}
                 </span>
@@ -136,7 +146,10 @@ export default function DashboardCustomizer({
                   onClick={() => onTogglePinned(stat.id)}
                   className="text-sm cursor-pointer"
                   title={stat.pinned ? 'Unpin' : 'Pin to top'}
-                  style={{ color: stat.pinned ? 'var(--color-terracotta)' : 'var(--color-text-muted)', opacity: stat.pinned ? 1 : 0.4 }}
+                  style={{
+                    color: stat.pinned ? 'var(--color-terracotta)' : 'var(--color-text-muted)',
+                    opacity: stat.pinned ? 1 : 0.4,
+                  }}
                 >
                   ★
                 </button>
@@ -149,7 +162,16 @@ export default function DashboardCustomizer({
                   title="Hide from dashboard"
                   style={{ color: 'var(--color-text-muted)' }}
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                     <circle cx="12" cy="12" r="3" />
                   </svg>
@@ -163,7 +185,10 @@ export default function DashboardCustomizer({
       {/* Hidden stats */}
       {hidden.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+          <p
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
             Hidden
           </p>
           <ul className="space-y-1">
@@ -173,7 +198,10 @@ export default function DashboardCustomizer({
                 className="flex items-center gap-2 rounded-lg px-3 py-2"
                 style={{ backgroundColor: 'var(--bg-primary)', opacity: 0.6 }}
               >
-                <span className="flex-1 text-sm truncate flex items-center gap-2" style={{ color: 'var(--color-text-muted)' }}>
+                <span
+                  className="flex-1 text-sm truncate flex items-center gap-2"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
                   {getLabel(stat)}
                   {getTypeBadge(stat)}
                 </span>
@@ -203,7 +231,10 @@ export default function DashboardCustomizer({
           metrics — a flat pill list is unusable) */}
       {availableVitals.length > 0 && (
         <div className="space-y-3">
-          <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+          <p
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
             Available Vitals
           </p>
           {Array.from(new Set(availableVitals.map((m) => m.category))).map((category) => (
@@ -244,7 +275,10 @@ export default function DashboardCustomizer({
       {/* Available lab tests */}
       {availableLabs.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--color-text-muted)' }}>
+          <p
+            className="text-xs font-medium uppercase tracking-wider"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
             From Your Labs
           </p>
           <div className="flex flex-wrap gap-2">

@@ -2,16 +2,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { useVitals } from '@/hooks/useVitals';
-import {
-  buildDailySections,
-  type DailySection,
-  type DailyEntry,
-} from '@/lib/metrics/vitals-view';
+import { buildDailySections, type DailySection, type DailyEntry } from '@/lib/metrics/vitals-view';
 import { CATEGORY_LABELS } from '@/lib/metrics/registry';
 import type { ActiveMetricGoal } from '@/lib/fitness/goal-direction';
 import { displayUnit } from '@/lib/metrics/format';
 import { dayKeyToUtcIso, formatLocalTime, localDayKey, shiftDayKey } from '@/lib/dates';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import { missingDailyReports } from '@/lib/metrics/daily-reporting';
+import { useDateRangeContext } from '@/components/shared/DateRangeContext';
 
 // ---------------------------------------------------------------------------
 // Daily view — "how was <day>?": a compact per-day table grouped by registry
@@ -85,7 +83,13 @@ function DeltaCell({ entry }: { entry: DailyEntry }) {
 }
 
 /** Presentational per-day table (exported for tests). */
-export function DailyTable({ sections }: { sections: DailySection[] }) {
+export function DailyTable({
+  sections,
+  timeZone,
+}: {
+  sections: DailySection[];
+  timeZone?: string;
+}) {
   if (sections.length === 0) {
     return (
       <div
@@ -139,21 +143,24 @@ export function DailyTable({ sections }: { sections: DailySection[] }) {
                     >
                       {reading.display}
                       {entry.unit && !entry.duration && (
-                        <span
-                          className="text-xs ml-1"
-                          style={{ color: 'var(--color-text-muted)' }}
-                        >
+                        <span className="text-xs ml-1" style={{ color: 'var(--color-text-muted)' }}>
                           {displayUnit(entry.unit)}
                         </span>
                       )}
                       {entry.intraday && (
-                        <span
-                          className="text-xs ml-2"
-                          style={{ color: 'var(--color-text-muted)' }}
-                        >
-                          {formatLocalTime(reading.recordedAt)}
+                        <span className="text-xs ml-2" style={{ color: 'var(--color-text-muted)' }}>
+                          {formatLocalTime(reading.recordedAt, timeZone)}
                         </span>
                       )}
+                      <span
+                        className="block text-[11px] mt-0.5"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
+                        {reading.source} ·{' '}
+                        {reading.lastReceivedAt
+                          ? `Received ${new Date(reading.lastReceivedAt).toLocaleString(undefined, { timeZone })}`
+                          : 'Receipt time unknown'}
+                      </span>
                     </span>
                   ))}
                   <DeltaCell entry={entry} />
@@ -169,7 +176,9 @@ export function DailyTable({ sections }: { sections: DailySection[] }) {
 
 export default function DailyVitalsView({ initialDay, metricGoals = [] }: DailyVitalsViewProps) {
   const [selectedDay, setSelectedDay] = useState(initialDay);
-  const today = localDayKey();
+  const { reportingTimeZone, calendarLoading } = useDateRangeContext();
+  const timeZone = reportingTimeZone ?? 'Etc/UTC';
+  const today = localDayKey(new Date(), timeZone);
 
   // Padded fetch window: prior 7 days for the delta baseline, plus a day of
   // slack on each side so intraday readings keyed by LOCAL day are covered
@@ -179,8 +188,12 @@ export default function DailyVitalsView({ initialDay, metricGoals = [] }: DailyV
   const { vitals, loading, error } = useVitals({ startDate, endDate });
 
   const sections = useMemo(
-    () => buildDailySections(vitals, selectedDay, metricGoals),
-    [vitals, selectedDay, metricGoals],
+    () => buildDailySections(vitals, selectedDay, metricGoals, timeZone),
+    [vitals, selectedDay, metricGoals, timeZone]
+  );
+  const missing = useMemo(
+    () => missingDailyReports(vitals, selectedDay, today, timeZone),
+    [vitals, selectedDay, today, timeZone]
   );
 
   const navButtonStyle: React.CSSProperties = {
@@ -191,6 +204,9 @@ export default function DailyVitalsView({ initialDay, metricGoals = [] }: DailyV
 
   return (
     <div className="space-y-4">
+      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+        Calendar days: {timeZone}
+      </p>
       {/* Day navigation */}
       <div
         className="rounded-xl border px-4 py-3 flex flex-wrap items-center gap-3"
@@ -249,12 +265,39 @@ export default function DailyVitalsView({ initialDay, metricGoals = [] }: DailyV
         </div>
       )}
 
-      {loading ? (
+      {loading || calendarLoading ? (
         <div className="flex justify-center py-12">
           <LoadingSpinner size="lg" />
         </div>
       ) : (
-        <DailyTable sections={sections} />
+        <>
+          <DailyTable sections={sections} timeZone={timeZone} />
+          {missing.length > 0 && (
+            <section
+              className="rounded-xl border p-4 space-y-2 text-sm"
+              style={{ borderColor: 'var(--border-card)' }}
+            >
+              <h2 className="font-medium">Daily feeds</h2>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                These metrics reported recently. An absent report does not mean zero or skipped
+                therapy.
+              </p>
+              {missing.map((item) => (
+                <div key={item.metricKey} className="flex flex-wrap justify-between gap-2">
+                  <span>
+                    {item.label}{' '}
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      · {item.source}
+                    </span>
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    {item.state === 'awaiting' ? 'Awaiting feed' : 'No data received'}
+                  </span>
+                </div>
+              ))}
+            </section>
+          )}
+        </>
       )}
     </div>
   );

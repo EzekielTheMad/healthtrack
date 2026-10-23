@@ -13,9 +13,12 @@
  */
 import { and, desc, eq, gte, inArray, like } from 'drizzle-orm';
 import { z } from 'zod';
-import { db } from '@/db';
+import { db, getSqlite } from '@/db';
+import { randomUUID } from 'crypto';
+import { isFullDate } from '@/lib/import/reconcile';
 import { labResults, labVisits } from '@/db/schema';
-import { requireAuthz } from '@/lib/authz';
+import { requireAuthz, NotFoundError } from '@/lib/authz';
+import { FitnessWriteError } from './_fitness';
 import { dependentFilter, requireListAuthz, type ListScope } from './_scope';
 
 export type LabVisitRow = typeof labVisits.$inferSelect;
@@ -35,10 +38,10 @@ const labResultInputSchema = z
   .object({
     panelName: z.string().nullish(),
     testName: z.string().trim().min(1),
-    value: z.number(),
+    value: z.number().finite(),
     unit: z.string().nullish(),
-    referenceRangeLow: z.number().nullish(),
-    referenceRangeHigh: z.number().nullish(),
+    referenceRangeLow: z.number().finite().nullish(),
+    referenceRangeHigh: z.number().finite().nullish(),
     referenceRangeText: z.string().nullish(),
     flag: z.enum(['normal', 'high', 'low', 'critical']).nullish(),
     loincCode: z.string().nullish(),
@@ -47,7 +50,7 @@ const labResultInputSchema = z
 
 const labVisitInputSchema = z
   .object({
-    visitDate: z.string().min(1),
+    visitDate: z.string().refine(isFullDate, 'Enter an exact collection date (YYYY-MM-DD).'),
     providerId: z.string().nullish(),
     sourcePdfPath: z.string().nullish(),
     notes: z.string().nullish(),
@@ -64,7 +67,7 @@ export type LabVisitInput = z.input<typeof labVisitInputSchema>;
  */
 export async function listLabVisitsWithResults(
   actorId: string,
-  scope: ListScope,
+  scope: ListScope
 ): Promise<LabVisitWithResults[]> {
   await requireListAuthz(actorId, scope, 'labs', 'read');
   const visits = await db
@@ -73,8 +76,8 @@ export async function listLabVisitsWithResults(
     .where(
       and(
         eq(labVisits.userId, scope.ownerId),
-        dependentFilter(labVisits.dependentId, scope.dependentId),
-      ),
+        dependentFilter(labVisits.dependentId, scope.dependentId)
+      )
     )
     .orderBy(desc(labVisits.visitDate));
   if (visits.length === 0) return [];
@@ -85,8 +88,8 @@ export async function listLabVisitsWithResults(
     .where(
       inArray(
         labResults.labVisitId,
-        visits.map((v) => v.id),
-      ),
+        visits.map((v) => v.id)
+      )
     );
   const byVisit = new Map<string, LabResultRow[]>();
   for (const r of results) {
@@ -104,30 +107,128 @@ export async function listLabVisitsWithResults(
 export async function createLabVisitWithResults(
   actorId: string,
   scope: { ownerId: string; dependentId: string | null },
-  input: unknown,
+  input: unknown
 ): Promise<LabVisitWithResults> {
   await requireAuthz(actorId, scope, 'labs', 'write');
   const { results, ...visitValues } = labVisitInputSchema.parse(input);
-  const [visit] = await db
-    .insert(labVisits)
-    .values({ ...visitValues, userId: scope.ownerId, dependentId: scope.dependentId })
-    .returning();
-
-  let rows: LabResultRow[] = [];
-  if (results.length > 0) {
-    rows = await db
-      .insert(labResults)
-      .values(
-        results.map((r) => ({
-          ...r,
-          userId: scope.ownerId,
-          dependentId: scope.dependentId,
-          labVisitId: visit.id,
-        })),
-      )
-      .returning();
+  for (const result of results) {
+    if (
+      result.referenceRangeLow != null &&
+      result.referenceRangeHigh != null &&
+      result.referenceRangeLow > result.referenceRangeHigh
+    )
+      throw new FitnessWriteError('Reference range low must not exceed high.');
   }
-  return { ...visit, labResults: rows };
+  return db.transaction((tx) => {
+    const [visit] = tx
+      .insert(labVisits)
+      .values({ ...visitValues, userId: scope.ownerId, dependentId: scope.dependentId })
+      .returning()
+      .all();
+
+    let rows: LabResultRow[] = [];
+    if (results.length > 0) {
+      rows = tx
+        .insert(labResults)
+        .values(
+          results.map((r) => ({
+            ...r,
+            userId: scope.ownerId,
+            dependentId: scope.dependentId,
+            labVisitId: visit.id,
+          }))
+        )
+        .returning()
+        .all();
+    }
+    return { ...visit, labResults: rows };
+  });
+}
+
+const labVisitUpdateSchema = z
+  .object({
+    visitDate: z
+      .string()
+      .refine(isFullDate, 'Enter an exact collection date (YYYY-MM-DD).')
+      .optional(),
+    notes: z.string().max(10000).nullable().optional(),
+    reason: z.string().max(2000).optional(),
+    results: z
+      .array(labResultInputSchema.partial().extend({ id: z.string().min(1) }))
+      .max(2000)
+      .optional(),
+  })
+  .strict();
+
+/** Stable-ID corrections never replace results or the uploaded source file. */
+export async function updateLabVisit(
+  actorId: string,
+  id: string,
+  input: unknown
+): Promise<LabVisitWithResults> {
+  const visit = db.select().from(labVisits).where(eq(labVisits.id, id)).get();
+  if (!visit) throw new NotFoundError();
+  await requireAuthz(
+    actorId,
+    { ownerId: visit.userId, dependentId: visit.dependentId },
+    'labs',
+    'write'
+  );
+  const values = labVisitUpdateSchema.parse(input);
+  const sqlite = getSqlite();
+  return sqlite
+    .transaction(() => {
+      const currentVisit = db.select().from(labVisits).where(eq(labVisits.id, id)).get();
+      if (!currentVisit) throw new NotFoundError();
+      const before = {
+        ...currentVisit,
+        labResults: db.select().from(labResults).where(eq(labResults.labVisitId, id)).all(),
+      };
+      if (
+        new Set((values.results ?? []).map((row) => row.id)).size !== (values.results ?? []).length
+      )
+        throw new FitnessWriteError('A result may only be corrected once per request.');
+      for (const { id: resultId, ...patch } of values.results ?? []) {
+        const previous = before.labResults.find((row) => row.id === resultId);
+        if (!previous) throw new NotFoundError();
+        const next = { ...previous, ...patch };
+        if (
+          next.referenceRangeLow !== null &&
+          next.referenceRangeHigh !== null &&
+          next.referenceRangeLow > next.referenceRangeHigh
+        )
+          throw new FitnessWriteError('Reference range low must not exceed high.');
+        if (Object.keys(patch).length)
+          db.update(labResults).set(patch).where(eq(labResults.id, resultId)).run();
+      }
+      const visitPatch = {
+        ...(values.visitDate !== undefined ? { visitDate: values.visitDate } : {}),
+        ...(values.notes !== undefined ? { notes: values.notes } : {}),
+      };
+      if (Object.keys(visitPatch).length)
+        db.update(labVisits).set(visitPatch).where(eq(labVisits.id, id)).run();
+      const after = {
+        ...db.select().from(labVisits).where(eq(labVisits.id, id)).get()!,
+        labResults: db.select().from(labResults).where(eq(labResults.labVisitId, id)).all(),
+      };
+      if (JSON.stringify(before) !== JSON.stringify(after))
+        sqlite
+          .prepare(
+            'INSERT INTO clinical_corrections(id,user_id,dependent_id,domain,record_id,before_json,after_json,reason) VALUES(?,?,?,?,?,?,?,?)'
+          )
+          .run(
+            randomUUID(),
+            visit.userId,
+            visit.dependentId,
+            'lab_visits',
+            id,
+            JSON.stringify(before),
+            JSON.stringify(after),
+            values.reason ?? 'Manual correction'
+          );
+      return after;
+    })
+    .immediate();
 }
 
 export interface ListLabResultsOptions {
@@ -143,7 +244,7 @@ export interface ListLabResultsOptions {
 export async function listLabResults(
   actorId: string,
   scope: ListScope,
-  opts: ListLabResultsOptions = {},
+  opts: ListLabResultsOptions = {}
 ): Promise<LabResultWithVisitDate[]> {
   await requireListAuthz(actorId, scope, 'labs', 'read');
   const rows = await db
@@ -156,8 +257,8 @@ export async function listLabResults(
         dependentFilter(labResults.dependentId, scope.dependentId),
         opts.testNames && opts.testNames.length > 0
           ? inArray(labResults.testName, opts.testNames)
-          : undefined,
-      ),
+          : undefined
+      )
     )
     .orderBy(desc(labResults.createdAt));
   return rows.map(({ result, visitDate }) => ({ ...result, visitDate }));
@@ -176,7 +277,7 @@ export interface ListLabResultsV1Options {
  */
 export async function listLabResultsV1(
   ownerId: string,
-  opts: ListLabResultsV1Options,
+  opts: ListLabResultsV1Options
 ): Promise<LabResultWithVisitDate[]> {
   await requireAuthz(ownerId, { ownerId, dependentId: null }, 'labs', 'read');
   const conditions = [

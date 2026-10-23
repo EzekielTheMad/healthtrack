@@ -34,8 +34,7 @@ vi.mock('@/lib/auth/session', () => {
       if (!authState.userId) throw new UnauthorizedError();
       return { id: authState.userId, email: `${authState.userId}@example.com` };
     },
-    getUser: async () =>
-      authState.userId ? { id: authState.userId } : null,
+    getUser: async () => (authState.userId ? { id: authState.userId } : null),
   };
 });
 
@@ -52,15 +51,12 @@ async function saveFor(ownerId: string): Promise<string> {
   return saveUpload(ownerId, PDF, { mime: 'application/pdf' });
 }
 
-async function referenceInVisit(
-  relPath: string,
-  dependentId: string | null = null,
-): Promise<void> {
+async function referenceInVisit(relPath: string, dependentId: string | null = null): Promise<void> {
   const { createLabVisitWithResults } = await import('@/lib/repos/labs');
   await createLabVisitWithResults(
     OWNER,
     { ownerId: OWNER, dependentId },
-    { visitDate: '2026-06-01', sourcePdfPath: relPath, results: [] },
+    { visitDate: '2026-06-01', sourcePdfPath: relPath, results: [] }
   );
 }
 
@@ -131,6 +127,23 @@ describe('GET /api/files/[...path]', () => {
     authState.userId = VIEWER;
     expect((await fetchFile(relPath)).status).toBe(404);
   });
+  it('keeps a complete medical-history original owner-only even when a lab visit references it', async () => {
+    const relPath = await saveFor(OWNER);
+    const { stageImportBatch } = await import('@/lib/import/batches');
+    await stageImportBatch(OWNER, null, {
+      hash: 'synthetic-history',
+      kind: 'medical_history',
+      name: 'synthetic-history.pdf',
+      sourcePath: relPath,
+      items: [],
+    });
+    await referenceInVisit(relPath);
+    insertShare(ctx.sqlite, { ownerId: OWNER, sharedWithId: VIEWER, sections: ['labs'] });
+    authState.userId = VIEWER;
+    expect((await fetchFile(relPath)).status).toBe(404);
+    authState.userId = OWNER;
+    expect((await fetchFile(relPath)).status).toBe(200);
+  });
 
   it('scopes shares to the exact dependent: owner-scoped share cannot read a dependent visit PDF', async () => {
     const relPath = await saveFor(OWNER);
@@ -169,16 +182,14 @@ describe('GET /api/files/[...path]', () => {
     authState.userId = OWNER;
     expect((await fetchFile(`${OWNER}/nope.pdf`)).status).toBe(404);
 
-    const traversal = await route.GET(
-      new NextRequest('http://localhost/api/files/x'),
-      { params: Promise.resolve({ path: [OWNER, '..', '..', 'keys', 'auth_secret'] }) },
-    );
+    const traversal = await route.GET(new NextRequest('http://localhost/api/files/x'), {
+      params: Promise.resolve({ path: [OWNER, '..', '..', 'keys', 'auth_secret'] }),
+    });
     expect(traversal.status).toBe(404);
 
-    const tooShort = await route.GET(
-      new NextRequest('http://localhost/api/files/x'),
-      { params: Promise.resolve({ path: [OWNER] }) },
-    );
+    const tooShort = await route.GET(new NextRequest('http://localhost/api/files/x'), {
+      params: Promise.resolve({ path: [OWNER] }),
+    });
     expect(tooShort.status).toBe(404);
   });
 });

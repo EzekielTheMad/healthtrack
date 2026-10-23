@@ -35,6 +35,7 @@ export default function InviteManager() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const refresh = useCallback(async () => {
     try {
@@ -50,8 +51,15 @@ export default function InviteManager() {
   }, []);
 
   useEffect(() => {
+    // Initialize the server-backed list; the same action refreshes it after user changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const createInvite = useCallback(async () => {
     setBusy(true);
@@ -82,7 +90,7 @@ export default function InviteManager() {
         setBusy(false);
       }
     },
-    [refresh],
+    [refresh]
   );
 
   const copy = useCallback(async (row: InviteRow) => {
@@ -95,16 +103,14 @@ export default function InviteManager() {
     }
   }, []);
 
-  const now = Date.now();
   const pending = invites.filter((i) => !i.used_at && new Date(i.expires_at).getTime() > now);
   const inactive = invites.filter((i) => i.used_at || new Date(i.expires_at).getTime() <= now);
 
   return (
     <div className="space-y-4">
       <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-        Registration on this instance is invite-only. Create a single-use link
-        (valid 7 days) and send it to the person you want to add. Each link can
-        register exactly one account.
+        Registration on this instance is invite-only. Create a single-use link (valid 7 days) and
+        send it to the person you want to add. Each link can register exactly one account.
       </p>
 
       <div className="flex gap-2 flex-wrap">

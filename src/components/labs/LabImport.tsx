@@ -3,6 +3,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import type { ParsedLabResult } from '@/lib/claude/parse-lab';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 
 interface LabImportProps {
   onParsed: (results: ParsedLabResult, storagePath: string) => void;
@@ -12,6 +13,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 
 export default function LabImport({ onParsed }: LabImportProps) {
+  const { dependentId, delegateOwnerId } = useActiveProfile();
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
@@ -22,8 +24,12 @@ export default function LabImport({ onParsed }: LabImportProps) {
   const processFile = useCallback(
     async (file: File) => {
       setError(null);
+      if (delegateOwnerId) {
+        setError('Only the patient profile owner can import lab documents.');
+        return;
+      }
 
-      if (!ACCEPTED_TYPES.includes(file.type)) {
+      if (!ACCEPTED_TYPES.includes(file.type) && !/\.(pdf|png|jpe?g)$/i.test(file.name)) {
         setError('Only PDF, PNG, and JPG files are accepted.');
         return;
       }
@@ -39,6 +45,7 @@ export default function LabImport({ onParsed }: LabImportProps) {
       try {
         const formData = new FormData();
         formData.append('file', file);
+        if (dependentId) formData.append('dependent_id', dependentId);
 
         setUploading(false);
         setParsing(true);
@@ -50,8 +57,7 @@ export default function LabImport({ onParsed }: LabImportProps) {
 
         if (!res.ok) {
           const body = await res.json().catch(() => null);
-          const msg =
-            body?.message ?? `Upload failed (${res.status})`;
+          const msg = body?.message ?? `Upload failed (${res.status})`;
           throw new Error(msg);
         }
 
@@ -61,18 +67,20 @@ export default function LabImport({ onParsed }: LabImportProps) {
         };
 
         onParsed(parsed, storagePath);
-      } catch {
+      } catch (err) {
         // Parsing runs through the AI extractor; if it fails, keep it friendly
         // and point the user at manual entry rather than surfacing a raw error.
         setError(
-          "Couldn't read this PDF automatically — you can enter the results manually.",
+          err instanceof Error
+            ? err.message
+            : "Couldn't read this document. Try again; saved reviews remain available in Settings."
         );
       } finally {
         setUploading(false);
         setParsing(false);
       }
     },
-    [onParsed],
+    [onParsed, dependentId, delegateOwnerId]
   );
 
   const handleDrop = useCallback(
@@ -82,7 +90,7 @@ export default function LabImport({ onParsed }: LabImportProps) {
       const file = e.dataTransfer.files[0];
       if (file) processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   const handleFileChange = useCallback(
@@ -90,7 +98,7 @@ export default function LabImport({ onParsed }: LabImportProps) {
       const file = e.target.files?.[0];
       if (file) processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   const isProcessing = uploading || parsing;

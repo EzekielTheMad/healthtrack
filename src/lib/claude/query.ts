@@ -13,6 +13,7 @@ export interface HealthContext {
   appointments_data: string;
   /** Active goals + recent-training summary (fitness domain). */
   fitness_data: string;
+  nutrition_data?: string;
 }
 
 const SYSTEM_PROMPT_TEMPLATE = `You are a personal health data assistant. You have access to the user's health data below. Answer their questions by referencing specific data points, trends, and correlations. Be specific with numbers and dates. Flag anything concerning but always note you are not a medical professional.
@@ -22,13 +23,13 @@ Lab results carry visit (draw) dates and may be months old: date-frame every lab
 USER PROFILE:
 {profile_data}
 
-CURRENT MEDICATIONS:
+MEDICATION HISTORY (including stopped medications and unknown dates):
 {medications_data}
 
 RECENT LAB RESULTS:
 {lab_results_data}
 
-DEVICE & VITAL METRICS (30-day aggregates):
+DEVICE & VITAL METRICS (observed data within the stated context window):
 {vitals_data}
 
 FLAGGED VALUES:
@@ -44,27 +45,48 @@ APPOINTMENTS:
 {appointments_data}
 
 GOALS & RECENT TRAINING:
-{fitness_data}`;
+{fitness_data}
+
+DAILY NUTRITION (sources are separate snapshots):
+{nutrition_data}
+
+Use only the supplied patient's records. Missing values are unknown, never zero. Respect coverage warnings and source conflicts. Medication dates may be unknown. Describe associations without claiming causation. Cite actual supplied record IDs and dates when using individual records; never invent references.`;
 
 /** Exported for tests — fills the template, substituting placeholders for empty sections. */
 export function buildSystemPrompt(context: HealthContext): string {
   let prompt = SYSTEM_PROMPT_TEMPLATE;
   prompt = prompt.replace('{profile_data}', context.profile_data || 'No profile data available.');
-  prompt = prompt.replace('{medications_data}', context.medications_data || 'No medication data available.');
-  prompt = prompt.replace('{lab_results_data}', context.lab_results_data || 'No lab results available.');
+  prompt = prompt.replace(
+    '{medications_data}',
+    context.medications_data || 'No medication data available.'
+  );
+  prompt = prompt.replace(
+    '{lab_results_data}',
+    context.lab_results_data || 'No lab results available.'
+  );
   prompt = prompt.replace('{vitals_data}', context.vitals_data || 'No vitals data available.');
   prompt = prompt.replace('{flagged_data}', context.flagged_data || 'No flagged values.');
-  prompt = prompt.replace('{conditions_data}', context.conditions_data || 'No conditions recorded.');
+  prompt = prompt.replace(
+    '{conditions_data}',
+    context.conditions_data || 'No conditions recorded.'
+  );
   prompt = prompt.replace('{recent_notes}', context.recent_notes || 'No recent notes.');
-  prompt = prompt.replace('{appointments_data}', context.appointments_data || 'No upcoming appointments.');
-  prompt = prompt.replace('{fitness_data}', context.fitness_data || 'No active goals or recent training logged.');
+  prompt = prompt.replace(
+    '{appointments_data}',
+    context.appointments_data || 'No upcoming appointments.'
+  );
+  prompt = prompt.replace(
+    '{fitness_data}',
+    context.fitness_data || 'No active goals or recent training logged.'
+  );
+  prompt = prompt.replace(
+    '{nutrition_data}',
+    context.nutrition_data || 'No nutrition data available.'
+  );
   return prompt;
 }
 
-export async function queryHealthData(
-  question: string,
-  context: HealthContext
-): Promise<string> {
+export async function queryHealthData(question: string, context: HealthContext): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY is not configured');

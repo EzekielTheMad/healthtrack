@@ -7,15 +7,26 @@ import { rowToSnake } from '@/lib/api/snake';
 import { checkMedicationInteractions } from '@/lib/claude/check-interactions';
 import { listMedications } from '@/lib/repos/medications';
 import {
-  reconcileInteractionAlerts,
-  recordInteractionCheck,
+  commitInteractionCheck,
   interactionSignature,
   type DetectedInteraction,
 } from '@/lib/repos/interaction-alerts';
 import type { Medication } from '@/lib/types';
 import { AI_INTERACTION_DISCLAIMER } from '@/lib/ai-disclaimer';
+import { z } from 'zod';
+import { NotFoundError } from '@/lib/authz';
+import { errorResponse } from '@/lib/api/respond';
 
 const DISCLAIMER = AI_INTERACTION_DISCLAIMER;
+const bodySchema = z
+  .object({
+    medication_ids: z.array(z.string().min(1)).optional(),
+    trigger_id: z.string().min(1).optional(),
+    dependent_id: z.string().min(1).nullable().optional(),
+    delegate_owner_id: z.string().min(1).nullable().optional(),
+    owner_id: z.string().min(1).nullable().optional(),
+  })
+  .refine((body) => body.dependent_id !== 'all', 'Choose one patient.');
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,25 +39,37 @@ export async function POST(request: NextRequest) {
 
     // Cap the AI interaction check per user.
     if (!checkRateLimit(`check-interactions:${user.id}`, { max: 20, windowMs: HOUR_MS })) {
-      return apiError(429, 'rate_limited', 'Too many interaction checks this hour. Please try again later.');
+      return apiError(
+        429,
+        'rate_limited',
+        'Too many interaction checks this hour. Please try again later.'
+      );
     }
 
-    const body = await request.json();
-    const { trigger_id } = body as {
-      medication_ids?: string[];
-      trigger_id?: string;
-    };
-
-    // All of the user's active medications, across own + dependent scopes —
-    // parity with the old query, which filtered on user_id/active only.
-    // (The old route also re-fetched `medication_ids` not present in this
-    // set, but that second query used the same user_id+active filter and so
-    // could never return additional rows — dead code, dropped.)
-    const rows = await listMedications(
-      user.id,
-      { ownerId: user.id, dependentId: 'all' },
-      { active: true },
-    );
+    let rawBody: unknown;
+    try {
+      rawBody = await request.json();
+    } catch {
+      return apiError(400, 'invalid_body', 'Invalid JSON request body');
+    }
+    const body = bodySchema.parse(rawBody);
+    const { trigger_id } = body;
+    // Interaction outcomes have no delegate/share write policy. A delegate's
+    // medication access cannot implicitly grant access to this separate domain.
+    if (
+      (body.delegate_owner_id && body.delegate_owner_id !== user.id) ||
+      (body.owner_id && body.owner_id !== user.id)
+    )
+      throw new NotFoundError();
+    const scope = { ownerId: user.id, dependentId: body.dependent_id ?? null };
+    const rows = await listMedications(user.id, scope, { active: true });
+    const selectedIds = new Set(rows.map((row) => row.id));
+    if (
+      [...(body.medication_ids ?? []), ...(trigger_id ? [trigger_id] : [])].some(
+        (id) => !selectedIds.has(id)
+      )
+    )
+      throw new NotFoundError();
     const medications = rows.map(rowToSnake) as unknown as Medication[];
 
     // Run the interaction check
@@ -62,15 +85,15 @@ export async function POST(request: NextRequest) {
     // trigger_id is honored when it names one of the interacting meds; otherwise
     // we prefer a med that actually appears in the interaction, falling back to
     // any active med (the FK just needs a valid id — cascades on med delete).
-    const byName = new Map(
-      medications.map((m) => [m.name.trim().toLowerCase(), m.id]),
-    );
+    const byName = new Map(medications.map((m) => [m.name.trim().toLowerCase(), m.id]));
     const triggerFor = (names: string[]): string => {
+      if (trigger_id && names.some((name) => byName.get(name.trim().toLowerCase()) === trigger_id))
+        return trigger_id;
       for (const n of names) {
         const id = byName.get(n.trim().toLowerCase());
         if (id) return id;
       }
-      return trigger_id ?? medications[0]!.id;
+      return medications[0]!.id;
     };
 
     const detected: DetectedInteraction[] = alertsWithDisclaimer.map((a) => ({
@@ -81,11 +104,20 @@ export async function POST(request: NextRequest) {
       medicationSnapshot: { medication_names: a.medication_names },
     }));
 
-    // Reconcile stored alerts (owner scope): preserves snoozes on unchanged
+    // Reconcile stored alerts for this exact patient: preserves snoozes on unchanged
     // interactions, inserts new ones, deletes interactions that no longer
     // exist. Runs even when clear (detected = []) to clear stale alerts.
-    await reconcileInteractionAlerts(user.id, null, detected);
-    await recordInteractionCheck(user.id, null, result.has_interactions);
+    // Snapshot guard and writes share one synchronous transaction, so a late
+    // result cannot replace the invalidation from a concurrent medication edit.
+    if (
+      !commitInteractionCheck(user.id, scope.dependentId, rows, detected, result.has_interactions)
+    ) {
+      return apiError(
+        409,
+        'medications_changed',
+        'Medications changed while checking. Please check again.'
+      );
+    }
 
     return Response.json({
       ...result,
@@ -96,6 +128,7 @@ export async function POST(request: NextRequest) {
     if (err instanceof UnauthorizedError) {
       return apiError(401, 'unauthorized', 'Authentication required');
     }
+    if (err instanceof NotFoundError || err instanceof z.ZodError) return errorResponse(err);
     // Message surfaced on purpose — the client shows AI-check failures verbatim
     const message = err instanceof Error ? err.message : 'Failed to check interactions';
     return apiError(500, 'internal_error', message);

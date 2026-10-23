@@ -47,6 +47,8 @@ beforeEach(() => {
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'healthtrack-auth-'));
   process.env.DATA_DIR = tmpDir;
+  process.env.APP_URL = 'http://localhost:3000';
+  vi.stubEnv('NODE_ENV', 'test');
   delete process.env.SIGNUPS_ENABLED;
   // Keep provider registration deterministic regardless of the dev machine's
   // ambient env; the Google tests set these explicitly.
@@ -55,6 +57,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const k of ENV_KEYS) {
     if (savedEnv[k] === undefined) delete process.env[k];
     else process.env[k] = savedEnv[k];
@@ -67,6 +70,30 @@ afterEach(() => {
 });
 
 describe('better auth server config', () => {
+  it.each([
+    ['http://192.0.2.10:3000', false],
+    ['https://health.example.test', true],
+  ] as const)(
+    'uses the browser origin for production cookie security: %s',
+    async (origin, secure) => {
+      process.env.APP_URL = origin;
+      vi.stubEnv('NODE_ENV', 'production');
+      const auth = await loadAuth();
+      const { headers } = await auth.api.signUpEmail({
+        body: { name: 'Local test', email: 'local@example.test', password: 'password123' },
+        returnHeaders: true,
+      });
+      const cookie = headers.getSetCookie().find((value) => value.includes('session_token='));
+      expect(cookie).toBeTruthy();
+      expect(cookie).toMatch(/HttpOnly/i);
+      expect(/;\s*Secure(?:;|$)/i.test(cookie!)).toBe(secure);
+      const session = await auth.api.getSession({
+        headers: new Headers({ cookie: cookie!.split(';')[0] }),
+      });
+      expect(session?.user.email).toBe('local@example.test');
+    }
+  );
+
   it('signs up a user with email/password and establishes a session', async () => {
     const auth = await loadAuth();
     const { headers } = await auth.api.signUpEmail({
@@ -132,7 +159,7 @@ describe('better auth server config', () => {
     await expect(
       auth.api.signUpEmail({
         body: { name: 'Rando', email: 'rando@example.com', password: 'password123' },
-      }),
+      })
     ).rejects.toMatchObject({ status: 'FORBIDDEN' });
 
     // …a bogus token is rejected…
@@ -144,7 +171,7 @@ describe('better auth server config', () => {
           password: 'password123',
           inviteToken: 'not-a-real-token',
         } as never,
-      }),
+      })
     ).rejects.toMatchObject({ status: 'FORBIDDEN' });
 
     // …and a valid single-use invite admits exactly one account.
@@ -179,7 +206,7 @@ describe('better auth server config', () => {
           password: 'password123',
           inviteToken: invite.token,
         } as never,
-      }),
+      })
     ).rejects.toMatchObject({ status: 'FORBIDDEN' });
   });
 
@@ -196,7 +223,7 @@ describe('better auth server config', () => {
     await expect(
       auth.api.signUpEmail({
         body: { name: 'Late', email: 'late@example.com', password: 'password123' },
-      }),
+      })
     ).rejects.toMatchObject({ status: expect.stringMatching(/FORBIDDEN|BAD_REQUEST/) });
 
     const { headers } = await auth.api.signInEmail({
@@ -235,9 +262,7 @@ describe('google oauth state cookie', () => {
       returnHeaders: true,
     });
 
-    const stateCookie = headers
-      .getSetCookie()
-      .find((c) => c.includes('better-auth.state='));
+    const stateCookie = headers.getSetCookie().find((c) => c.includes('better-auth.state='));
 
     expect(stateCookie, 'expected a state cookie').toBeTruthy();
     expect(stateCookie).toMatch(/Max-Age=600\b/i);

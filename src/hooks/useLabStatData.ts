@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { Flag, LabResult } from '@/lib/types';
 
 export interface LabStatDataPoint {
@@ -25,12 +26,14 @@ interface LabResultWithVisitDate extends LabResult {
  * dependent filter (dependent_id=all), newest created_at first.
  */
 export function useLabStatData(testNames: string[]) {
+  const { dependentId, delegateOwnerId } = useActiveProfile();
   const [data, setData] = useState<LabStatDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedSubject, setLoadedSubject] = useState<string | null>(null);
+  const subjectKey = `${delegateOwnerId ?? ''}:${dependentId ?? ''}`;
 
   useEffect(() => {
     if (testNames.length === 0) {
-      setData([]);
       return;
     }
 
@@ -41,18 +44,22 @@ export function useLabStatData(testNames: string[]) {
 
       try {
         const params = new URLSearchParams({
-          dependent_id: 'all',
           tests: testNames.join(','),
         });
+        if (delegateOwnerId) params.set('owner_id', delegateOwnerId);
+        else if (dependentId) params.set('dependent_id', dependentId);
         const results = await apiFetch<LabResultWithVisitDate[]>(
-          `/api/labs/results?${params.toString()}`,
+          `/api/labs/results?${params.toString()}`
         );
 
         if (cancelled) return;
 
         // Group by test_name (rows arrive created_at desc)
         const grouped = new Map<string, LabResultWithVisitDate[]>();
-        for (const row of results) {
+        for (const row of [...results].sort(
+          (a, b) =>
+            b.visit_date.localeCompare(a.visit_date) || b.created_at.localeCompare(a.created_at)
+        )) {
           const group = grouped.get(row.test_name) ?? [];
           group.push(row);
           grouped.set(row.test_name, group);
@@ -82,6 +89,7 @@ export function useLabStatData(testNames: string[]) {
         }
 
         setData(points);
+        setLoadedSubject(subjectKey);
       } catch {
         if (!cancelled) setData([]);
       } finally {
@@ -90,9 +98,14 @@ export function useLabStatData(testNames: string[]) {
     }
 
     fetchLabData();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [testNames.join(',')]);
+  }, [testNames.join(','), dependentId, delegateOwnerId, subjectKey]);
 
-  return { labStatData: data, labStatLoading: loading };
+  return {
+    labStatData: testNames.length > 0 && loadedSubject === subjectKey ? data : [],
+    labStatLoading: testNames.length > 0 && loading,
+  };
 }

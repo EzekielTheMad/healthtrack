@@ -1,11 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { medicationSchema, type MedicationFormValues } from '@/lib/validations';
 import { ProviderPicker } from '@/components/shared/ProviderPicker';
-import { MedicalAutocomplete, type AutocompleteResult } from '@/components/shared/MedicalAutocomplete';
+import {
+  MedicalAutocomplete,
+  type AutocompleteResult,
+} from '@/components/shared/MedicalAutocomplete';
 import { searchRxNorm } from '@/lib/medical-apis';
 import type { Medication, MedicationFrequency } from '@/lib/types';
 
@@ -25,7 +28,7 @@ const FREQUENCY_OPTIONS: { value: MedicationFrequency; label: string }[] = [
 export interface AddMedFormData {
   name: string;
   dosage?: string;
-  frequency: MedicationFrequency;
+  frequency: string;
   category?: string;
   prescriber_id: string | null;
   start_date: string;
@@ -55,19 +58,21 @@ export default function AddMedForm({
   showActiveToggle = false,
 }: AddMedFormProps) {
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [prescriberId, setPrescriberId] = useState<string | null>(
-    initialValues?.prescriber_id ?? null,
+    initialValues?.prescriber_id ?? null
   );
   const [category, setCategory] = useState(initialValues?.category ?? '');
   const [notes, setNotes] = useState(initialValues?.notes ?? '');
   const [active, setActive] = useState(initialValues?.active ?? true);
-  const [rxcui, setRxcui] = useState<string | null>(null);
+  const [rxcui, setRxcui] = useState<string | null>(initialValues?.rxcui ?? null);
   const [availableStrengths, setAvailableStrengths] = useState<string[]>([]);
 
   const {
     register,
     handleSubmit,
-    watch,
+    control,
+    getValues,
     setValue,
     formState: { errors },
   } = useForm<MedicationFormValues>({
@@ -76,28 +81,25 @@ export default function AddMedForm({
       name: initialValues?.name ?? '',
       dosage: initialValues?.dosage ?? '',
       frequency: initialValues?.frequency ?? 'once_daily',
-      start_date: initialValues?.start_date ?? new Date().toISOString().slice(0, 10),
+      start_date: initialValues?.start_date ?? '',
       end_date: initialValues?.end_date ?? '',
     },
   });
 
-  const nameValue = watch('name');
+  const nameValue = useWatch({ control, name: 'name' });
 
   const duplicateWarning =
     nameValue.trim().length > 0 &&
-    existingMeds.some(
-      (m) =>
-        m.active &&
-        m.name.toLowerCase() === nameValue.trim().toLowerCase(),
-    );
+    existingMeds.some((m) => m.active && m.name.toLowerCase() === nameValue.trim().toLowerCase());
 
   const onFormSubmit = async (values: MedicationFormValues) => {
     setSubmitting(true);
+    setSubmitError(null);
     const hasEndDate = !!values.end_date?.trim();
     try {
       await onSubmit({
         name: values.name,
-        dosage: values.dosage,
+        dosage: values.dosage?.trim() ? values.dosage : undefined,
         frequency: values.frequency,
         category: category.trim() || undefined,
         prescriber_id: prescriberId,
@@ -107,12 +109,10 @@ export default function AddMedForm({
         rxcui: rxcui ?? undefined,
         // If an end date is provided, default to inactive;
         // otherwise respect the active toggle (edit mode) or omit (add mode)
-        ...(hasEndDate
-          ? { active: false }
-          : showActiveToggle
-            ? { active }
-            : {}),
+        ...(hasEndDate ? { active: false } : showActiveToggle ? { active } : {}),
       });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to save medication');
     } finally {
       setSubmitting(false);
     }
@@ -191,7 +191,7 @@ export default function AddMedForm({
                 key={strength}
                 type="button"
                 onClick={() => {
-                  const current = watch('dosage') ?? '';
+                  const current = getValues('dosage') ?? '';
                   if (current && !current.endsWith(' ')) {
                     setValue('dosage', `${current} + ${strength}`, { shouldValidate: true });
                   } else {
@@ -220,8 +220,12 @@ export default function AddMedForm({
 
       {/* Frequency */}
       <div>
-        <label htmlFor="med-frequency" className="block text-sm font-medium mb-1" style={labelStyle}>
-          Frequency <span style={{ color: 'var(--color-terracotta)' }}>*</span>
+        <label
+          htmlFor="med-frequency"
+          className="block text-sm font-medium mb-1"
+          style={labelStyle}
+        >
+          Frequency
         </label>
         <select
           id="med-frequency"
@@ -231,6 +235,11 @@ export default function AddMedForm({
           aria-invalid={!!errors.frequency}
           aria-describedby={errors.frequency ? 'med-freq-error' : undefined}
         >
+          <option value="">Unknown / not recorded</option>
+          {initialValues?.frequency &&
+            !FREQUENCY_OPTIONS.some((opt) => opt.value === initialValues.frequency) && (
+              <option value={initialValues.frequency}>{initialValues.frequency}</option>
+            )}
           {FREQUENCY_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
@@ -261,16 +270,19 @@ export default function AddMedForm({
       </div>
 
       {/* Prescriber */}
-      <ProviderPicker
-        value={prescriberId}
-        onChange={setPrescriberId}
-        label="Prescriber"
-      />
+      <ProviderPicker value={prescriberId} onChange={setPrescriberId} label="Prescriber" />
 
       {/* Start Date */}
       <div>
-        <label htmlFor="med-start-date" className="block text-sm font-medium mb-1" style={labelStyle}>
-          Start Date <span style={{ color: 'var(--color-terracotta)' }}>*</span>
+        <label
+          htmlFor="med-start-date"
+          className="block text-sm font-medium mb-1"
+          style={labelStyle}
+        >
+          Start Date{' '}
+          <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
+            (leave blank if unknown)
+          </span>
         </label>
         <input
           id="med-start-date"
@@ -291,7 +303,10 @@ export default function AddMedForm({
       {/* End Date (optional — sets medication as inactive) */}
       <div>
         <label htmlFor="med-end-date" className="block text-sm font-medium mb-1" style={labelStyle}>
-          End Date <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>(leave blank if still taking)</span>
+          End Date{' '}
+          <span className="text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>
+            (leave blank if still taking)
+          </span>
         </label>
         <input
           id="med-end-date"
@@ -332,7 +347,10 @@ export default function AddMedForm({
               }}
             />
           </button>
-          <span className="text-sm ml-2" style={{ color: active ? 'var(--color-sage)' : 'var(--color-text-muted)' }}>
+          <span
+            className="text-sm ml-2"
+            style={{ color: active ? 'var(--color-sage)' : 'var(--color-text-muted)' }}
+          >
             {active ? 'Active' : 'Inactive'}
           </span>
         </div>
@@ -355,12 +373,22 @@ export default function AddMedForm({
       </div>
 
       {/* Actions */}
+      {submitError && (
+        <p role="alert" className="text-sm" style={errorStyle}>
+          {submitError}
+        </p>
+      )}
       <div className="flex gap-3 pt-2">
         <button
           type="submit"
           disabled={submitting}
           className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-50"
-          style={{ background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))', color: 'white', boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)' }}
+          style={{
+            background:
+              'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+            color: 'white',
+            boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)',
+          }}
         >
           {submitting ? 'Saving...' : submitLabel}
         </button>
@@ -369,7 +397,11 @@ export default function AddMedForm({
             type="button"
             onClick={onCancel}
             className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer"
-            style={{ backgroundColor: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--border-card)' }}
+            style={{
+              backgroundColor: 'transparent',
+              color: 'var(--color-text-muted)',
+              border: '1px solid var(--border-card)',
+            }}
           >
             Cancel
           </button>

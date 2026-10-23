@@ -14,6 +14,8 @@ import DelegateManager from '@/components/settings/DelegateManager';
 import ApiKeyManager from '@/components/settings/ApiKeyManager';
 import HealthConnectManager from '@/components/settings/HealthConnectManager';
 import InviteManager from '@/components/settings/InviteManager';
+import IntegrationOverview from '@/components/settings/IntegrationOverview';
+import BuildIdentity from '@/components/settings/BuildIdentity';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import { useSession } from '@/lib/auth/client';
 import { useRouter } from 'next/navigation';
@@ -119,9 +121,7 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
       // Server already destroyed the session and expired the cookie.
       router.push('/login');
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to delete account',
-      );
+      setError(err instanceof Error ? err.message : 'Failed to delete account');
       setDeleting(false);
     }
   }
@@ -139,9 +139,8 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
           Delete Account
         </h3>
         <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          This will permanently delete your account and all associated health
-          data. This action <strong style={{ color: 'var(--color-terracotta)' }}>cannot</strong>{' '}
-          be undone.
+          This will permanently delete your account and all associated health data. This action{' '}
+          <strong style={{ color: 'var(--color-terracotta)' }}>cannot</strong> be undone.
         </p>
         <p className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
           Type <strong>DELETE</strong> to confirm:
@@ -219,6 +218,8 @@ function SettingsContent() {
       <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
         Settings
       </h1>
+      <BuildIdentity />
+      <IntegrationOverview />
 
       {/* Profile */}
       <SettingsSection
@@ -245,15 +246,12 @@ function SettingsContent() {
         <DependentManager />
       </SettingsSection>
 
-      {/* Import Medical History — hidden when the instance has no AI configured */}
-      {capabilities?.ai !== false && (
-        <SettingsSection
-          title="Import Medical History"
-          description="Upload a doctor-provided medical-history PDF to extract and import records for you or a dependent."
-        >
-          <MedicalHistoryImport />
-        </SettingsSection>
-      )}
+      <SettingsSection
+        title="Import Medical History"
+        description="Review saved document imports, or extract a medical history for you or a dependent."
+      >
+        <MedicalHistoryImport extractionEnabled={capabilities?.ai === true} />
+      </SettingsSection>
 
       {/* Connected Sources — hidden when the instance has no Oura app configured */}
       {capabilities?.oura !== false && (
@@ -332,8 +330,8 @@ function SettingsContent() {
       >
         <div className="space-y-4">
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Once you delete your account, all of your data will be permanently
-            removed. This action cannot be undone.
+            Once you delete your account, all of your data will be permanently removed. This action
+            cannot be undone.
           </p>
           <button
             onClick={() => setShowDeleteModal(true)}
@@ -350,9 +348,7 @@ function SettingsContent() {
         </div>
       </SettingsSection>
 
-      {showDeleteModal && (
-        <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />
-      )}
+      {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
     </div>
   );
 }

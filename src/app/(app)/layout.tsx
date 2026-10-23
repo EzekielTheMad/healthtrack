@@ -11,6 +11,7 @@ import { OfflineIndicator } from '@/components/shared/OfflineIndicator';
 import { ActiveProfileProvider } from '@/components/shared/ActiveProfileProvider';
 import ProfileSwitcher from '@/components/shared/ProfileSwitcher';
 import { registerServiceWorker } from '@/lib/offline/register-sw';
+import IntegrationWarning from '@/components/shared/IntegrationWarning';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -30,14 +31,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <SidebarNav activePath={pathname} />
           </div>
           {/* Main content */}
-          <main
-            id="main-content"
-            className="flex-1 pb-20 md:pb-0 md:ml-64 min-h-screen"
-          >
+          <main id="main-content" className="flex-1 min-w-0 pb-20 md:pb-0 md:ml-64 min-h-screen">
             <div className="max-w-[1000px] mx-auto px-4 py-6 xl:px-0">
               <div className="flex justify-end mb-4">
                 <ProfileSwitcher />
               </div>
+              <IntegrationWarning />
               {children}
               <footer
                 className="mt-8 py-4 flex items-center justify-center gap-3 text-xs"

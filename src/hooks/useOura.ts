@@ -1,115 +1,110 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { ouraErrorMessage } from '@/lib/oura/errors';
 
 interface SyncSummary {
   synced: number;
   errors: string[];
+  outcome?: string;
+}
+interface OuraStatus {
+  status: string | null;
+  last_sync_at: string | null;
+  last_success_at?: string | null;
+  last_attempt_at?: string | null;
+  last_outcome?: string | null;
+  last_error_code?: string | null;
+  next_retry_at?: string | null;
+  retry_blocked?: boolean;
 }
 
 export function useOura() {
-  const [connected, setConnected] = useState(false);
-  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [state, setState] = useState<OuraStatus>({ status: null, last_sync_at: null });
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Check connection status on mount
-  useEffect(() => {
-    let cancelled = false;
-
-    async function checkStatus() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const res = await fetch('/api/oura/status');
-        if (cancelled) return;
-
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          setError(body?.message ?? 'Failed to check Oura status');
-        } else {
-          const data = (await res.json()) as {
-            status: string | null;
-            last_sync_at: string | null;
-          };
-          if (data.status === 'active') {
-            setConnected(true);
-            setLastSync(data.last_sync_at);
-          } else {
-            setConnected(false);
-            setLastSync(null);
-          }
-        }
-      } catch {
-        if (!cancelled) setError('Failed to check Oura status');
-      }
-      if (!cancelled) setLoading(false);
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/oura/status');
+      if (!res.ok) throw new Error('Failed to check Oura status');
+      setState(await res.json());
+    } catch {
+      setError('Failed to check Oura status');
+    } finally {
+      setLoading(false);
     }
+  }, []);
 
-    checkStatus();
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    let active = true;
+    const onFocus = () => {
+      if (active) void refresh();
     };
-  }, []);
+    queueMicrotask(onFocus);
+    const timer = window.setInterval(onFocus, 60_000);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refresh]);
 
-  /**
-   * Redirect to the server-side start route which sets a CSRF state cookie
-   * and 302s to Oura's OAuth authorization page.
-   */
   const connect = useCallback(() => {
-    window.location.href = '/api/oura/start';
+    window.location.assign(new URL('/api/oura/start', window.location.origin).href);
   }, []);
-
-  /**
-   * Disconnect the Oura Ring integration.
-   */
   const disconnect = useCallback(async () => {
     setError(null);
-
-    const res = await fetch('/api/oura/disconnect', { method: 'POST' });
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      setError(body?.message ?? 'Failed to disconnect');
-    } else {
-      setConnected(false);
-      setLastSync(null);
+    try {
+      const res = await fetch('/api/oura/disconnect', { method: 'POST' });
+      if (!res.ok) throw new Error('Failed to disconnect');
+      await refresh();
+    } catch {
+      setError('Failed to disconnect');
     }
-  }, []);
+  }, [refresh]);
 
-  /**
-   * Trigger a manual sync via the API route.
-   */
   const sync = useCallback(async (): Promise<SyncSummary | null> => {
     setError(null);
     setSyncing(true);
-
     try {
       const res = await fetch('/api/sync-oura', { method: 'POST' });
       const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.message ?? 'Sync failed');
-        return null;
-      }
-
+      if (!res.ok) throw new Error(data.message ?? 'Sync failed');
       const summary = data as SyncSummary;
-
-      if (summary.errors.length > 0) {
-        setError(summary.errors.join('; '));
-      }
-
-      // Refresh last sync time
-      setLastSync(new Date().toISOString());
+      if (summary.errors.length) setError(summary.errors.join('; '));
       return summary;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync failed');
       return null;
     } finally {
+      await refresh();
+      window.dispatchEvent(new Event('integration-health-changed'));
       setSyncing(false);
     }
-  }, []);
+  }, [refresh]);
 
-  return { connected, lastSync, syncing, loading, error, connect, disconnect, sync };
+  return {
+    connected: state.status === 'active',
+    status: state.status,
+    lastSync: state.last_success_at ?? null,
+    lastAttempt: state.last_attempt_at ?? null,
+    lastOutcome: state.last_outcome ?? null,
+    nextRetryAt: state.next_retry_at ?? null,
+    retryBlocked: state.retry_blocked ?? false,
+    syncing,
+    loading,
+    error:
+      error ??
+      (state.status === 'expired'
+        ? ouraErrorMessage('auth_required')
+        : state.last_error_code
+          ? ouraErrorMessage(state.last_error_code)
+          : null),
+    connect,
+    disconnect,
+    sync,
+  };
 }

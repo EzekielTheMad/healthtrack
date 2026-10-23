@@ -112,6 +112,11 @@ export const OPENAPI_DOCUMENT = {
           unit: { type: ['string', 'null'] },
           source: { type: 'string' },
           recorded_at: { type: 'string', description: 'ISO 8601 UTC' },
+          last_received_at: {
+            type: ['string', 'null'],
+            description:
+              'Server time of the latest accepted insert or upsert. Independent of recorded_at; null for legacy rows with unknown receipt time.',
+          },
         },
         required: ['id', 'metric_key', 'value', 'unit', 'source', 'recorded_at'],
       },
@@ -196,15 +201,30 @@ export const OPENAPI_DOCUMENT = {
           'every sync. A null nutrient means UNKNOWN, never zero.',
         properties: {
           date: { type: 'string', description: 'YYYY-MM-DD (America/Phoenix)' },
-          source_package: { type: 'string', description: 'Exact Android package, e.g. "com.sbs.diet"' },
+          source_package: {
+            type: 'string',
+            description: 'Exact Android package, e.g. "com.sbs.diet"',
+          },
           calories: { type: ['number', 'null'] },
           protein_grams: { type: ['number', 'null'] },
           carbs_grams: { type: ['number', 'null'] },
           fat_grams: { type: ['number', 'null'] },
-          fiber_grams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
-          sugar_grams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
-          sodium_milligrams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
-          record_count: { type: 'integer', description: 'Raw source records this day was computed from' },
+          fiber_grams: {
+            type: ['number', 'null'],
+            description: 'Reserved — the relay does not publish it yet',
+          },
+          sugar_grams: {
+            type: ['number', 'null'],
+            description: 'Reserved — the relay does not publish it yet',
+          },
+          sodium_milligrams: {
+            type: ['number', 'null'],
+            description: 'Reserved — the relay does not publish it yet',
+          },
+          record_count: {
+            type: 'integer',
+            description: 'Raw source records this day was computed from',
+          },
           updated_at: { type: 'string' },
         },
         required: ['date', 'source_package', 'record_count'],
@@ -289,14 +309,7 @@ export const OPENAPI_DOCUMENT = {
           first_seen_at: { type: 'string' },
           last_seen_at: { type: 'string' },
         },
-        required: [
-          'id',
-          'record_type',
-          'source_package',
-          'source_uuid',
-          'identity_kind',
-          'record',
-        ],
+        required: ['id', 'record_type', 'source_package', 'source_uuid', 'identity_kind', 'record'],
       },
       HealthConnectRecordPage: {
         type: 'object',
@@ -336,7 +349,8 @@ export const OPENAPI_DOCUMENT = {
               nutrition_days_upserted: { type: 'integer' },
               skipped_unapproved: {
                 type: 'integer',
-                description: 'Retained raw but not written canonically (unsupported type, unapproved package, or inventory mode)',
+                description:
+                  'Retained raw but not written canonically (unsupported type, unapproved package, or inventory mode)',
               },
               invalid_records: {
                 type: 'integer',
@@ -775,6 +789,27 @@ export const OPENAPI_DOCUMENT = {
     },
   },
   paths: {
+    '/api/v1/context': {
+      get: {
+        summary: 'Dated owner-only health context with source evidence and coverage',
+        description:
+          'Requires read:all. Includes medication history, selected-source vitals, labs by draw date, nutrition, training, and provenance. Missing data is never zero; competing sources stay separate.',
+        parameters: [
+          {
+            name: 'days',
+            in: 'query',
+            schema: { type: 'integer', enum: [30, 90, 365], default: 90 },
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Health context, fingerprint, evidence, coverage and facts', {
+            type: 'object',
+          }),
+          ...AUTH_ERRORS,
+          ...VALIDATION_400,
+        },
+      },
+    },
     '/api/v1': {
       get: {
         summary: 'API index — endpoints and scopes',
@@ -1034,10 +1069,9 @@ export const OPENAPI_DOCUMENT = {
         ],
         requestBody: jsonBody('#/components/schemas/HealthConnectEnvelope'),
         responses: {
-          '200': jsonResponse(
-            'Committed (including a valid no-op retry)',
-            { $ref: '#/components/schemas/HealthConnectIngestResult' },
-          ),
+          '200': jsonResponse('Committed (including a valid no-op retry)', {
+            $ref: '#/components/schemas/HealthConnectIngestResult',
+          }),
           '400': {
             description: 'Malformed JSON or invalid envelope',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
@@ -1354,7 +1388,7 @@ export const OPENAPI_DOCUMENT = {
         summary: 'Recent entries for one exercise (newest session first)',
         description:
           'Requires scope `read:fitness` (or `read:all`). Each item is the ' +
-          'entry (sets + derived stats) plus its session\'s when/what — ' +
+          "entry (sets + derived stats) plus its session's when/what — " +
           '"latest entry per exercise" in one call.',
         parameters: [
           pathParam('id', 'Exercise id'),
@@ -1495,7 +1529,7 @@ export const OPENAPI_DOCUMENT = {
         summary: 'Edit a goal (kind is immutable)',
         description:
           'Requires scope `write:fitness` (or `write:all`). Fields must ' +
-          'match the row\'s kind; re-activating re-checks the one-active rule.',
+          "match the row's kind; re-activating re-checks the one-active rule.",
         parameters: [pathParam('id', 'Goal id')],
         requestBody: jsonBody('#/components/schemas/GoalWrite'),
         responses: {

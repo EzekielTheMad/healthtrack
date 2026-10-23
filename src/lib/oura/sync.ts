@@ -1,15 +1,30 @@
 import { db } from '@/db';
-import { listActiveConnectedSourceUserIds, touchLastSync } from '@/lib/repos/connected-sources';
+import {
+  getConnectedSource,
+  listActiveConnectedSourceUserIds,
+  touchLastSync,
+  recordConnectedSourceSync,
+  setConnectedSourceStatus,
+} from '@/lib/repos/connected-sources';
 import { upsertOwnVital } from '@/lib/repos/vitals';
 import { OuraClient, type OuraSpO2Doc } from './client';
 import { getOuraAccessToken } from './tokens';
 import { addCalendarDays, calendarDayInTimeZone, getHealthTrackTimeZone } from './timezone';
+import { OuraApiError, ouraErrorMessage } from './errors';
 
 export const OURA_LOOKBACK_DAYS = 7;
 
 export interface SyncSummary {
   synced: number;
   errors: string[];
+  outcome?: 'success' | 'partial' | 'failed';
+  errorCode?: string | null;
+  nextRetryAt?: string | null;
+  collections?: Array<{
+    name: string;
+    status: 'success' | 'unsupported' | 'failed';
+    errorCode?: string;
+  }>;
 }
 
 export interface AllUsersSyncSummary extends SyncSummary {
@@ -67,7 +82,7 @@ export function selectLongestSleep<T extends { day: string; total_sleep_duration
 }
 
 /** Sync all Oura daily collections into HealthTrack's canonical vitals store. */
-export async function syncOuraData(
+async function performOuraSync(
   userId: string,
   accessToken?: string,
   backfill = false,
@@ -75,19 +90,43 @@ export async function syncOuraData(
 ): Promise<SyncSummary> {
   const token = accessToken ?? (await getOuraAccessToken(userId));
   const lookbackDays = backfill ? 30 : OURA_LOOKBACK_DAYS;
-  const client = new OuraClient(token);
+  const client = new OuraClient(token, (rejected) => getOuraAccessToken(userId, true, rejected));
   const window = syncWindow(now, lookbackDays);
   const errors: string[] = [];
   let successfulFetches = 0;
   let synced = 0;
+  let errorCode: string | null = null;
+  let nextRetryAt: string | null = null;
+  const collections: NonNullable<SyncSummary['collections']> = [];
 
   const get = async <T>(name: string, fn: () => Promise<T[]>): Promise<T[]> => {
     try {
       const rows = await fn();
       successfulFetches += 1;
+      collections.push({ name, status: 'success' });
       return rows;
     } catch (error) {
-      errors.push(`${name} fetch error: ${error instanceof Error ? error.message : String(error)}`);
+      if (
+        error instanceof OuraApiError &&
+        error.status === 404 &&
+        ['SpO2', 'Resilience', 'Stress'].includes(name)
+      ) {
+        collections.push({ name, status: 'unsupported' });
+        return [];
+      }
+      const code = error instanceof OuraApiError ? error.code : 'provider_error';
+      if (!errorCode || ['auth_required', 'invalid_grant', 'rate_limited'].includes(code))
+        errorCode = code;
+      if (
+        error instanceof OuraApiError &&
+        error.retryAt &&
+        (!nextRetryAt || error.retryAt > nextRetryAt)
+      )
+        nextRetryAt = error.retryAt;
+      if (code === 'auth_required' || code === 'invalid_grant')
+        await setConnectedSourceStatus(userId, 'oura', 'expired');
+      collections.push({ name, status: 'failed', errorCode: code });
+      errors.push(`${name}: ${ouraErrorMessage(code)}`);
       return [];
     }
   };
@@ -219,37 +258,89 @@ export async function syncOuraData(
         upsertOwnVital(db, userId, record);
         synced += 1;
       } catch (error) {
-        errors.push(
-          `${target} ${record.metricKey} upsert error: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
+        void error;
+        errorCode = 'persistence_error';
+        errors.push(`${target} ${record.metricKey}: could not save this measurement.`);
       }
     }
   }
 
-  if (successfulFetches > 0) {
+  if (successfulFetches > 0 && errors.length === 0) {
     try {
       await touchLastSync(userId, 'oura');
     } catch (error) {
-      errors.push(
-        `last_sync_at update error: ${error instanceof Error ? error.message : String(error)}`
-      );
+      void error;
+      errorCode = 'persistence_error';
+      errors.push('Could not save the sync completion time.');
     }
   }
-  return { synced, errors };
+  return {
+    synced,
+    errors,
+    collections,
+    errorCode,
+    nextRetryAt,
+    outcome: errors.length === 0 ? 'success' : successfulFetches > 0 ? 'partial' : 'failed',
+  };
+}
+
+const userSyncs = new Map<string, Promise<SyncSummary>>();
+
+/** Manual and scheduled syncs share one lock and one persisted outcome per account. */
+export function syncOuraData(
+  userId: string,
+  accessToken?: string,
+  backfill = false,
+  now = new Date()
+): Promise<SyncSummary> {
+  const existing = userSyncs.get(userId);
+  if (existing) return existing;
+  const work = (async (): Promise<SyncSummary> => {
+    const attemptedAt = now.toISOString();
+    await recordConnectedSourceSync(userId, 'oura', { attemptedAt, outcome: 'running' });
+    let summary: SyncSummary;
+    try {
+      summary = await performOuraSync(userId, accessToken, backfill, now);
+    } catch (error) {
+      const code = error instanceof OuraApiError ? error.code : 'provider_error';
+      summary = {
+        synced: 0,
+        errors: [ouraErrorMessage(code)],
+        outcome: 'failed',
+        errorCode: code,
+        nextRetryAt: error instanceof OuraApiError ? error.retryAt : null,
+      };
+    }
+    await recordConnectedSourceSync(userId, 'oura', {
+      attemptedAt,
+      outcome: summary.outcome ?? 'failed',
+      errorCode: summary.errorCode,
+      nextRetryAt: summary.nextRetryAt,
+    });
+    return summary;
+  })();
+  userSyncs.set(userId, work);
+  void work
+    .finally(() => {
+      if (userSyncs.get(userId) === work) userSyncs.delete(userId);
+    })
+    .catch(() => undefined);
+  return work;
 }
 
 /** Sync every active user's own OAuth connection; failures are isolated and returned. */
 export async function syncAllOuraUsers(): Promise<AllUsersSyncSummary> {
   const userIds = await listActiveConnectedSourceUserIds('oura');
   const summary: AllUsersSyncSummary = {
-    usersAttempted: userIds.length,
+    usersAttempted: 0,
     synced: 0,
     errors: [],
   };
   for (const userId of userIds) {
     try {
+      const source = await getConnectedSource(userId, 'oura');
+      if (source?.nextRetryAt && Date.parse(source.nextRetryAt) > Date.now()) continue;
+      summary.usersAttempted += 1;
       const userSummary = await syncOuraData(userId);
       summary.synced += userSummary.synced;
       summary.errors.push(...userSummary.errors.map((error) => `${userId}: ${error}`));

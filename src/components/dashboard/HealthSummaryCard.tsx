@@ -14,8 +14,18 @@ type SummaryResponse = HealthSummary & {
 };
 
 const MONTH_NAMES = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 /** `2026-05-26` → `May 26, 2026` — split manually to avoid TZ day-shift. */
@@ -75,6 +85,8 @@ export default function HealthSummaryCard() {
   useEffect(() => {
     try {
       if (localStorage.getItem(COLLAPSE_KEY) === localDayKey()) {
+        // Restore the browser-only storage preference after hydration.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCollapsed(true);
       }
     } catch {
@@ -98,30 +110,25 @@ export default function HealthSummaryCard() {
   // Dismiss-until-new-labs: persist the dismissal (keyed server-side to the
   // latest lab visit date) and drop the card locally. Failures are soft —
   // the card simply stays, matching the card's overall soft-fail posture.
-  const dismissHighlight = useCallback(
-    async (index: number, highlight: HealthSummaryHighlight) => {
-      if (!highlight.labTests || highlight.labTests.length === 0) return;
-      setDismissingIndex(index);
-      try {
-        const res = await fetch('/api/lab-warning-dismissals', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tests: highlight.labTests }),
-        });
-        if (!res.ok) throw new Error('Failed to dismiss');
-        setData((prev) =>
-          prev
-            ? { ...prev, highlights: prev.highlights.filter((_, i) => i !== index) }
-            : prev,
-        );
-      } catch {
-        // Leave the card in place; the user can retry.
-      } finally {
-        setDismissingIndex(null);
-      }
-    },
-    [],
-  );
+  const dismissHighlight = useCallback(async (index: number, highlight: HealthSummaryHighlight) => {
+    if (!highlight.labTests || highlight.labTests.length === 0) return;
+    setDismissingIndex(index);
+    try {
+      const res = await fetch('/api/lab-warning-dismissals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tests: highlight.labTests }),
+      });
+      if (!res.ok) throw new Error('Failed to dismiss');
+      setData((prev) =>
+        prev ? { ...prev, highlights: prev.highlights.filter((_, i) => i !== index) } : prev
+      );
+    } catch {
+      // Leave the card in place; the user can retry.
+    } finally {
+      setDismissingIndex(null);
+    }
+  }, []);
 
   const fetchSummary = useCallback(async (isRefresh: boolean) => {
     setError(null);
@@ -147,6 +154,8 @@ export default function HealthSummaryCard() {
   // instance has AI configured (avoids a guaranteed 501).
   useEffect(() => {
     if (capabilities?.ai && !hasLoaded) {
+      // Bootstrap the external summary once capabilities load; the shared action also owns its loading state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       fetchSummary(false);
     }
   }, [capabilities?.ai, hasLoaded, fetchSummary]);
@@ -312,10 +321,7 @@ export default function HealthSummaryCard() {
             </div>
           )}
 
-          <p
-            className="text-xs italic pt-1"
-            style={{ color: 'var(--color-text-muted)' }}
-          >
+          <p className="text-xs italic pt-1" style={{ color: 'var(--color-text-muted)' }}>
             {AI_DISCLAIMER}
           </p>
         </div>

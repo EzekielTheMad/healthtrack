@@ -25,13 +25,14 @@ export function parseCachedSummary(row: DailySummaryRow): HealthSummary {
   return {
     summary: parsed.summary,
     highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
+    ...(parsed.contextMetadata ? { contextMetadata: parsed.contextMetadata } : {}),
   };
 }
 
 /** The cached summary row for a specific owner-local day, or null. */
 export async function getCachedSummary(
   userId: string,
-  date: string,
+  date: string
 ): Promise<DailySummaryRow | null> {
   if (!userId) throw new NotFoundError();
   const rows = await db
@@ -43,9 +44,7 @@ export async function getCachedSummary(
 }
 
 /** The most recent cached summary for the owner (any day), or null. */
-export async function getLatestCachedSummary(
-  userId: string,
-): Promise<DailySummaryRow | null> {
+export async function getLatestCachedSummary(userId: string): Promise<DailySummaryRow | null> {
   if (!userId) throw new NotFoundError();
   const rows = await db
     .select()
@@ -65,7 +64,7 @@ export async function upsertCachedSummary(
   userId: string,
   date: string,
   summary: HealthSummary,
-  model: string,
+  model: string
 ): Promise<DailySummaryRow> {
   if (!userId) throw new NotFoundError();
   const generatedAt = new Date().toISOString();

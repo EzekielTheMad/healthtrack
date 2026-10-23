@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { useGoalManager } from '@/hooks/useGoalManager';
 import { useExerciseCatalog } from '@/hooks/useExerciseCatalog';
 import { METRICS, getMetric } from '@/lib/metrics/registry';
@@ -111,7 +111,9 @@ export function GoalForm({ onCreate }: GoalFormProps) {
       </h3>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <label className="space-y-1">
-          <span className={labelClass} style={labelStyle}>Kind</span>
+          <span className={labelClass} style={labelStyle}>
+            Kind
+          </span>
           <select
             value={kind}
             onChange={(e) => setKind(e.target.value as 'metric' | 'frequency')}
@@ -126,7 +128,9 @@ export function GoalForm({ onCreate }: GoalFormProps) {
         {kind === 'metric' ? (
           <>
             <label className="space-y-1">
-              <span className={labelClass} style={labelStyle}>Metric</span>
+              <span className={labelClass} style={labelStyle}>
+                Metric
+              </span>
               <select
                 value={metricKey}
                 onChange={(e) => setMetricKey(e.target.value)}
@@ -134,12 +138,16 @@ export function GoalForm({ onCreate }: GoalFormProps) {
                 style={inputStyle}
               >
                 {METRICS.map((m) => (
-                  <option key={m.key} value={m.key}>{m.label}</option>
+                  <option key={m.key} value={m.key}>
+                    {m.label}
+                  </option>
                 ))}
               </select>
             </label>
             <label className="space-y-1">
-              <span className={labelClass} style={labelStyle}>Direction</span>
+              <span className={labelClass} style={labelStyle}>
+                Direction
+              </span>
               <select
                 value={direction}
                 onChange={(e) => setDirection(e.target.value)}
@@ -147,12 +155,16 @@ export function GoalForm({ onCreate }: GoalFormProps) {
                 style={inputStyle}
               >
                 {GOAL_DIRECTION_OPTIONS.map((d) => (
-                  <option key={d} value={d}>{d}</option>
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
                 ))}
               </select>
             </label>
             <label className="space-y-1">
-              <span className={labelClass} style={labelStyle}>Target value (optional)</span>
+              <span className={labelClass} style={labelStyle}>
+                Target value (optional)
+              </span>
               <input
                 type="number"
                 step="any"
@@ -164,7 +176,9 @@ export function GoalForm({ onCreate }: GoalFormProps) {
               />
             </label>
             <label className="space-y-1">
-              <span className={labelClass} style={labelStyle}>Target date (optional)</span>
+              <span className={labelClass} style={labelStyle}>
+                Target date (optional)
+              </span>
               <input
                 type="date"
                 value={targetDate}
@@ -177,7 +191,9 @@ export function GoalForm({ onCreate }: GoalFormProps) {
         ) : (
           <>
             <label className="space-y-1">
-              <span className={labelClass} style={labelStyle}>Session type</span>
+              <span className={labelClass} style={labelStyle}>
+                Session type
+              </span>
               <select
                 value={sessionType}
                 onChange={(e) => setSessionType(e.target.value)}
@@ -185,12 +201,16 @@ export function GoalForm({ onCreate }: GoalFormProps) {
                 style={inputStyle}
               >
                 {SESSION_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
                 ))}
               </select>
             </label>
             <label className="space-y-1">
-              <span className={labelClass} style={labelStyle}>Per week</span>
+              <span className={labelClass} style={labelStyle}>
+                Per week
+              </span>
               <input
                 type="number"
                 min={1}
@@ -240,8 +260,8 @@ export function GoalList({ goals, onToggle }: GoalListProps) {
   if (goals.length === 0) {
     return (
       <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-        No goals yet — create one above. Active goals drive trend coloring and the
-        weekly frequency bars.
+        No goals yet — create one above. Active goals drive trend coloring and the weekly frequency
+        bars.
       </p>
     );
   }
@@ -264,7 +284,11 @@ export function GoalList({ goals, onToggle }: GoalListProps) {
               {describeGoal(goal)}
             </span>
             {rowError?.id === goal.id && (
-              <span role="alert" className="text-xs block" style={{ color: 'var(--color-terracotta)' }}>
+              <span
+                role="alert"
+                className="text-xs block"
+                style={{ color: 'var(--color-terracotta)' }}
+              >
                 {rowError.message}
               </span>
             )}
@@ -353,7 +377,9 @@ function CleanupRow({ exercise, onConfirm }: CleanupRowProps) {
     <div className="rounded-lg border p-3 space-y-2" style={{ borderColor: 'var(--border-card)' }}>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <label className="space-y-1">
-          <span className={labelClass} style={labelStyle}>Name</span>
+          <span className={labelClass} style={labelStyle}>
+            Name
+          </span>
           <input
             type="text"
             value={name}
@@ -364,7 +390,9 @@ function CleanupRow({ exercise, onConfirm }: CleanupRowProps) {
           />
         </label>
         <label className="space-y-1">
-          <span className={labelClass} style={labelStyle}>Variant</span>
+          <span className={labelClass} style={labelStyle}>
+            Variant
+          </span>
           <input
             type="text"
             value={variant}
@@ -375,7 +403,9 @@ function CleanupRow({ exercise, onConfirm }: CleanupRowProps) {
           />
         </label>
         <label className="space-y-1">
-          <span className={labelClass} style={labelStyle}>Aliases (comma-separated)</span>
+          <span className={labelClass} style={labelStyle}>
+            Aliases (comma-separated)
+          </span>
           <input
             type="text"
             value={aliases}
@@ -386,7 +416,9 @@ function CleanupRow({ exercise, onConfirm }: CleanupRowProps) {
           />
         </label>
         <label className="space-y-1">
-          <span className={labelClass} style={labelStyle}>Mode</span>
+          <span className={labelClass} style={labelStyle}>
+            Mode
+          </span>
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value)}
@@ -410,7 +442,11 @@ function CleanupRow({ exercise, onConfirm }: CleanupRowProps) {
         className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-60"
         style={{ backgroundColor: 'var(--color-sage)', color: 'var(--bg-primary)' }}
       >
-        {saving ? 'Saving…' : 'Save & confirm'}
+        {saving
+          ? 'Saving…'
+          : exercise.review_status === 'confirmed'
+            ? 'Save exercise'
+            : 'Save & confirm'}
       </button>
     </div>
   );
@@ -431,8 +467,8 @@ export function UnreviewedExercisesCard({ exercises, onConfirm }: UnreviewedExer
         </span>
       </h3>
       <p className="text-[11px] mb-3" style={{ color: 'var(--color-text-muted)' }}>
-        Names that arrived in workout logs without a catalog match. Fix the canonical
-        name, keep the drifted spelling as an alias, and confirm.
+        Names that arrived in workout logs without a catalog match. Fix the canonical name, keep the
+        drifted spelling as an alias, and confirm.
       </p>
       {exercises.length === 0 ? (
         <p className="text-sm" style={{ color: 'var(--color-sage)' }}>
@@ -449,24 +485,92 @@ export function UnreviewedExercisesCard({ exercises, onConfirm }: UnreviewedExer
   );
 }
 
+/** Search and edit the same catalog records used by workout logging. */
+export function ExerciseCatalogCard({ exercises, onConfirm }: UnreviewedExercisesCardProps) {
+  const [filter, setFilter] = useState<'all' | 'unreviewed' | 'confirmed'>('unreviewed');
+  const [query, setQuery] = useState('');
+  const key = query.trim().toLowerCase();
+  const filtered = exercises.filter(
+    (exercise) =>
+      (filter === 'all' || exercise.review_status === filter) &&
+      [exercise.name, exercise.variant ?? '', ...exercise.aliases].some((value) =>
+        value.toLowerCase().includes(key)
+      )
+  );
+  return (
+    <section className={cardClass} style={cardStyle} aria-label="Exercise catalog">
+      <h3 className="text-sm font-semibold mb-2">Exercise catalog</h3>
+      <p className="text-xs text-text-muted mb-3">
+        Review incoming names or edit confirmed exercises and aliases. Changes update the existing
+        exercise in your history.
+      </p>
+      <div className="flex flex-wrap gap-3 mb-3">
+        <label className="flex-1 min-w-40 text-xs">
+          Search exercises
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Name, variant, or alias"
+            className={fieldClass}
+            style={inputStyle}
+          />
+        </label>
+        <label className="text-xs">
+          Status
+          <select
+            value={filter}
+            onChange={(event) => setFilter(event.target.value as typeof filter)}
+            className={fieldClass}
+            style={inputStyle}
+          >
+            <option value="all">All</option>
+            <option value="unreviewed">Unreviewed</option>
+            <option value="confirmed">Confirmed</option>
+          </select>
+        </label>
+      </div>
+      <p role="status" className="text-xs text-text-muted mb-3">
+        {filtered.length} matching exercise{filtered.length === 1 ? '' : 's'}
+      </p>
+      {filtered.length === 0 ? (
+        <p className="text-sm text-text-muted">No exercises match this search and status.</p>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((exercise) => (
+            <details key={exercise.id} className="rounded-lg border border-border-card">
+              <summary className="cursor-pointer px-3 py-2 text-sm">
+                {exercise.name}
+                {exercise.variant ? ` · ${exercise.variant}` : ''}{' '}
+                <span className="text-xs text-text-muted">({exercise.review_status})</span>
+              </summary>
+              <CleanupRow exercise={exercise} onConfirm={onConfirm} />
+            </details>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Data-fetching tab
 // ---------------------------------------------------------------------------
 
 export default function GoalsView() {
-  const { goals, loading: goalsLoading, error: goalsError, createGoal, updateGoal } =
-    useGoalManager();
+  const {
+    goals,
+    loading: goalsLoading,
+    error: goalsError,
+    createGoal,
+    updateGoal,
+  } = useGoalManager();
   const {
     exercises,
     loading: catalogLoading,
     error: catalogError,
     updateExercise,
   } = useExerciseCatalog();
-
-  const unreviewed = useMemo(
-    () => exercises.filter((e) => e.review_status === 'unreviewed'),
-    [exercises],
-  );
 
   const loading = goalsLoading || catalogLoading;
   const error = goalsError ?? catalogError;
@@ -532,8 +636,8 @@ export default function GoalsView() {
         </div>
       </section>
 
-      <UnreviewedExercisesCard
-        exercises={unreviewed}
+      <ExerciseCatalogCard
+        exercises={exercises}
         onConfirm={async (id, body) => {
           await updateExercise(id, body);
         }}

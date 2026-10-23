@@ -17,8 +17,8 @@
  * UI can persist an "no interactions found" state.
  */
 import { and, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
-import { db } from '@/db';
-import { interactionAlerts, interactionChecks } from '@/db/schema';
+import { db, type DB } from '@/db';
+import { interactionAlerts, interactionChecks, medications } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
 import { dependentFilter, type ListScope } from './_scope';
 
@@ -42,10 +42,25 @@ export interface DetectedInteraction {
   medicationSnapshot: Record<string, unknown>;
 }
 
+type InteractionConnection = Pick<DB, 'select' | 'insert' | 'update' | 'delete'>;
+
+type CheckedMedication = Pick<
+  typeof medications.$inferSelect,
+  'id' | 'name' | 'dosage' | 'frequency' | 'active' | 'rxcui'
+>;
+
+function medicationSnapshot(rows: CheckedMedication[]): string {
+  return JSON.stringify(
+    rows
+      .map((row) => [row.id, row.name, row.dosage, row.frequency, row.active, row.rxcui])
+      .sort((left, right) => String(left[0]).localeCompare(String(right[0])))
+  );
+}
+
 /** Active (currently un-snoozed) alerts, newest check first. Non-owner → []. */
 export async function listActiveInteractionAlerts(
   actorId: string,
-  scope: ListScope,
+  scope: ListScope
 ): Promise<InteractionAlertRow[]> {
   if (!actorId) throw new NotFoundError();
   if (actorId !== scope.ownerId) return []; // RLS-empty parity, see header
@@ -57,11 +72,8 @@ export async function listActiveInteractionAlerts(
       and(
         eq(interactionAlerts.userId, actorId),
         dependentFilter(interactionAlerts.dependentId, scope.dependentId),
-        or(
-          isNull(interactionAlerts.snoozedUntil),
-          lte(interactionAlerts.snoozedUntil, now),
-        ),
-      ),
+        or(isNull(interactionAlerts.snoozedUntil), lte(interactionAlerts.snoozedUntil, now))
+      )
     )
     .orderBy(desc(interactionAlerts.checkedAt));
 }
@@ -69,7 +81,7 @@ export async function listActiveInteractionAlerts(
 /** Count of currently-snoozed alerts (snoozed_until still in the future). */
 export async function countSnoozedInteractionAlerts(
   actorId: string,
-  scope: ListScope,
+  scope: ListScope
 ): Promise<number> {
   if (!actorId) throw new NotFoundError();
   if (actorId !== scope.ownerId) return 0;
@@ -81,8 +93,8 @@ export async function countSnoozedInteractionAlerts(
       and(
         eq(interactionAlerts.userId, actorId),
         dependentFilter(interactionAlerts.dependentId, scope.dependentId),
-        gt(interactionAlerts.snoozedUntil, now),
-      ),
+        gt(interactionAlerts.snoozedUntil, now)
+      )
     );
   return rows.length;
 }
@@ -102,7 +114,7 @@ export const SNOOZE_MAX_DAYS: Record<string, number> = {
 export async function snoozeInteractionAlert(
   actorId: string,
   id: string,
-  days: number,
+  days: number
 ): Promise<string | null> {
   if (!actorId) throw new NotFoundError();
   const [row] = await db
@@ -124,7 +136,7 @@ export async function snoozeInteractionAlert(
 /** Insert freshly generated alerts for the actor; returns the new ids. */
 export async function createInteractionAlerts(
   actorId: string,
-  alerts: NewInteractionAlert[],
+  alerts: NewInteractionAlert[]
 ): Promise<string[]> {
   if (!actorId) throw new NotFoundError();
   if (alerts.length === 0) return [];
@@ -141,7 +153,7 @@ export async function createInteractionAlerts(
         dependentId: a.dependentId ?? null,
         checkedAt: now,
         medicationSnapshot: a.medicationSnapshot,
-      })),
+      }))
     )
     .returning({ id: interactionAlerts.id });
   return rows.map((r) => r.id);
@@ -160,29 +172,39 @@ export async function createInteractionAlerts(
 export async function reconcileInteractionAlerts(
   actorId: string,
   dependentId: string | null,
-  detected: DetectedInteraction[],
+  detected: DetectedInteraction[]
 ): Promise<void> {
   if (!actorId) throw new NotFoundError();
+  db.transaction((tx) => reconcileAlerts(tx, actorId, dependentId, detected));
+}
+
+function reconcileAlerts(
+  connection: InteractionConnection,
+  actorId: string,
+  dependentId: string | null,
+  detected: DetectedInteraction[]
+): void {
   const now = new Date().toISOString();
 
-  const existing = await db
+  const existing = connection
     .select()
     .from(interactionAlerts)
     .where(
       and(
         eq(interactionAlerts.userId, actorId),
-        dependentFilter(interactionAlerts.dependentId, dependentId),
-      ),
-    );
+        dependentFilter(interactionAlerts.dependentId, dependentId)
+      )
+    )
+    .all();
   const existingBySig = new Map(
-    existing.filter((e) => e.signature).map((e) => [e.signature as string, e]),
+    existing.filter((e) => e.signature).map((e) => [e.signature as string, e])
   );
   const detectedSigs = new Set(detected.map((d) => d.signature));
 
   for (const d of detected) {
     const prior = existingBySig.get(d.signature);
     if (prior) {
-      await db
+      connection
         .update(interactionAlerts)
         .set({
           alertText: d.alertText,
@@ -192,18 +214,22 @@ export async function reconcileInteractionAlerts(
           checkedAt: now,
           // snoozedUntil deliberately preserved
         })
-        .where(eq(interactionAlerts.id, prior.id));
+        .where(eq(interactionAlerts.id, prior.id))
+        .run();
     } else {
-      await db.insert(interactionAlerts).values({
-        userId: actorId,
-        dependentId,
-        triggerMedicationId: d.triggerMedicationId,
-        alertText: d.alertText,
-        severity: d.severity,
-        signature: d.signature,
-        checkedAt: now,
-        medicationSnapshot: d.medicationSnapshot,
-      });
+      connection
+        .insert(interactionAlerts)
+        .values({
+          userId: actorId,
+          dependentId,
+          triggerMedicationId: d.triggerMedicationId,
+          alertText: d.alertText,
+          severity: d.severity,
+          signature: d.signature,
+          checkedAt: now,
+          medicationSnapshot: d.medicationSnapshot,
+        })
+        .run();
     }
   }
 
@@ -211,14 +237,10 @@ export async function reconcileInteractionAlerts(
     .filter((e) => !e.signature || !detectedSigs.has(e.signature))
     .map((e) => e.id);
   if (toDelete.length > 0) {
-    await db
+    connection
       .delete(interactionAlerts)
-      .where(
-        and(
-          eq(interactionAlerts.userId, actorId),
-          inArray(interactionAlerts.id, toDelete),
-        ),
-      );
+      .where(and(eq(interactionAlerts.userId, actorId), inArray(interactionAlerts.id, toDelete)))
+      .run();
   }
 }
 
@@ -229,10 +251,27 @@ export interface InteractionCheckStatus {
   hasInteractions: boolean;
 }
 
+/** A medication change makes the prior outcome stale, while prior warnings stay visible. */
+export function invalidateInteractionCheck(
+  ownerId: string,
+  dependentId: string | null,
+  connection: Pick<DB, 'delete'> = db
+): void {
+  connection
+    .delete(interactionChecks)
+    .where(
+      and(
+        eq(interactionChecks.userId, ownerId),
+        dependentFilter(interactionChecks.dependentId, dependentId)
+      )
+    )
+    .run();
+}
+
 /** The latest check outcome for a scope, or null if never checked. */
 export async function getInteractionCheck(
   actorId: string,
-  scope: ListScope,
+  scope: ListScope
 ): Promise<InteractionCheckStatus | null> {
   if (!actorId) throw new NotFoundError();
   if (actorId !== scope.ownerId) return null;
@@ -242,8 +281,8 @@ export async function getInteractionCheck(
     .where(
       and(
         eq(interactionChecks.userId, actorId),
-        dependentFilter(interactionChecks.dependentId, scope.dependentId),
-      ),
+        dependentFilter(interactionChecks.dependentId, scope.dependentId)
+      )
     )
     .orderBy(desc(interactionChecks.checkedAt))
     .limit(1);
@@ -254,30 +293,70 @@ export async function getInteractionCheck(
 export async function recordInteractionCheck(
   actorId: string,
   dependentId: string | null,
-  hasInteractions: boolean,
+  hasInteractions: boolean
 ): Promise<void> {
   if (!actorId) throw new NotFoundError();
+  db.transaction((tx) => recordCheck(tx, actorId, dependentId, hasInteractions));
+}
+
+function recordCheck(
+  connection: InteractionConnection,
+  actorId: string,
+  dependentId: string | null,
+  hasInteractions: boolean
+): void {
   const now = new Date().toISOString();
-  const [existing] = await db
+  const [existing] = connection
     .select({ id: interactionChecks.id })
     .from(interactionChecks)
     .where(
       and(
         eq(interactionChecks.userId, actorId),
-        dependentFilter(interactionChecks.dependentId, dependentId),
-      ),
+        dependentFilter(interactionChecks.dependentId, dependentId)
+      )
     )
-    .limit(1);
+    .limit(1)
+    .all();
   if (existing) {
-    await db
+    connection
       .update(interactionChecks)
       .set({ hasInteractions, checkedAt: now })
-      .where(eq(interactionChecks.id, existing.id));
+      .where(eq(interactionChecks.id, existing.id))
+      .run();
   } else {
-    await db
+    connection
       .insert(interactionChecks)
-      .values({ userId: actorId, dependentId, hasInteractions, checkedAt: now });
+      .values({ userId: actorId, dependentId, hasInteractions, checkedAt: now })
+      .run();
   }
+}
+
+/** Store a result only if the selected patient's active medications still match. */
+export function commitInteractionCheck(
+  actorId: string,
+  dependentId: string | null,
+  expectedMedications: CheckedMedication[],
+  detected: DetectedInteraction[],
+  hasInteractions: boolean
+): boolean {
+  if (!actorId) throw new NotFoundError();
+  return db.transaction((tx) => {
+    const current = tx
+      .select()
+      .from(medications)
+      .where(
+        and(
+          eq(medications.userId, actorId),
+          dependentFilter(medications.dependentId, dependentId),
+          eq(medications.active, true)
+        )
+      )
+      .all();
+    if (medicationSnapshot(expectedMedications) !== medicationSnapshot(current)) return false;
+    reconcileAlerts(tx, actorId, dependentId, detected);
+    recordCheck(tx, actorId, dependentId, hasInteractions);
+    return true;
+  });
 }
 
 /** Build the stable signature for an interaction from its medication names. */

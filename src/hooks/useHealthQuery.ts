@@ -1,109 +1,90 @@
 'use client';
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { QueryHistoryEntry } from '@/lib/types';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 
 export function useHealthQuery() {
+  const { dependentId, delegateOwnerId } = useActiveProfile();
   const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // Neutral notice shown when a query was served from saved history instead of
-  // spending a fresh AI call (see submitQuery's dedupe below).
   const [notice, setNotice] = useState<string | null>(null);
-  const lastQueryRef = useRef<string>('');
-
+  const [days, setDays] = useState<30 | 90 | 365>(90);
+  const lastQueryRef = useRef('');
+  const subjectRef = useRef(dependentId);
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchHistory() {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const res = await fetch('/api/query-history');
-        if (cancelled) return;
-        if (!res.ok) {
-          const body = await res.json().catch(() => null);
-          setError(body?.message ?? 'Failed to fetch query history');
-        } else {
-          setQueryHistory((await res.json()) as QueryHistoryEntry[]);
-        }
-      } catch {
-        if (!cancelled) setError('Failed to fetch query history');
-      }
-      if (!cancelled) setLoading(false);
-    }
-
-    fetchHistory();
-    return () => { cancelled = true; };
+    subjectRef.current = dependentId;
+  }, [dependentId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/query-history', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Failed to fetch query history');
+        const rows = (await response.json()) as QueryHistoryEntry[];
+        if (!controller.signal.aborted) setQueryHistory(rows);
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) setError(err.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, []);
-
-  /** Actually call the AI and persist the result. */
-  const runQuery = useCallback(
-    async (queryText: string): Promise<QueryHistoryEntry | null> => {
+  const submitQuery = useCallback(
+    async (query: string, opts?: { force?: boolean }): Promise<QueryHistoryEntry | null> => {
+      setError(null);
+      setNotice(null);
+      if (delegateOwnerId) {
+        setError('Health queries are available for your own record and dependents.');
+        return null;
+      }
+      const trimmed = query.trim();
+      if (!trimmed) return null;
+      lastQueryRef.current = trimmed;
+      const subject = dependentId;
       try {
         const response = await fetch('/api/health-query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: queryText }),
+          body: JSON.stringify({
+            query: trimmed,
+            dependent_id: subject,
+            days,
+            force: opts?.force ?? false,
+          }),
         });
-
-        if (!response.ok) {
-          const body = await response.json();
-          setError(body.message ?? 'Query failed');
-          return null;
-        }
-
-        const result: QueryHistoryEntry = await response.json();
-        setQueryHistory((prev) => [result, ...prev]);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message ?? 'Query failed');
+        if (subjectRef.current !== subject) return null;
+        setQueryHistory((prev) => [result, ...prev.filter((e) => e.id !== result.id)]);
+        if (result.reused)
+          setNotice(
+            'Showing a saved answer verified against the current records and reporting window.'
+          );
         return result;
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Query failed';
-        setError(message);
+        setError(err instanceof Error ? err.message : 'Query failed');
         return null;
       }
     },
-    [],
+    [dependentId, delegateOwnerId, days]
   );
-
-  /**
-   * Submit a query. If the exact same question already exists in history, reuse
-   * that saved answer (re-surfaced to the top) instead of spending another AI
-   * call — a returning visitor clicking the same quick-question chip shouldn't
-   * be billed again. `force` bypasses the dedupe for an intentionally fresh run.
-   */
-  const submitQuery = useCallback(
-    async (queryText: string, opts?: { force?: boolean }): Promise<QueryHistoryEntry | null> => {
-      setError(null);
-      setNotice(null);
-      const trimmed = queryText.trim();
-      if (!trimmed) return null;
-      lastQueryRef.current = trimmed;
-
-      if (!opts?.force) {
-        const key = trimmed.toLowerCase();
-        const match = queryHistory.find(
-          (e) => e.query_text.trim().toLowerCase() === key,
-        );
-        if (match) {
-          // Re-surface the saved answer to the top; no AI call, no new row.
-          setQueryHistory((prev) => [match, ...prev.filter((e) => e !== match)]);
-          setNotice('Showing your saved answer — no new query used.');
-          return match;
-        }
-      }
-
-      return runQuery(trimmed);
-    },
-    [queryHistory, runQuery],
+  const refreshLast = useCallback(
+    () => submitQuery(lastQueryRef.current, { force: true }),
+    [submitQuery]
   );
-
-  /** Force a fresh AI run of the most recent question (bypasses dedupe). */
-  const refreshLast = useCallback((): Promise<QueryHistoryEntry | null> => {
-    setNotice(null);
-    if (!lastQueryRef.current) return Promise.resolve(null);
-    return runQuery(lastQueryRef.current);
-  }, [runQuery]);
-
-  return { queryHistory, loading, error, notice, submitQuery, refreshLast };
+  const visibleHistory = delegateOwnerId
+    ? []
+    : queryHistory.filter((entry) => (entry.dependent_id ?? null) === dependentId);
+  return {
+    queryHistory: visibleHistory,
+    loading,
+    error,
+    notice,
+    submitQuery,
+    refreshLast,
+    days,
+    setDays,
+  };
 }

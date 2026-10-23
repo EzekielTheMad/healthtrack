@@ -4,16 +4,14 @@ import React, { useMemo } from 'react';
 import TrendLine from '@/components/labs/TrendLine';
 import { formatUtcDay } from '@/lib/dates';
 import type { Vital } from '@/lib/types';
+import { selectVitalSources } from '@/lib/metrics/source-selection';
 
 // ---------------------------------------------------------------------------
 // Daily activity — Health Connect's aggregate day totals (PRD §6.6).
 //
-// Source discipline is the whole point of this card. It reads ONLY vitals
-// written with source `health_connect_daily`, which come from Health Connect's
-// aggregate API — that API has already deduplicated the phone, the watch and
-// every app feeding it. Summing raw Fitbit, Samsung, phone or Oura step
-// records alongside these would build a second, competing total out of the
-// same walk.
+// Uses the shared source selector. Health Connect's already-deduplicated
+// daily totals are the default; an explicit user choice is selected upstream
+// by useVitals. Competing device totals are never added together.
 //
 // Each incoming date REPLACES the stored day (upsertOwnVital is idempotent on
 // metric + recorded_at + source), so a re-sync corrects a day rather than
@@ -43,6 +41,8 @@ export interface DailyActivityMetric {
   /** null when the source never reported this metric — unknown, not zero. */
   latest: number | null;
   latestDate: string | null;
+  source: string | null;
+  lastReceivedAt: string | null;
   trend: Array<{ value: number; date: string }>;
 }
 
@@ -53,14 +53,12 @@ export interface DailyActivityMetric {
  * behaviours worth pinning, and they are pure given a vitals list.
  */
 export function buildDailyActivity(vitals: Vital[]): DailyActivityMetric[] {
-  const canonical = vitals.filter((v) => v.source === DAILY_TOTALS_SOURCE);
+  const canonical = selectVitalSources(vitals);
 
   return METRICS.map((m) => {
     const rows = canonical
       .filter((v) => v.metric_key === m.key && Number.isFinite(v.value))
-      .sort(
-        (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
-      );
+      .sort((a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime());
     const latest = rows[0] ?? null;
     return {
       key: m.key,
@@ -69,6 +67,8 @@ export function buildDailyActivity(vitals: Vital[]): DailyActivityMetric[] {
       // No row means the snapshot never carried this metric. Absent, not 0.
       latest: latest ? latest.value : null,
       latestDate: latest ? latest.recorded_at : null,
+      source: latest?.source ?? null,
+      lastReceivedAt: latest?.last_received_at ?? null,
       trend: rows
         .slice(0, TREND_DAYS)
         .reverse()
@@ -107,7 +107,7 @@ export default function DailyActivityCard({ vitals, loading }: DailyActivityCard
           Daily activity
         </h2>
         <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          Health Connect daily totals{latestDay ? ` · ${formatUtcDay(latestDay)}` : ''}
+          Selected device totals{latestDay ? ` · ${formatUtcDay(latestDay)}` : ''}
         </span>
       </div>
 
@@ -137,6 +137,12 @@ export default function DailyActivityCard({ vitals, loading }: DailyActivityCard
                   </span>
                 )}
               </div>
+              <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                {m.source ?? 'No source'} ·{' '}
+                {m.lastReceivedAt
+                  ? `Received ${new Date(m.lastReceivedAt).toLocaleString()}`
+                  : 'Receipt time unknown'}
+              </span>
               {m.trend.length > 1 ? (
                 <TrendLine data={m.trend} width={160} height={40} />
               ) : (

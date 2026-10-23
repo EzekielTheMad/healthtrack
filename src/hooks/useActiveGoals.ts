@@ -42,15 +42,11 @@ export function useActiveGoals(): {
   const skip = dependentId !== null;
 
   const [metricGoals, setMetricGoals] = useState<FocusMetricGoal[]>(NO_METRIC_GOALS);
-  const [frequencyGoals, setFrequencyGoals] =
-    useState<FocusFrequencyGoal[]>(NO_FREQUENCY_GOALS);
+  const [frequencyGoals, setFrequencyGoals] = useState<FocusFrequencyGoal[]>(NO_FREQUENCY_GOALS);
   const [loading, setLoading] = useState(!skip);
 
   useEffect(() => {
     if (skip) {
-      setMetricGoals(NO_METRIC_GOALS);
-      setFrequencyGoals(NO_FREQUENCY_GOALS);
-      setLoading(false);
       return;
     }
 
@@ -69,7 +65,7 @@ export function useActiveGoals(): {
               metricKey: r.metric_key as string,
               direction: r.direction as FocusMetricGoal['direction'],
               targetValue: r.target_value,
-            })),
+            }))
         );
         setFrequencyGoals(
           rows
@@ -77,7 +73,7 @@ export function useActiveGoals(): {
             .map((r) => ({
               sessionType: r.session_type as string,
               perWeek: r.per_week as number,
-            })),
+            }))
         );
       } catch {
         // Fail open — see module doc.
@@ -96,5 +92,9 @@ export function useActiveGoals(): {
     };
   }, [skip, delegateOwnerId]);
 
-  return { metricGoals, frequencyGoals, loading };
+  return {
+    metricGoals: skip ? NO_METRIC_GOALS : metricGoals,
+    frequencyGoals: skip ? NO_FREQUENCY_GOALS : frequencyGoals,
+    loading: !skip && loading,
+  };
 }

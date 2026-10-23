@@ -5,9 +5,9 @@
  *
  * Multipart form: `file` (PDF ≤50MB, PNG/JPG ≤10MB) + optional `dependent_id`.
  * The target scope's existing rows are loaded (which also verifies the
- * dependent belongs to the caller) BEFORE the expensive AI call. Nothing is
- * persisted — the client reviews the annotated items and submits approved
- * ones to POST /api/import-medical-history.
+ * dependent belongs to the caller) BEFORE the expensive AI call. Original
+ * documents and extracted claims are staged separately from accepted records;
+ * item decisions are committed through /api/import-batches/{id}.
  *
  * Large PDFs (> CHUNK_PAGE_THRESHOLD pages, capped at MAX_PAGES) are split
  * into page chunks, extracted sequentially, and merged; chunks that fail to
@@ -22,10 +22,7 @@ import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
 import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { safeError } from '@/lib/safe-log';
 import { NotFoundError } from '@/lib/authz';
-import {
-  parseMedicalHistory,
-  type ParsedMedicalHistory,
-} from '@/lib/claude/parse-medical-history';
+import { parseMedicalHistory, type ParsedMedicalHistory } from '@/lib/claude/parse-medical-history';
 import { listMedications } from '@/lib/repos/medications';
 import { listConditions } from '@/lib/repos/conditions';
 import { listAllergies } from '@/lib/repos/allergies';
@@ -48,18 +45,22 @@ import {
   splitPdfIntoChunks,
 } from '@/lib/import/chunk-pdf';
 import { mergeExtractions } from '@/lib/import/merge-extractions';
+import {
+  fileHash,
+  findImportBatch,
+  stageImportBatch,
+  type ImportBatchReview,
+} from '@/lib/import/batches';
+import { historyClaims } from '@/lib/import/claims';
+import { saveUpload } from '@/lib/storage';
+import { UnsupportedUploadTypeError } from '@/lib/storage';
+import { detectDocumentMime } from '@/lib/import/document-file';
 
 // Chunked extraction of a large PDF can take several minutes.
 export const maxDuration = 600;
 
 const MAX_PDF_FILE_SIZE = 50 * 1024 * 1024; // 50MB (page-chunked)
 const MAX_IMAGE_FILE_SIZE = 10 * 1024 * 1024; // 10MB (single-shot)
-const ALLOWED_TYPES = new Set([
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/jpg',
-]);
 
 type WithStatus<T> = T & { dedupe_status: DedupeStatus };
 
@@ -70,10 +71,8 @@ export interface MedicalHistoryReviewItems {
   procedures: WithStatus<ParsedMedicalHistory['procedures'][number]>[];
   vaccines: WithStatus<ParsedMedicalHistory['vaccines'][number]>[];
   lab_visits: {
-    visit_date: string;
-    results: WithStatus<
-      ParsedMedicalHistory['lab_visits'][number]['results'][number]
-    >[];
+    visit_date: string | null;
+    results: WithStatus<ParsedMedicalHistory['lab_visits'][number]['results'][number]>[];
   }[];
 }
 
@@ -83,6 +82,8 @@ export interface ParseMedicalHistoryResponse {
   page_count?: number;
   /** Non-fatal problems, e.g. page ranges that could not be processed. */
   warnings?: string[];
+  batch_id?: string;
+  batch?: ImportBatchReview;
 }
 
 const PAGES_PER_CHUNK = 25;
@@ -90,7 +91,7 @@ const PAGES_PER_CHUNK = 25;
 class PdfTooLongError extends Error {
   constructor(pageCount: number) {
     super(
-      `This document has ${pageCount} pages — the importer supports up to ${MAX_PAGES}. Please split it and import in parts.`,
+      `This document has ${pageCount} pages — the importer supports up to ${MAX_PAGES}. Please split it and import in parts.`
     );
     this.name = 'PdfTooLongError';
   }
@@ -98,9 +99,7 @@ class PdfTooLongError extends Error {
 
 /** Human-readable label for a chunk's 1-based page range. */
 function pageRangeLabel(startPage: number, endPage: number): string {
-  return startPage === endPage
-    ? `Page ${startPage}`
-    : `Pages ${startPage}–${endPage}`;
+  return startPage === endPage ? `Page ${startPage}` : `Pages ${startPage}–${endPage}`;
 }
 
 /**
@@ -133,12 +132,25 @@ async function extractPdf(buffer: Buffer): Promise<{
     const startPage = i * PAGES_PER_CHUNK + 1;
     const endPage = Math.min((i + 1) * PAGES_PER_CHUNK, pageCount);
     try {
-      parts.push(await parseMedicalHistory(chunks[i], 'application/pdf'));
+      const part = await parseMedicalHistory(chunks[i], 'application/pdf');
+      // Source page numbers from a chunk are local to that chunk. Preserve an
+      // absolute range even when extraction could not identify the exact page.
+      const annotate = (entry: Record<string, unknown>) => {
+        if (typeof entry.source_page === 'number') entry.source_page += startPage - 1;
+        entry.source_pages = `${startPage}-${endPage}`;
+      };
+      for (const domain of [
+        'medications',
+        'conditions',
+        'allergies',
+        'procedures',
+        'vaccines',
+      ] as const)
+        for (const entry of part[domain]) annotate(entry);
+      for (const visit of part.lab_visits) for (const entry of visit.results) annotate(entry);
+      parts.push(part);
     } catch (err) {
-      safeError(
-        `Medical history chunk extraction failed (pages ${startPage}-${endPage})`,
-        err,
-      );
+      safeError(`Medical history chunk extraction failed (pages ${startPage}-${endPage})`, err);
       warnings.push(`${pageRangeLabel(startPage, endPage)} could not be processed`);
     }
   }
@@ -168,7 +180,11 @@ export async function POST(request: NextRequest) {
 
   // Cap expensive document parses (shared budget with lab/vaccine PDFs).
   if (!checkRateLimit(`parse-pdf:${userId}`, { max: 15, windowMs: HOUR_MS })) {
-    return apiError(429, 'rate_limited', 'Too many document uploads this hour. Please try again later.');
+    return apiError(
+      429,
+      'rate_limited',
+      'Too many document uploads this hour. Please try again later.'
+    );
   }
 
   try {
@@ -179,28 +195,22 @@ export async function POST(request: NextRequest) {
       return apiError(400, 'bad_request', 'A file is required');
     }
 
-    if (!ALLOWED_TYPES.has(file.type)) {
-      return apiError(
-        400,
-        'invalid_file_type',
-        'Only PDF, PNG, and JPG files are accepted',
-      );
-    }
-
-    const isPdf = file.type === 'application/pdf';
+    if (file.size > MAX_PDF_FILE_SIZE)
+      return apiError(413, 'file_too_large', 'Document must be under 50MB');
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = detectDocumentMime(buffer);
+    const isPdf = mimeType === 'application/pdf';
     if (file.size > (isPdf ? MAX_PDF_FILE_SIZE : MAX_IMAGE_FILE_SIZE)) {
       return apiError(
         400,
         'file_too_large',
-        isPdf ? 'PDF size must be under 50MB' : 'Image size must be under 10MB',
+        isPdf ? 'PDF size must be under 50MB' : 'Image size must be under 10MB'
       );
     }
 
     const dependentIdRaw = formData.get('dependent_id');
     const dependentId =
-      typeof dependentIdRaw === 'string' && dependentIdRaw.length > 0
-        ? dependentIdRaw
-        : null;
+      typeof dependentIdRaw === 'string' && dependentIdRaw.length > 0 ? dependentIdRaw : null;
 
     // Load the target scope's existing rows first — this also verifies the
     // dependent belongs to the caller (authz → 404) before we spend an AI call.
@@ -224,7 +234,12 @@ export async function POST(request: NextRequest) {
       throw err;
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const hash = fileHash(buffer);
+    const prior = await findImportBatch(userId, dependentId, hash, 'medical_history');
+    const retryExtraction =
+      formData.get('retry_extraction') === 'true' && Boolean(prior?.warnings.length);
+    if (prior && !retryExtraction)
+      return NextResponse.json({ batch_id: prior.id, batch: prior, warnings: prior.warnings });
 
     // Parse with Claude (PDFs page-chunk when large; images are single-shot).
     let parsed: ParsedMedicalHistory;
@@ -237,7 +252,7 @@ export async function POST(request: NextRequest) {
         pageCount = result.pageCount;
         warnings = result.warnings;
       } else {
-        parsed = await parseMedicalHistory(buffer, file.type);
+        parsed = await parseMedicalHistory(buffer, mimeType);
       }
     } catch (parseError) {
       if (parseError instanceof PdfTooLongError) {
@@ -256,16 +271,16 @@ export async function POST(request: NextRequest) {
     const conditionIndex = buildNameIndex(existing.conditions.map((c) => c.name));
     const allergyIndex = buildNameIndex(existing.allergies.map((a) => a.name));
     const procedureIndex = buildNameDateIndex(
-      existing.procedures.map((p) => ({ name: p.name, date: p.procedureDate })),
+      existing.procedures.map((p) => ({ name: p.name, date: p.procedureDate }))
     );
     const vaccineIndex = buildNameDateIndex(
-      existing.vaccines.map((v) => ({ name: v.name, date: v.vaccineDate })),
+      existing.vaccines.map((v) => ({ name: v.name, date: v.vaccineDate }))
     );
     const labIndex = buildLabResultIndex(
       existing.labResults.map((r) => ({
         visitDate: r.visitDate,
         testName: r.testName,
-      })),
+      }))
     );
 
     const items: MedicalHistoryReviewItems = {
@@ -298,11 +313,28 @@ export async function POST(request: NextRequest) {
       })),
     };
 
-    const response: ParseMedicalHistoryResponse = { items };
+    const sourcePath =
+      prior?.source_path ??
+      (await saveUpload(userId, buffer, {
+        mime: mimeType,
+        maxBytes: isPdf ? MAX_PDF_FILE_SIZE : MAX_IMAGE_FILE_SIZE,
+      }));
+    const batch = await stageImportBatch(userId, dependentId, {
+      hash,
+      kind: 'medical_history',
+      name: file.name,
+      sourcePath,
+      warnings,
+      items: historyClaims(parsed),
+      retryExtraction,
+    });
+    const response: ParseMedicalHistoryResponse = { items, batch_id: batch.id, batch };
     if (pageCount !== undefined) response.page_count = pageCount;
     if (warnings.length > 0) response.warnings = warnings;
     return NextResponse.json(response);
   } catch (err) {
+    if (err instanceof UnsupportedUploadTypeError)
+      return apiError(415, 'invalid_file_type', err.message);
     safeError('Medical history processing error', err);
     return apiError(500, 'internal_error', 'Failed to process medical history document');
   }

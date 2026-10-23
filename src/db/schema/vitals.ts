@@ -29,6 +29,8 @@ export const vitals = sqliteTable(
     unit: text('unit'),
     source: text('source').notNull(),
     recordedAt: text('recorded_at').notNull(),
+    // Server receipt time, independent of the device's observation day. Legacy rows stay unknown.
+    lastReceivedAt: text('last_received_at'),
     // jsonb not null default '{}'
     metadata: text('metadata', { mode: 'json' })
       .$type<Record<string, unknown>>()
@@ -48,9 +50,9 @@ export const vitals = sqliteTable(
       t.metricKey,
       t.recordedAt,
       t.source,
-      sql`coalesce(${t.dependentId}, '')`,
+      sql`coalesce(${t.dependentId}, '')`
     ),
-  ],
+  ]
 );
 
 // 001
@@ -64,7 +66,7 @@ export const vitalSourcePreferences = sqliteTable(
     metricKey: text('metric_key').notNull(),
     preferredSource: text('preferred_source').notNull(),
   },
-  (t) => [unique('vital_source_preferences_user_metric_unique').on(t.userId, t.metricKey)],
+  (t) => [unique('vital_source_preferences_user_metric_unique').on(t.userId, t.metricKey)]
 );
 
 // 001 — global reference data (seeded, no user FK)

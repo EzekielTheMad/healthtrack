@@ -3,40 +3,40 @@
 // ---------------------------------------------------------------------------
 
 export type ProviderType =
-  | "pcp"
-  | "specialist"
-  | "lab"
-  | "imaging"
-  | "urgent_care"
-  | "hospital"
-  | "pharmacy"
-  | "therapist"
-  | "dentist"
-  | "other";
+  | 'pcp'
+  | 'specialist'
+  | 'lab'
+  | 'imaging'
+  | 'urgent_care'
+  | 'hospital'
+  | 'pharmacy'
+  | 'therapist'
+  | 'dentist'
+  | 'other';
 
 export type MedicationFrequency =
-  | "once_daily"
-  | "twice_daily"
-  | "three_times_daily"
-  | "four_times_daily"
-  | "every_other_day"
-  | "weekly"
-  | "biweekly"
-  | "monthly"
-  | "as_needed"
-  | "other";
+  | 'once_daily'
+  | 'twice_daily'
+  | 'three_times_daily'
+  | 'four_times_daily'
+  | 'every_other_day'
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'as_needed'
+  | 'other';
 
-export type ConditionStatus = "active" | "resolved" | "managed" | "monitoring";
+export type ConditionStatus = 'active' | 'resolved' | 'managed' | 'monitoring';
 
-export type NoteType = "symptom" | "observation" | "general";
+export type NoteType = 'symptom' | 'observation' | 'general';
 
-export type AlertSeverity = "info" | "warning" | "critical";
+export type AlertSeverity = 'info' | 'warning' | 'critical';
 
-export type AccessLevel = "read" | "read_write";
+export type AccessLevel = 'read' | 'read_write';
 
 export type DependentRelationship = 'child' | 'spouse' | 'parent' | 'sibling' | 'other';
 
-export type Flag = "normal" | "high" | "low" | "critical";
+export type Flag = 'normal' | 'high' | 'low' | 'critical';
 
 export type AllergySeverity = 'mild' | 'moderate' | 'severe' | 'life_threatening';
 
@@ -67,10 +67,10 @@ export interface Profile {
   id: string;
   display_name: string | null;
   date_of_birth: string | null;
-  biological_sex: "male" | "female" | "prefer_not_to_say" | null;
+  biological_sex: 'male' | 'female' | 'prefer_not_to_say' | null;
   height_inches: number | null;
   weight_lbs: number | null;
-  unit_system: "imperial" | "metric";
+  unit_system: 'imperial' | 'metric';
   created_at: string;
   updated_at: string;
 }
@@ -165,6 +165,7 @@ export interface Vital {
   unit: string | null;
   source: string;
   recorded_at: string;
+  last_received_at?: string | null;
   metadata: Record<string, unknown>;
   dependent_id?: string | null;
   created_at: string;
@@ -192,6 +193,7 @@ export interface VitalReferenceRange {
 }
 
 export interface QueryHistoryEntry {
+  context_metadata?: import('./health-context-types').QueryContextMetadata;
   id: string;
   user_id: string;
   query_text: string;

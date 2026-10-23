@@ -6,14 +6,16 @@
  * round-trip, cross-user isolation, and the America/Phoenix day-key boundary
  * (an instant just after UTC midnight is still "yesterday" in Phoenix).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
-  setupRepoDb,
-  insertUser,
-  OWNER,
-  VIEWER,
-  type RepoTestDb,
-} from './repo-test-harness';
+  beforeEach as beforeCalendarFixture,
+  afterEach as afterCalendarFixture,
+  vi as calendarFixtureVi,
+} from 'vitest';
+beforeCalendarFixture(() => calendarFixtureVi.stubEnv('TZ', 'America/Phoenix'));
+afterCalendarFixture(() => calendarFixtureVi.unstubAllEnvs());
+
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { setupRepoDb, insertUser, OWNER, VIEWER, type RepoTestDb } from './repo-test-harness';
 import type { HealthSummary } from '@/lib/claude/health-summary';
 
 type Repo = typeof import('./daily-summaries');
@@ -73,7 +75,7 @@ describe('daily-summaries repo', () => {
     expect(repo.parseCachedSummary(latest!)).toEqual(SUMMARY_B);
   });
 
-  it('is owner-scoped — one user never reads another user\'s cache', async () => {
+  it("is owner-scoped — one user never reads another user's cache", async () => {
     await repo.upsertCachedSummary(OWNER, '2026-07-10', SUMMARY_A, 'm');
     expect(await repo.getCachedSummary(VIEWER, '2026-07-10')).toBeNull();
     expect(await repo.getLatestCachedSummary(VIEWER)).toBeNull();

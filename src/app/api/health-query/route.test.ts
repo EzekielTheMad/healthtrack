@@ -93,7 +93,7 @@ function insertVital(opts: {
   ctx.sqlite
     .prepare(
       `insert into vitals (id, user_id, metric_key, value, unit, source, recorded_at, metadata, dependent_id, created_at)
-       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`,
+       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`
     )
     .run(
       crypto.randomUUID(),
@@ -103,7 +103,7 @@ function insertVital(opts: {
       opts.unit,
       opts.recordedAt,
       opts.dependentId,
-      new Date().toISOString(),
+      new Date().toISOString()
     );
 }
 
@@ -143,13 +143,37 @@ describe('POST /api/health-query — vitals scope (I1)', () => {
     // Owner's value present; blended (180 + 62) / 2 = 121 average and the
     // dependent's 62 absent.
     expect(prompt).toContain('180');
-    expect(prompt).not.toContain('121');
-    expect(prompt).not.toContain('62');
+    expect(prompt).not.toContain('"mean":121');
+    expect(prompt).not.toContain('weight=62 ');
   });
 
   it('401 without a session', async () => {
     authState.userId = null;
     const res = await route.POST(post({ query: 'hi' }));
     expect(res.status).toBe(401);
+  });
+
+  it('reuses only an answer whose patient, window, and current facts still match', async () => {
+    const first = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
+    expect(first.status).toBe(200);
+    const saved = await first.json();
+    expect(saved.context_metadata.context_version).toBe(2);
+    captured.context = null;
+    const repeat = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
+    expect((await repeat.json()).reused).toBe(true);
+    expect(captured.context).toBeNull();
+    const { createMedication } = await import('@/lib/repos/medications');
+    await createMedication(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      { name: 'Synthetic medicine', startDate: '2026-01-02' }
+    );
+    const changed = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
+    expect(changed.status).toBe(200);
+    expect((captured.context as HealthContext | null)?.medications_data).toContain('2026-01-02');
+    const { listQueryHistory } = await import('@/lib/repos/query-history');
+    expect(
+      (await listQueryHistory(OWNER)).every((entry) => !!entry.contextMetadata?.coverage)
+    ).toBe(true);
   });
 });

@@ -43,7 +43,8 @@ function bannerFromOAuthRedirect(params: { get(name: string): string | null }): 
     const reason = params.get('reason') ?? 'unknown';
     const messages: Record<string, string> = {
       missing_code: 'Authorization was not completed. Please try again.',
-      invalid_state: 'The authorization link expired or did not match this session. Please try connecting again.',
+      invalid_state:
+        'The authorization link expired or did not match this session. Please try connecting again.',
       token_exchange_failed: 'Failed to connect to Oura. Please try again.',
       save_failed: 'Connected to Oura but failed to save. Please try again.',
       config_error: 'Oura integration is not configured. Please contact support.',
@@ -55,7 +56,7 @@ function bannerFromOAuthRedirect(params: { get(name: string): string | null }): 
 }
 
 function formatLastSync(iso: string | null): string {
-  if (!iso) return 'Never';
+  if (!iso) return 'Unknown';
   const date = new Date(iso);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -76,8 +77,20 @@ function formatLastSync(iso: string | null): string {
 }
 
 export function OuraConnectCard() {
-  const { connected, lastSync, syncing, loading, error, connect, disconnect, sync } =
-    useOura();
+  const {
+    connected,
+    lastSync,
+    lastAttempt,
+    lastOutcome,
+    nextRetryAt,
+    retryBlocked,
+    syncing,
+    loading,
+    error,
+    connect,
+    disconnect,
+    sync,
+  } = useOura();
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -148,22 +161,8 @@ export function OuraConnectCard() {
             }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <circle
-                cx="12"
-                cy="12"
-                r="9"
-                stroke="#A78BFA"
-                strokeWidth="2"
-                fill="none"
-              />
-              <circle
-                cx="12"
-                cy="12"
-                r="5"
-                stroke="#A78BFA"
-                strokeWidth="1.5"
-                fill="none"
-              />
+              <circle cx="12" cy="12" r="9" stroke="#A78BFA" strokeWidth="2" fill="none" />
+              <circle cx="12" cy="12" r="5" stroke="#A78BFA" strokeWidth="1.5" fill="none" />
             </svg>
           </div>
           <div>
@@ -197,9 +196,8 @@ export function OuraConnectCard() {
       {banner && (
         <div
           style={{
-            background: banner.type === 'success'
-              ? 'rgba(134, 169, 106, 0.12)'
-              : 'rgba(248, 113, 113, 0.1)',
+            background:
+              banner.type === 'success' ? 'rgba(134, 169, 106, 0.12)' : 'rgba(248, 113, 113, 0.1)',
             border: `1px solid ${banner.type === 'success' ? 'rgba(134, 169, 106, 0.4)' : 'rgba(248, 113, 113, 0.3)'}`,
             borderRadius: '8px',
             padding: '10px 12px',
@@ -215,7 +213,14 @@ export function OuraConnectCard() {
           <button
             type="button"
             onClick={() => setBanner(null)}
-            style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px', lineHeight: 1 }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+              fontSize: '16px',
+              lineHeight: 1,
+            }}
           >
             &times;
           </button>
@@ -253,7 +258,9 @@ export function OuraConnectCard() {
               borderRadius: '8px',
             }}
           >
-            <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>Last synced</span>
+            <span style={{ color: 'var(--color-text-muted)', fontSize: '13px' }}>
+              Last full success
+            </span>
             <span
               className="font-mono"
               style={{ color: 'var(--color-text-primary)', fontSize: '13px' }}
@@ -262,11 +269,20 @@ export function OuraConnectCard() {
             </span>
           </div>
 
+          {lastAttempt && (
+            <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
+              Last attempt: {formatLastSync(lastAttempt)} · {lastOutcome ?? 'unknown outcome'}
+              {retryBlocked && nextRetryAt
+                ? ` · Retry allowed after ${new Date(nextRetryAt).toLocaleString()}`
+                : ''}
+            </p>
+          )}
+
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
               type="button"
               onClick={() => sync()}
-              disabled={syncing}
+              disabled={syncing || retryBlocked}
               style={{
                 flex: 1,
                 display: 'flex',

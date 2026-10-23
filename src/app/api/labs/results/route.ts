@@ -17,7 +17,10 @@ export async function GET(request: NextRequest) {
     const params = request.nextUrl.searchParams;
     const testsParam = params.get('tests');
     const testNames = testsParam
-      ? testsParam.split(',').map((t) => t.trim()).filter(Boolean)
+      ? testsParam
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
       : undefined;
     const rows = await listLabResults(user.id, scopeFromParams(user.id, params), {
       testNames,

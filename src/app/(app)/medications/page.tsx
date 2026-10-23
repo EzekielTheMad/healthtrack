@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMedications } from '@/hooks/useMedications';
 import { useInteractionAlerts } from '@/hooks/useInteractionAlerts';
 import { useCapabilities } from '@/hooks/useCapabilities';
@@ -9,6 +9,7 @@ import Skeleton from '@/components/shared/Skeleton';
 import MedCard from '@/components/medications/MedCard';
 import AddMedForm, { type AddMedFormData } from '@/components/medications/AddMedForm';
 import InteractionAlert from '@/components/medications/InteractionAlert';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 
 /** Friendly absolute date for the last interaction check, e.g. "Jul 13, 2026". */
 function formatCheckDate(iso: string): string {
@@ -22,11 +23,13 @@ export default function MedicationsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const { medications, loading, error, addMedication, updateMedication } = useMedications();
   const { capabilities } = useCapabilities();
+  const { delegateOwnerId } = useActiveProfile();
   const {
     alerts: interactionAlerts,
     status: interactionStatus,
     snoozedCount,
     checking,
+    error: interactionError,
     snoozeAlert,
     checkInteractions,
   } = useInteractionAlerts();
@@ -34,6 +37,29 @@ export default function MedicationsPage() {
   const activeMeds = medications.filter((m) => m.active);
   const pastMeds = medications.filter((m) => !m.active);
   const displayedMeds = tab === 'active' ? activeMeds : pastMeds;
+
+  useEffect(() => {
+    let scrollTimer: number | undefined;
+    const syncRecordLink = () => {
+      const prefix = '#record-';
+      if (!window.location.hash.startsWith(prefix)) return;
+      const id = window.location.hash.slice(prefix.length);
+      const medication = medications.find((row) => row.id === id);
+      if (!medication) return;
+      setTab(medication.active ? 'active' : 'past');
+      if (scrollTimer !== undefined) window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => {
+        document.getElementById(`record-${id}`)?.scrollIntoView?.({ block: 'start' });
+      }, 0);
+    };
+    const initialTimer = window.setTimeout(syncRecordLink, 0);
+    window.addEventListener('hashchange', syncRecordLink);
+    return () => {
+      window.clearTimeout(initialTimer);
+      if (scrollTimer !== undefined) window.clearTimeout(scrollTimer);
+      window.removeEventListener('hashchange', syncRecordLink);
+    };
+  }, [medications]);
 
   // Manual re-check: the auto-check only fires when meds are added/toggled via
   // the UI, so imported meds (or a list whose interactions changed) never get
@@ -47,45 +73,50 @@ export default function MedicationsPage() {
     const newMed = await addMedication({
       name: data.name,
       dosage: data.dosage ?? null,
-      frequency: data.frequency,
+      frequency: data.frequency || null,
       category: data.category ?? null,
       prescriber_id: data.prescriber_id,
-      start_date: data.start_date,
+      start_date: data.start_date || null,
       end_date: data.end_date ?? null,
       active: isActive,
       notes: data.notes ?? null,
       rxcui: data.rxcui ?? null,
     });
     setShowAddForm(false);
-    if (newMed?.id && isActive) {
+    if (newMed?.id && isActive && !delegateOwnerId) {
       checkInteractions(newMed.id);
     }
   };
 
   const handleUpdate = async (id: string, data: AddMedFormData) => {
-    const wasActive = medications.find((m) => m.id === id)?.active;
+    const previous = medications.find((m) => m.id === id);
+    const wasActive = previous?.active;
     const nowActive = data.active ?? wasActive;
 
     await updateMedication(id, {
       name: data.name,
       dosage: data.dosage ?? null,
-      frequency: data.frequency,
+      frequency: data.frequency || null,
       category: data.category ?? null,
       prescriber_id: data.prescriber_id,
-      start_date: data.start_date,
+      start_date: data.start_date || null,
       end_date: data.end_date ?? null,
       notes: data.notes ?? null,
       rxcui: data.rxcui ?? null,
-      ...(data.active !== undefined
-        ? { active: data.active }
-        : {}),
+      ...(data.active !== undefined ? { active: data.active } : {}),
     });
 
-    // Re-check interactions when medication status changes
-    if (!wasActive && nowActive) {
+    const interactionRelevantChange =
+      previous &&
+      (previous.name !== data.name ||
+        previous.dosage !== (data.dosage ?? null) ||
+        previous.frequency !== (data.frequency || null) ||
+        previous.rxcui !== (data.rxcui ?? null));
+    // A date/notes correction does not change the active medication combination.
+    if (!delegateOwnerId && nowActive && (!wasActive || interactionRelevantChange)) {
       // Reactivated — check with the new med included
       checkInteractions(id);
-    } else if (wasActive && !nowActive) {
+    } else if (!delegateOwnerId && wasActive && !nowActive) {
       // Deactivated — re-check so stale alerts referencing this med are cleared
       checkInteractions();
     }
@@ -103,7 +134,12 @@ export default function MedicationsPage() {
             type="button"
             onClick={() => setShowAddForm(true)}
             className="px-5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer"
-            style={{ background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))', color: 'white', boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)' }}
+            style={{
+              background:
+                'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+              color: 'white',
+              boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)',
+            }}
           >
             Add Medication
           </button>
@@ -114,40 +150,55 @@ export default function MedicationsPage() {
           runs automatically on med add/remove; this also offers an on-demand
           re-check. Alerts snooze temporarily (severity-capped) instead of being
           dismissed forever, and the summary line persists an "all clear" state. */}
-      {capabilities?.ai && activeMeds.length >= 2 && (
-        <div className="space-y-3">
-          {interactionAlerts.map((alert) => (
-            <InteractionAlert key={alert.id} alert={alert} onSnooze={snoozeAlert} />
-          ))}
+      {capabilities?.ai &&
+        (activeMeds.length >= 2 ||
+          interactionAlerts.length > 0 ||
+          snoozedCount > 0 ||
+          interactionError) &&
+        !delegateOwnerId && (
+          <div className="space-y-3">
+            {!interactionStatus && (interactionAlerts.length > 0 || snoozedCount > 0) && (
+              <p role="status" className="text-sm" style={{ color: 'var(--color-warning)' }}>
+                Previous interaction alerts may be out of date. Recheck after medication changes.
+              </p>
+            )}
+            {interactionError && (
+              <p role="alert" className="text-sm" style={{ color: 'var(--color-terracotta)' }}>
+                {interactionError}
+              </p>
+            )}
+            {interactionAlerts.map((alert) => (
+              <InteractionAlert key={alert.id} alert={alert} onSnooze={snoozeAlert} />
+            ))}
 
-          <div
-            className="rounded-lg border px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap text-sm"
-            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-          >
-            <span style={{ color: 'var(--color-text-muted)' }}>
-              {interactionAlerts.length > 0
-                ? `${interactionAlerts.length} active interaction${interactionAlerts.length !== 1 ? 's' : ''}${snoozedCount > 0 ? `, ${snoozedCount} snoozed` : ''}`
-                : snoozedCount > 0
-                  ? `No active interactions — ${snoozedCount} snoozed`
-                  : interactionStatus
-                    ? '✓ No interactions found among your active medications'
-                    : 'Interactions haven’t been checked yet'}
-              {interactionStatus && (
-                <span> · checked {formatCheckDate(interactionStatus.checked_at)}</span>
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={handleManualCheck}
-              disabled={checking}
-              className="text-sm font-medium underline hover:opacity-80 disabled:opacity-50 cursor-pointer shrink-0"
-              style={{ color: 'var(--color-sage)' }}
+            <div
+              className="rounded-lg border px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap text-sm"
+              style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
             >
-              {checking ? 'Checking…' : interactionStatus ? 'Check again' : 'Check interactions'}
-            </button>
+              <span style={{ color: 'var(--color-text-muted)' }}>
+                {interactionAlerts.length > 0
+                  ? `${interactionAlerts.length} active interaction${interactionAlerts.length !== 1 ? 's' : ''}${snoozedCount > 0 ? `, ${snoozedCount} snoozed` : ''}`
+                  : snoozedCount > 0
+                    ? `No active interactions — ${snoozedCount} snoozed`
+                    : interactionStatus
+                      ? '✓ No interactions found among your active medications'
+                      : 'Interactions haven’t been checked yet'}
+                {interactionStatus && (
+                  <span> · checked {formatCheckDate(interactionStatus.checked_at)}</span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={handleManualCheck}
+                disabled={checking}
+                className="text-sm font-medium underline hover:opacity-80 disabled:opacity-50 cursor-pointer shrink-0"
+                style={{ color: 'var(--color-sage)' }}
+              >
+                {checking ? 'Checking…' : interactionStatus ? 'Check again' : 'Check interactions'}
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
       {/* Add form */}
       {showAddForm && (
@@ -191,7 +242,11 @@ export default function MedicationsPage() {
       {error && (
         <div
           className="rounded-xl border p-4 text-sm"
-          style={{ borderColor: 'var(--color-terracotta)', color: 'var(--color-terracotta)', backgroundColor: 'rgba(224, 122, 95, 0.05)' }}
+          style={{
+            borderColor: 'var(--color-terracotta)',
+            color: 'var(--color-terracotta)',
+            backgroundColor: 'rgba(224, 122, 95, 0.05)',
+          }}
           role="alert"
         >
           {error}
@@ -232,11 +287,7 @@ export default function MedicationsPage() {
                     />
                   </svg>
                 }
-                title={
-                  tab === 'active'
-                    ? 'No active medications'
-                    : 'No past medications'
-                }
+                title={tab === 'active' ? 'No active medications' : 'No past medications'}
                 description={
                   tab === 'active'
                     ? 'Add your current medications to track dosages, interactions, and refills.'
@@ -254,11 +305,7 @@ export default function MedicationsPage() {
             </div>
           ) : (
             displayedMeds.map((med) => (
-              <MedCard
-                key={med.id}
-                medication={med}
-                onUpdate={handleUpdate}
-              />
+              <MedCard key={med.id} medication={med} onUpdate={handleUpdate} />
             ))
           )}
         </div>

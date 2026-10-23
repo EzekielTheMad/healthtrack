@@ -118,6 +118,8 @@ export function useHealthConnect() {
   }, []);
 
   useEffect(() => {
+    // Initialize the server-backed integration snapshot through the same action as manual refresh.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
   }, [refresh]);
 
@@ -163,7 +165,7 @@ export function useHealthConnect() {
         return false;
       }
     },
-    [integration],
+    [integration]
   );
 
   /** Rebuild canonical nutrition from the retained raw records. */
@@ -223,7 +225,7 @@ export function useHealthConnect() {
         return false;
       }
     },
-    [integration],
+    [integration]
   );
 
   return {

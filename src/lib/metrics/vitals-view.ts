@@ -31,6 +31,7 @@ export interface ViewVitalRow {
   source: string;
   recorded_at: string;
   metadata?: Record<string, unknown> | null;
+  last_received_at?: string | null;
 }
 
 export interface DailyReading {
@@ -39,6 +40,7 @@ export interface DailyReading {
   display: string;
   recordedAt: string;
   source: string;
+  lastReceivedAt?: string | null;
 }
 
 export interface DailyDelta {
@@ -87,15 +89,13 @@ export interface DailySection {
   entries: DailyEntry[];
 }
 
-const REGISTRY_INDEX: ReadonlyMap<string, number> = new Map(
-  METRICS.map((m, i) => [m.key, i]),
-);
+const REGISTRY_INDEX: ReadonlyMap<string, number> = new Map(METRICS.map((m, i) => [m.key, i]));
 
 /** Most recent calendar day (YYYY-MM-DD) with any data; null when empty. */
-export function defaultDayKey(rows: ViewVitalRow[]): string | null {
+export function defaultDayKey(rows: ViewVitalRow[], timeZone?: string): string | null {
   let latest: string | null = null;
   for (const row of rows) {
-    const key = getVitalDayKey(row.recorded_at, row.metric_key);
+    const key = getVitalDayKey(row.recorded_at, row.metric_key, timeZone);
     if (latest === null || key > latest) latest = key;
   }
   return latest;
@@ -127,7 +127,7 @@ function buildDelta(
   dayValue: number,
   baseline: number | null,
   decimals: number,
-  direction: EffectiveGoalDirection | undefined,
+  direction: EffectiveGoalDirection | undefined
 ): DailyDelta | null {
   if (baseline === null) return null;
   const amount = dayValue - baseline;
@@ -137,8 +137,7 @@ function buildDelta(
   const flat = Math.abs(amount) < band;
   const raw = deltaTone(amount, direction, band);
   // Maintain drift is a caution, not a failure — map 'bad' to the warn tone.
-  const tone: DailyDelta['tone'] =
-    raw === 'bad' && direction === 'maintain' ? 'warn' : raw;
+  const tone: DailyDelta['tone'] = raw === 'bad' && direction === 'maintain' ? 'warn' : raw;
   return {
     direction: flat ? 'flat' : amount > 0 ? 'up' : 'down',
     amount,
@@ -158,13 +157,14 @@ export function buildDailySections(
   rows: ViewVitalRow[],
   dayKey: string,
   activeMetricGoals: readonly ActiveMetricGoal[] = [],
+  timeZone?: string
 ): DailySection[] {
   // Trailing 7-day baseline window: dayKey-7 .. dayKey-1 inclusive.
   const windowStart = shiftDayKey(dayKey, -7);
 
   const byMetric = new Map<string, { day: ViewVitalRow[]; window: ViewVitalRow[] }>();
   for (const row of rows) {
-    const rowDay = getVitalDayKey(row.recorded_at, row.metric_key);
+    const rowDay = getVitalDayKey(row.recorded_at, row.metric_key, timeZone);
     const inDay = rowDay === dayKey;
     const inWindow = rowDay >= windowStart && rowDay < dayKey;
     if (!inDay && !inWindow) continue;
@@ -194,9 +194,7 @@ export function buildDailySections(
       baseline = aggregate === 'sum' ? total / 7 : total / window.length;
     }
 
-    const chronological = [...day].sort((a, b) =>
-      a.recorded_at.localeCompare(b.recorded_at),
-    );
+    const chronological = [...day].sort((a, b) => a.recorded_at.localeCompare(b.recorded_at));
     const readings: DailyReading[] = intraday
       ? chronological.map((r) => ({
           value: r.value,
@@ -206,6 +204,7 @@ export function buildDailySections(
               : fmtNum(r.value, metric?.decimals ?? decimals),
           recordedAt: r.recorded_at,
           source: r.source,
+          lastReceivedAt: r.last_received_at ?? null,
         }))
       : (() => {
           const latest = chronological[chronological.length - 1];
@@ -220,6 +219,7 @@ export function buildDailySections(
                     : fmtNum(dayValue, metric?.decimals ?? decimals),
               recordedAt: latest.recorded_at,
               source: latest.source,
+              lastReceivedAt: latest.last_received_at ?? null,
             },
           ];
         })();
@@ -237,7 +237,7 @@ export function buildDailySections(
         dayValue,
         baseline,
         decimals,
-        resolveGoalDirection(key, metric?.goalDirection, activeMetricGoals),
+        resolveGoalDirection(key, metric?.goalDirection, activeMetricGoals)
       ),
     };
 
@@ -254,7 +254,7 @@ export function buildDailySections(
     entries.sort(
       (a, b) =>
         (REGISTRY_INDEX.get(a.key) ?? Number.MAX_SAFE_INTEGER) -
-        (REGISTRY_INDEX.get(b.key) ?? Number.MAX_SAFE_INTEGER),
+        (REGISTRY_INDEX.get(b.key) ?? Number.MAX_SAFE_INTEGER)
     );
     sections.push({ category, entries });
   }
@@ -300,7 +300,7 @@ function weekStartKey(iso: string): string {
 export function bucketWeekly(
   points: ChartPoint[],
   aggregate: MetricDef['aggregate'],
-  decimals = 1,
+  decimals = 1
 ): ChartPoint[] {
   const buckets = new Map<string, { values: number[]; days: Set<string> }>();
   for (const p of points) {
@@ -319,10 +319,7 @@ export function bucketWeekly(
     .map(([key, { values, days }]) => ({
       date: `${key}T00:00:00.000Z`,
       value: Number(
-        (aggregate === 'sum'
-          ? values.reduce((a, b) => a + b, 0)
-          : mean(values)
-        ).toFixed(decimals),
+        (aggregate === 'sum' ? values.reduce((a, b) => a + b, 0) : mean(values)).toFixed(decimals)
       ),
       days: days.size,
     }));

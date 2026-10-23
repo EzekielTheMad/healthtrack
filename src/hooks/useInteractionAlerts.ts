@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { InteractionAlert, InteractionStatus } from '@/lib/types';
 
@@ -18,8 +18,12 @@ export function useInteractionAlerts() {
   const [error, setError] = useState<string | null>(null);
   // Distinct from `loading` (initial fetch): true while an interaction check
   // is running, so a manual "Check interactions" button can show progress.
-  const [checking, setChecking] = useState(false);
+  const [checkingFor, setCheckingFor] = useState<string | null>(null);
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
   const { dependentId, delegateOwnerId } = useActiveProfile();
+  const scopeKey = `${delegateOwnerId ?? 'self'}:${dependentId ?? 'self'}`;
+  const activeScope = useRef(scopeKey);
+  const checkVersion = useRef(0);
 
   // Scope params mirror the old PostgREST query: delegate mode targets the
   // owner with no dependent filter (the API returns empty there — the data is
@@ -44,14 +48,19 @@ export function useInteractionAlerts() {
     return (await res.json()) as InteractionPayload;
   }, [buildUrl]);
 
-  const applyPayload = useCallback((data: InteractionPayload) => {
-    setAlerts(data.alerts ?? []);
-    setStatus(data.status ?? null);
-    setSnoozedCount(data.snoozed_count ?? 0);
-  }, []);
+  const applyPayload = useCallback(
+    (data: InteractionPayload) => {
+      setAlerts(data.alerts ?? []);
+      setStatus(data.status ?? null);
+      setSnoozedCount(data.snoozed_count ?? 0);
+      setLoadedScope(scopeKey);
+    },
+    [scopeKey]
+  );
 
   useEffect(() => {
     let cancelled = false;
+    activeScope.current = scopeKey;
 
     async function load() {
       setLoading(true);
@@ -71,7 +80,7 @@ export function useInteractionAlerts() {
     return () => {
       cancelled = true;
     };
-  }, [fetchStatus, applyPayload]);
+  }, [fetchStatus, applyPayload, scopeKey]);
 
   /** Snooze an alert for `days`; the server clamps to the severity cap. */
   const snoozeAlert = useCallback(
@@ -80,28 +89,25 @@ export function useInteractionAlerts() {
       setAlerts((prev) => prev.filter((a) => a.id !== alertId));
       setSnoozedCount((n) => n + 1);
 
-      const res = await fetch(
-        `/api/interaction-alerts/${encodeURIComponent(alertId)}`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ snooze_days: days }),
-        },
-      );
+      const res = await fetch(`/api/interaction-alerts/${encodeURIComponent(alertId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snooze_days: days }),
+      });
 
       if (!res.ok) {
         // Revert by re-fetching authoritative state.
         const body = await res.json().catch(() => null);
-        setError(body?.message ?? 'Failed to snooze alert');
+        if (activeScope.current === scopeKey) setError(body?.message ?? 'Failed to snooze alert');
         try {
           const data = await fetchStatus();
-          if (data) applyPayload(data);
+          if (data && activeScope.current === scopeKey) applyPayload(data);
         } catch {
           // keep optimistic state if refresh also fails
         }
       }
     },
-    [fetchStatus, applyPayload],
+    [fetchStatus, applyPayload, scopeKey]
   );
 
   /**
@@ -111,8 +117,11 @@ export function useInteractionAlerts() {
    */
   const checkInteractions = useCallback(
     async (triggerMedId?: string): Promise<{ hasInteractions: boolean } | null> => {
+      const version = ++checkVersion.current;
+      const startedScope = scopeKey;
       setError(null);
-      setChecking(true);
+      setStatus(null);
+      setCheckingFor(startedScope);
 
       try {
         const body: Record<string, unknown> = {};
@@ -134,34 +143,42 @@ export function useInteractionAlerts() {
         });
 
         if (!res.ok) {
-          // Background auto-checks stay silent (501 = AI off, or a transient
-          // AI error). A manual caller gets `null` and decides what to show.
+          const failure = await res.json().catch(() => null);
+          if (activeScope.current === startedScope && checkVersion.current === version) {
+            setError(
+              failure?.message ??
+                'Failed to check interactions. Previous alerts may be out of date.'
+            );
+          }
           return null;
         }
 
         const result = (await res.json()) as { has_interactions?: boolean };
+        if (activeScope.current !== startedScope || checkVersion.current !== version) return null;
 
         // Refresh the whole status (alerts + last-check + snoozed count).
         const data = await fetchStatus();
-        if (data) applyPayload(data);
+        if (data && activeScope.current === startedScope && checkVersion.current === version)
+          applyPayload(data);
         return { hasInteractions: Boolean(result.has_interactions) };
       } catch {
-        setError('Failed to check interactions');
+        if (activeScope.current === startedScope && checkVersion.current === version)
+          setError('Failed to check interactions. Previous alerts may be out of date.');
         return null;
       } finally {
-        setChecking(false);
+        if (checkVersion.current === version) setCheckingFor(null);
       }
     },
-    [dependentId, delegateOwnerId, fetchStatus, applyPayload],
+    [dependentId, delegateOwnerId, fetchStatus, applyPayload, scopeKey]
   );
 
   return {
-    alerts,
-    status,
-    snoozedCount,
+    alerts: loadedScope === scopeKey ? alerts : [],
+    status: loadedScope === scopeKey ? status : null,
+    snoozedCount: loadedScope === scopeKey ? snoozedCount : 0,
     loading,
     error,
-    checking,
+    checking: checkingFor === scopeKey,
     snoozeAlert,
     checkInteractions,
   };

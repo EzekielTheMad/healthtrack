@@ -76,7 +76,10 @@ describe('recoveryVerdict', () => {
   });
 
   it('is Not enough data without readiness or HRV', () => {
-    expect(recoveryVerdict(null, null, null)).toEqual({ label: 'Not enough data', tone: 'neutral' });
+    expect(recoveryVerdict(null, null, null)).toEqual({
+      label: 'Not enough data',
+      tone: 'neutral',
+    });
     expect(recoveryVerdict(null, 50, null)).toEqual({ label: 'Not enough data', tone: 'neutral' });
   });
 });
@@ -108,7 +111,9 @@ describe('frequencyVerdict', () => {
   const session = (type: string, iso: string) => ({ type, startedAt: iso });
 
   it('is null without active frequency goals', () => {
-    expect(frequencyVerdict([], [session('strength', '2026-07-09T17:00:00Z')], NOW, 'UTC')).toBeNull();
+    expect(
+      frequencyVerdict([], [session('strength', '2026-07-09T17:00:00Z')], NOW, 'UTC')
+    ).toBeNull();
   });
 
   it('counts only this Monday-anchored week and labels per goal in type order', () => {
@@ -131,11 +136,9 @@ describe('frequencyVerdict', () => {
     // 2026-07-06T02:00Z is Sunday Jul 5 in Phoenix (UTC-7) → prior week there.
     const goals = [{ sessionType: 'strength', perWeek: 2 }];
     const sessions = [session('strength', '2026-07-06T02:00:00Z')];
-    expect(frequencyVerdict(goals, sessions, NOW, 'UTC')!.label).toBe(
-      '1/2 lifts this week',
-    );
+    expect(frequencyVerdict(goals, sessions, NOW, 'UTC')!.label).toBe('1/2 lifts this week');
     expect(frequencyVerdict(goals, sessions, NOW, 'America/Phoenix')!.label).toBe(
-      '0/2 lifts this week',
+      '0/2 lifts this week'
     );
   });
 
@@ -180,12 +183,12 @@ describe('frequencyVerdict', () => {
 // ---------------------------------------------------------------------------
 
 describe('cpapAdherence', () => {
-  it('counts nights since the first cpap record; sub-threshold and missing nights are unused', () => {
+  it('reports coverage separately and never counts missing nights as zero usage', () => {
     const rows = [
       row('cpap_usage', 7.5, '2026-07-01'), // first record → window start
       row('cpap_usage', 0, '2026-07-02'), // recorded but unused
       row('cpap_usage', 6, '2026-07-03'),
-      // 07-04..07-06 missing entirely → unused
+      // 07-04..07-06 missing entirely → unknown
       row('cpap_usage', 8, '2026-07-07'),
       row('cpap_usage', 7, '2026-07-08'),
       row('cpap_usage', 0, '2026-07-09'),
@@ -193,11 +196,13 @@ describe('cpapAdherence', () => {
     ];
     const a = cpapAdherence(rows, NOW);
     expect(a).toEqual({
-      pct: 50,
+      pct: 71,
       usedNights: 5,
       totalNights: 10, // Jul 1 .. Jul 10 inclusive
+      reportedNights: 7,
+      missingNights: 3,
       avgHours: 7.2, // (7.5+6+8+7+7.5)/5
-      compliant: false, // 50% < 70%
+      compliant: null, // incomplete feed cannot establish compliance
     });
   });
 
@@ -216,9 +221,9 @@ describe('cpapAdherence', () => {
     // 7 of 10 nights ≥4h since the first record (Jul 1 .. Jul 10).
     const seventy = [
       ...['01', '02', '03', '04', '05', '06', '07'].map((d) =>
-        row('cpap_usage', 7, `2026-07-${d}`),
+        row('cpap_usage', 7, `2026-07-${d}`)
       ),
-      row('cpap_usage', 0, '2026-07-10'), // keeps today in the denominator
+      ...['08', '09', '10'].map((d) => row('cpap_usage', 0, `2026-07-${d}`)),
     ];
     expect(cpapAdherence(seventy, NOW)?.compliant).toBe(true); // 7/10
     const belowSeventy = seventy.slice(1); // first record Jul 2 → 6/9 ≈ 67%
@@ -248,7 +253,10 @@ describe('cpapAdherence', () => {
     const a = cpapAdherence(rows, NOW);
     expect(a?.totalNights).toBe(90);
     expect(a?.usedNights).toBe(1);
-    expect(a?.pct).toBe(1);
+    expect(a?.pct).toBe(100);
+    expect(a?.reportedNights).toBe(1);
+    expect(a?.missingNights).toBe(89);
+    expect(a?.compliant).toBeNull();
   });
 
   it('ends the denominator at yesterday when tonight has no data yet', () => {
@@ -263,10 +271,7 @@ describe('cpapAdherence', () => {
   });
 
   it('includes today in the denominator once today has a record', () => {
-    const rows = [
-      row('cpap_usage', 7, '2026-07-09'),
-      row('cpap_usage', 7, '2026-07-10'),
-    ];
+    const rows = [row('cpap_usage', 7, '2026-07-09'), row('cpap_usage', 7, '2026-07-10')];
     const a = cpapAdherence(rows, NOW);
     expect(a?.totalNights).toBe(2); // Jul 9 .. Jul 10
     expect(a?.pct).toBe(100);
@@ -282,6 +287,17 @@ describe('cpapAdherence', () => {
 // ---------------------------------------------------------------------------
 
 describe('weightTrend', () => {
+  it('ends rolling calendar windows on the configured instance day near midnight', () => {
+    const now = new Date('2026-10-23T06:30:00Z');
+    const rows = [row('weight', 100, '2026-10-16'), row('weight', 200, '2026-10-23')];
+    expect(weightTrend(rows, now, 'America/Phoenix').avg7).toBe(100);
+    expect(weightTrend(rows, now, 'America/New_York').avg7).toBe(200);
+    const body = buildFocusPanels(rows, now, { timeZone: 'America/Phoenix' }).find(
+      (panel) => panel.id === 'body'
+    );
+    expect(body?.stats.find((stat) => stat.key === 'weight')?.value).toBe('100');
+  });
+
   it('computes 7d rolling average and lbs/week rate from UTC day-keyed daily means', () => {
     const rows = [
       // last 7 days (Jul 4–10): daily values 210, 211, 209 → avg 210
@@ -327,12 +343,24 @@ describe('buildFocusPanels gating', () => {
   });
 
   it('gates each panel on its required metrics', () => {
-    expect(buildFocusPanels([row('steps', 5000, '2026-07-10')], NOW).map((p) => p.id)).toEqual(['activity']);
-    expect(buildFocusPanels([row('weight', 210, '2026-07-10')], NOW).map((p) => p.id)).toEqual(['body']);
-    expect(buildFocusPanels([row('ahi', 3, '2026-07-10')], NOW).map((p) => p.id)).toEqual(['apnea']);
-    expect(buildFocusPanels([row('cpap_usage', 7, '2026-07-10')], NOW).map((p) => p.id)).toEqual(['apnea']);
-    expect(buildFocusPanels([row('readiness_score', 80, '2026-07-10')], NOW).map((p) => p.id)).toEqual(['recovery']);
-    expect(buildFocusPanels([row('hrv_rmssd', 50, '2026-07-10')], NOW).map((p) => p.id)).toEqual(['recovery']);
+    expect(buildFocusPanels([row('steps', 5000, '2026-07-10')], NOW).map((p) => p.id)).toEqual([
+      'activity',
+    ]);
+    expect(buildFocusPanels([row('weight', 210, '2026-07-10')], NOW).map((p) => p.id)).toEqual([
+      'body',
+    ]);
+    expect(buildFocusPanels([row('ahi', 3, '2026-07-10')], NOW).map((p) => p.id)).toEqual([
+      'apnea',
+    ]);
+    expect(buildFocusPanels([row('cpap_usage', 7, '2026-07-10')], NOW).map((p) => p.id)).toEqual([
+      'apnea',
+    ]);
+    expect(
+      buildFocusPanels([row('readiness_score', 80, '2026-07-10')], NOW).map((p) => p.id)
+    ).toEqual(['recovery']);
+    expect(buildFocusPanels([row('hrv_rmssd', 50, '2026-07-10')], NOW).map((p) => p.id)).toEqual([
+      'recovery',
+    ]);
     // Non-gating metrics alone build nothing.
     expect(buildFocusPanels([row('resting_hr', 60, '2026-07-10')], NOW)).toEqual([]);
   });
@@ -396,9 +424,7 @@ describe('apnea panel', () => {
   });
 
   it('treats AHI nights as used when there is no usage data at all', () => {
-    const rows = ['01', '02', '03', '05', '07', '09'].map((d) =>
-      row('ahi', 10, `2026-07-${d}`),
-    );
+    const rows = ['01', '02', '03', '05', '07', '09'].map((d) => row('ahi', 10, `2026-07-${d}`));
     const p = panel(rows, 'apnea');
     expect(p.verdict).toEqual({ label: 'Partially controlled', tone: 'warning' });
     expect(p.nights?.filter((n) => n.used)).toHaveLength(6);
@@ -414,7 +440,7 @@ describe('apnea panel', () => {
     expect(panel(rows, 'apnea').verdict).toEqual({ label: 'Not enough data', tone: 'neutral' });
   });
 
-  it('builds a 14-night evidence strip with gray (unused) nights', () => {
+  it('keeps recorded zero nights distinct from unknown nights in the evidence strip', () => {
     const p = panel(apneaRows(), 'apnea');
     expect(p.nights).toHaveLength(14);
     expect(p.nights![0].dayKey).toBe('2026-06-27');
@@ -423,27 +449,27 @@ describe('apnea panel', () => {
     expect(jul2.used).toBe(false);
     expect(jul2.ahi).toBe(20);
     const jun27 = p.nights![0];
-    expect(jun27.used).toBe(false);
+    expect(jun27.used).toBeNull();
     expect(jun27.ahi).toBeNull();
   });
 
-  it('shows adherence with the night counts, amber under 70%', () => {
+  it('shows recorded-night usage with coverage and a neutral tone when reports are missing', () => {
     const s = stat(apneaRows(), 'apnea', 'adherence');
-    expect(s.value).toBe('60%'); // 6 used / 10 nights since first record
-    expect(s.sub).toBe('6/10 nights ≥4h');
-    expect(s.tone).toBe('warn');
+    expect(s.value).toBe('86%'); // 6 used / 7 reported, 3 unknown
+    expect(s.sub).toBe('6/7 reported nights ≥4h · 7/10 nights reported · 3 missing');
+    expect(s.tone).toBe('neutral');
   });
 
   it('tints adherence green at 70% or more compliant nights', () => {
     const rows = [
       ...['03', '04', '05', '06', '07', '08', '09'].map((d) =>
-        row('cpap_usage', 7, `2026-07-${d}`),
+        row('cpap_usage', 7, `2026-07-${d}`)
       ),
       row('ahi', 3, '2026-07-09'),
     ];
     const s = stat(rows, 'apnea', 'adherence');
     expect(s.value).toBe('100%'); // 7/7 nights (today has no record yet)
-    expect(s.sub).toBe('7/7 nights ≥4h');
+    expect(s.sub).toBe('7/7 reported nights ≥4h · 7/7 nights reported');
     expect(s.tone).toBe('good');
   });
 
@@ -493,10 +519,7 @@ describe('recovery panel', () => {
   });
 
   it('falls back to the HRV norm when readiness is missing, with % delta', () => {
-    const rows = [
-      row('hrv_rmssd', 45, '2026-07-10'),
-      row('hrv_rmssd', 55, '2026-07-01'),
-    ];
+    const rows = [row('hrv_rmssd', 45, '2026-07-10'), row('hrv_rmssd', 55, '2026-07-01')];
     const p = panel(rows, 'recovery');
     expect(p.verdict).toEqual({ label: 'Take it easier', tone: 'warning' }); // −10% vs mean 50
     const s = stat(rows, 'recovery', 'hrv_rmssd');
@@ -551,10 +574,7 @@ describe('recovery panel', () => {
   });
 
   it('excludes the latest HRV reading from its own fallback baseline', () => {
-    const rows = [
-      row('hrv_rmssd', 54, '2026-07-10'),
-      row('hrv_rmssd', 60, '2026-07-05'),
-    ];
+    const rows = [row('hrv_rmssd', 54, '2026-07-10'), row('hrv_rmssd', 60, '2026-07-05')];
     // Baseline is 60 (not mean(54, 60) = 57) → 54 is −10% → Take it easier.
     expect(panel(rows, 'recovery').verdict).toEqual({
       label: 'Take it easier',
@@ -689,7 +709,7 @@ describe('goal overrides', () => {
     ];
     expect(buildFocusPanels(rows, NOW, {})).toEqual(buildFocusPanels(rows, NOW));
     expect(
-      buildFocusPanels(rows, NOW, { metricGoals: [], frequencyGoals: [], weekSessions: [] }),
+      buildFocusPanels(rows, NOW, { metricGoals: [], frequencyGoals: [], weekSessions: [] })
     ).toEqual(buildFocusPanels(rows, NOW));
   });
 
@@ -718,10 +738,7 @@ describe('goal overrides', () => {
     expect(stat(goalBodyRows(), 'body', 'weight', goals).tone).toBe('warn');
 
     // Steady rows: identical weekly averages → rate 0.
-    const steady = [
-      row('weight', 210, '2026-07-08'),
-      row('weight', 210, '2026-07-01'),
-    ];
+    const steady = [row('weight', 210, '2026-07-08'), row('weight', 210, '2026-07-01')];
     expect(panel(steady, 'body', goals).verdict).toEqual({
       label: 'Holding steady',
       tone: 'success',
@@ -770,7 +787,7 @@ describe('goal overrides', () => {
       metricGoals: [{ metricKey: 'weight', direction: 'decrease' }],
     };
     expect(
-      panel(goalBodyRows(), 'body', goals).stats.find((s) => s.key === 'weight_goal'),
+      panel(goalBodyRows(), 'body', goals).stats.find((s) => s.key === 'weight_goal')
     ).toBeUndefined();
   });
 
@@ -882,9 +899,7 @@ describe('activity panel', () => {
   it('reports no change when the weekly pace matches the 30d pace', () => {
     const rows = [
       // 7 days × 1000 = 7000 in 7d; +23000 earlier → 30000/30 = 1000/day
-      ...['04', '05', '06', '07', '08', '09', '10'].map((d) =>
-        row('steps', 1000, `2026-07-${d}`),
-      ),
+      ...['04', '05', '06', '07', '08', '09', '10'].map((d) => row('steps', 1000, `2026-07-${d}`)),
       row('steps', 23000, '2026-06-11'),
     ];
     const s = stat(rows, 'activity', 'steps');
@@ -921,10 +936,7 @@ describe('activity panel', () => {
     expect(stepsOnly.stats.map((s) => s.key)).toEqual(['steps']);
     expect(stepsOnly.chartMetrics).toEqual(['steps']);
 
-    const withCals = [
-      row('steps', 5000, '2026-07-10'),
-      row('active_calories', 700, '2026-07-10'),
-    ];
+    const withCals = [row('steps', 5000, '2026-07-10'), row('active_calories', 700, '2026-07-10')];
     expect(panel(withCals, 'activity').stats.map((s) => s.key)).toEqual([
       'steps',
       'active_calories',

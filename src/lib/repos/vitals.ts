@@ -38,7 +38,7 @@ export interface ListVitalsOptions {
 export async function listVitals(
   actorId: string,
   scope: ListScope,
-  opts: ListVitalsOptions = {},
+  opts: ListVitalsOptions = {}
 ): Promise<VitalRow[]> {
   await requireListAuthz(actorId, scope, 'vitals', 'read');
   const query = db
@@ -50,8 +50,8 @@ export async function listVitals(
         dependentFilter(vitals.dependentId, scope.dependentId),
         opts.metricKey ? eq(vitals.metricKey, opts.metricKey) : undefined,
         opts.startDate ? gte(vitals.recordedAt, opts.startDate) : undefined,
-        opts.endDate ? lte(vitals.recordedAt, opts.endDate) : undefined,
-      ),
+        opts.endDate ? lte(vitals.recordedAt, opts.endDate) : undefined
+      )
     )
     .orderBy(desc(vitals.recordedAt));
   return opts.limit !== undefined ? query.limit(opts.limit) : query;
@@ -73,7 +73,7 @@ export async function listVitals(
 export async function createVital(
   actorId: string,
   scope: { ownerId: string; dependentId: string | null },
-  input: unknown,
+  input: unknown
 ): Promise<VitalRow> {
   await requireAuthz(actorId, scope, 'vitals', 'write');
   const values = validateVitalWrite(input);
@@ -179,26 +179,25 @@ export function validateVitalWrite(input: unknown): ValidatedVitalWrite {
   const parsed = vitalWriteSchema.safeParse(input);
   if (!parsed.success) {
     const detail = parsed.error.issues
-      .map((i) => `${i.path.map((p) => camelToSnakeKey(String(p))).join('.') || 'body'}: ${i.message}`)
+      .map(
+        (i) => `${i.path.map((p) => camelToSnakeKey(String(p))).join('.') || 'body'}: ${i.message}`
+      )
       .join('; ');
     throw new VitalWriteError(`Invalid vital record — ${detail}`);
   }
   const { metricKey, valueLabel, unit, source, recordedAt, metadata } = parsed.data;
   let value = parsed.data.value;
 
-  if (
-    metadata !== undefined &&
-    JSON.stringify(metadata).length > MAX_METADATA_JSON_CHARS
-  ) {
+  if (metadata !== undefined && JSON.stringify(metadata).length > MAX_METADATA_JSON_CHARS) {
     throw new VitalWriteError(
-      `metadata is too large — its JSON serialization must be at most ${MAX_METADATA_JSON_CHARS} characters.`,
+      `metadata is too large — its JSON serialization must be at most ${MAX_METADATA_JSON_CHARS} characters.`
     );
   }
 
   const metric = getMetric(metricKey);
   if (!metric) {
     throw new VitalWriteError(
-      `Unknown metric key '${metricKey}'. The metric registry is closed — see /docs/api for the list of supported metrics.`,
+      `Unknown metric key '${metricKey}'. The metric registry is closed — see /docs/api for the list of supported metrics.`
     );
   }
 
@@ -210,22 +209,24 @@ export function validateVitalWrite(input: unknown): ValidatedVitalWrite {
       const idx = labels.findIndex((l) => l.toLowerCase() === valueLabel.toLowerCase());
       if (idx === -1) {
         throw new VitalWriteError(
-          `Unknown value_label '${valueLabel}' for '${metricKey}'. Valid labels: ${labels.join(', ')}.`,
+          `Unknown value_label '${valueLabel}' for '${metricKey}'. Valid labels: ${labels.join(', ')}.`
         );
       }
       if (value !== undefined && value !== idx + 1) {
         throw new VitalWriteError(
-          `value ${value} does not match value_label '${valueLabel}' (= ${idx + 1}) for '${metricKey}' — send one or the other.`,
+          `value ${value} does not match value_label '${valueLabel}' (= ${idx + 1}) for '${metricKey}' — send one or the other.`
         );
       }
       value = idx + 1;
     } else if (value !== undefined) {
       if (!Number.isInteger(value)) {
-        throw new VitalWriteError(`'${metricKey}' is an ordinal metric — value must be an integer.`);
+        throw new VitalWriteError(
+          `'${metricKey}' is an ordinal metric — value must be an integer.`
+        );
       }
       if (value < 1 || value > labels.length) {
         throw new VitalWriteError(
-          `value ${value} out of range for '${metricKey}' — must be between 1 and ${labels.length} (${labels.join(', ')}).`,
+          `value ${value} out of range for '${metricKey}' — must be between 1 and ${labels.length} (${labels.join(', ')}).`
         );
       }
     } else {
@@ -235,7 +236,7 @@ export function validateVitalWrite(input: unknown): ValidatedVitalWrite {
   } else {
     if (valueLabel !== undefined) {
       throw new VitalWriteError(
-        `value_label is only valid for ordinal metrics — '${metricKey}' takes a numeric value.`,
+        `value_label is only valid for ordinal metrics — '${metricKey}' takes a numeric value.`
       );
     }
     if (value === undefined) {
@@ -248,9 +249,7 @@ export function validateVitalWrite(input: unknown): ValidatedVitalWrite {
       (metric.min !== undefined && value < metric.min) ||
       (metric.max !== undefined && value > metric.max)
     ) {
-      throw new VitalWriteError(
-        `'${metricKey}' must be between ${metric.min} and ${metric.max}.`,
-      );
+      throw new VitalWriteError(`'${metricKey}' must be between ${metric.min} and ${metric.max}.`);
     }
   }
 
@@ -267,7 +266,7 @@ export function validateVitalWrite(input: unknown): ValidatedVitalWrite {
     const converted = convertToCanonicalUnit(metric.unit, unit, value);
     if (converted === undefined) {
       throw new VitalWriteError(
-        `Unit '${unit}' is not accepted for '${metricKey}' — the canonical unit is '${metric.unit}'. Accepted units: ${acceptedUnitsFor(metric.unit).join(', ')}.`,
+        `Unit '${unit}' is not accepted for '${metricKey}' — the canonical unit is '${metric.unit}'. Accepted units: ${acceptedUnitsFor(metric.unit).join(', ')}.`
       );
     }
     value = converted;
@@ -275,14 +274,12 @@ export function validateVitalWrite(input: unknown): ValidatedVitalWrite {
 
   const ts = new Date(recordedAt);
   if (Number.isNaN(ts.getTime())) {
-    throw new VitalWriteError(
-      `recorded_at '${recordedAt}' is not a valid ISO date or datetime.`,
-    );
+    throw new VitalWriteError(`recorded_at '${recordedAt}' is not a valid ISO date or datetime.`);
   }
   const year = ts.getUTCFullYear();
   if (year < 1900 || year > 2100) {
     throw new VitalWriteError(
-      `recorded_at year ${year} is out of range — must be between 1900 and 2100.`,
+      `recorded_at year ${year} is out of range — must be between 1900 and 2100.`
     );
   }
   const normalizedAt = metric.intraday
@@ -308,14 +305,14 @@ export type VitalsWriteDb = DB | Parameters<Parameters<DB['transaction']>[0]>[0]
 function upsertTupleFilter(
   userId: string,
   key: { metricKey: string; recordedAt: string; source: string },
-  dependentId: string | null,
+  dependentId: string | null
 ) {
   return and(
     eq(vitals.userId, userId),
     eq(vitals.metricKey, key.metricKey),
     eq(vitals.recordedAt, key.recordedAt),
     eq(vitals.source, key.source),
-    dependentId === null ? isNull(vitals.dependentId) : eq(vitals.dependentId, dependentId),
+    dependentId === null ? isNull(vitals.dependentId) : eq(vitals.dependentId, dependentId)
   );
 }
 
@@ -331,16 +328,20 @@ export function upsertOwnVital(
   dbh: VitalsWriteDb,
   userId: string,
   input: UpsertVitalInput | unknown,
-  dependentId: string | null = null,
+  dependentId: string | null = null
 ): 'inserted' | 'updated' {
   const v = validateVitalWrite(input);
+  const lastReceivedAt = new Date().toISOString();
   const updated = dbh
     .update(vitals)
-    .set({ value: v.value, unit: v.unit, metadata: v.metadata })
+    .set({ value: v.value, unit: v.unit, metadata: v.metadata, lastReceivedAt })
     .where(upsertTupleFilter(userId, v, dependentId))
     .run();
   if (updated.changes > 0) return 'updated';
-  dbh.insert(vitals).values({ ...v, userId, dependentId }).run();
+  dbh
+    .insert(vitals)
+    .values({ ...v, userId, dependentId, lastReceivedAt })
+    .run();
   return 'inserted';
 }
 
@@ -351,7 +352,7 @@ export function findOwnVital(
   dbh: VitalsWriteDb,
   userId: string,
   key: { metricKey: string; recordedAt: string; source: string },
-  dependentId: string | null = null,
+  dependentId: string | null = null
 ): VitalRow | undefined {
   return dbh
     .select()
@@ -370,7 +371,7 @@ export async function listVitalReferenceRanges(): Promise<VitalReferenceRangeRow
 
 /** Owner-only: the actor's own source preferences. */
 export async function listVitalSourcePreferences(
-  actorId: string,
+  actorId: string
 ): Promise<VitalSourcePreferenceRow[]> {
   return db
     .select()
@@ -383,7 +384,7 @@ export async function listVitalSourcePreferences(
 export async function setVitalSourcePreference(
   actorId: string,
   metricKey: string,
-  preferredSource: string,
+  preferredSource: string
 ): Promise<VitalSourcePreferenceRow> {
   const values = z
     .object({
@@ -400,4 +401,18 @@ export async function setVitalSourcePreference(
     })
     .returning();
   return row;
+}
+
+export async function deleteVitalSourcePreference(
+  actorId: string,
+  metricKey: string
+): Promise<void> {
+  await db
+    .delete(vitalSourcePreferences)
+    .where(
+      and(
+        eq(vitalSourcePreferences.userId, actorId),
+        eq(vitalSourcePreferences.metricKey, metricKey)
+      )
+    );
 }

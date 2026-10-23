@@ -84,9 +84,7 @@ export async function GET(request: NextRequest) {
   // Encrypt tokens before storage
   const accessTokenEncrypted = encrypt(tokenData.access_token);
   const refreshTokenEncrypted = encrypt(tokenData.refresh_token);
-  const tokenExpiresAt = new Date(
-    Date.now() + tokenData.expires_in * 1000,
-  ).toISOString();
+  const tokenExpiresAt = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
 
   // Upsert connected source (owner-only repo; resets status + last_sync_at)
   try {
@@ -112,11 +110,7 @@ export async function GET(request: NextRequest) {
     if (profile) {
       const updates: Record<string, unknown> = {};
 
-      // Convert Oura age to approximate date_of_birth (Jan 1 of birth year)
-      if (!profile.dateOfBirth && personalInfo.age > 0) {
-        const birthYear = new Date().getFullYear() - personalInfo.age;
-        updates.dateOfBirth = `${birthYear}-01-01`;
-      }
+      // Age does not establish an exact birth date. Leave unknown DOB for manual entry.
 
       // Convert kg to lbs (1 kg = 2.20462 lbs)
       if (!profile.weightLbs && personalInfo.weight > 0) {

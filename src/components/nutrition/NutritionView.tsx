@@ -157,16 +157,13 @@ export default function NutritionView() {
       const today = new Date().toISOString().slice(0, 10);
       const start = shiftDayKey(today, -Number(days));
       try {
-        const res = await fetch(
-          `/api/nutrition/daily?start_date=${start}&end_date=${today}`,
-          { signal },
-        );
+        const res = await fetch(`/api/nutrition/daily?start_date=${start}&end_date=${today}`, {
+          signal,
+        });
         if (!res.ok) {
           const body = await res.json().catch(() => null);
           throw new Error(
-            body?.message ??
-              body?.error ??
-              `Could not load nutrition (HTTP ${res.status}).`,
+            body?.message ?? body?.error ?? `Could not load nutrition (HTTP ${res.status}).`
           );
         }
         const data = (await res.json()) as NutritionDay[];
@@ -180,11 +177,13 @@ export default function NutritionView() {
         if (!signal?.aborted) setLoading(false);
       }
     },
-    [days],
+    [days]
   );
 
   useEffect(() => {
     const controller = new AbortController();
+    // Read the external daily log for this range; the reusable loader initializes its loading state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load(controller.signal);
     return () => controller.abort();
   }, [load]);
@@ -196,7 +195,7 @@ export default function NutritionView() {
       carbs_grams: meanOf(rows, 'carbs_grams'),
       fat_grams: meanOf(rows, 'fat_grams'),
     }),
-    [rows],
+    [rows]
   );
 
   // The API returns oldest-first; the page reads newest-first.
@@ -301,9 +300,15 @@ export default function NutritionView() {
             <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
               Avg {m.label.toLowerCase()}
             </p>
-            <p className="text-xl font-bold font-mono" style={{ color: 'var(--color-text-primary)' }}>
+            <p
+              className="text-xl font-bold font-mono"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               {formatNutrient(averages[m.key], m.decimals)}
-              <span className="text-xs font-normal ml-1" style={{ color: 'var(--color-text-muted)' }}>
+              <span
+                className="text-xs font-normal ml-1"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
                 {m.unit}
               </span>
             </p>
@@ -318,14 +323,30 @@ export default function NutritionView() {
           <caption className="sr-only">Daily nutrition history, newest first</caption>
           <thead>
             <tr style={{ color: 'var(--color-text-primary)' }}>
-              <th scope="col" className="py-2 px-4">Date</th>
-              <th scope="col" className="py-2 px-4">Calories</th>
-              <th scope="col" className="py-2 px-4">Protein</th>
-              <th scope="col" className="py-2 px-4">Carbs</th>
-              <th scope="col" className="py-2 px-4">Fat</th>
-              <th scope="col" className="py-2 px-4">Source</th>
-              <th scope="col" className="py-2 px-4">Items</th>
-              <th scope="col" className="py-2 px-4">Updated</th>
+              <th scope="col" className="py-2 px-4">
+                Date
+              </th>
+              <th scope="col" className="py-2 px-4">
+                Calories
+              </th>
+              <th scope="col" className="py-2 px-4">
+                Protein
+              </th>
+              <th scope="col" className="py-2 px-4">
+                Carbs
+              </th>
+              <th scope="col" className="py-2 px-4">
+                Fat
+              </th>
+              <th scope="col" className="py-2 px-4">
+                Source
+              </th>
+              <th scope="col" className="py-2 px-4">
+                Items
+              </th>
+              <th scope="col" className="py-2 px-4">
+                Updated
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -366,10 +387,10 @@ export default function NutritionView() {
       </div>
 
       <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-        Days are America/Phoenix calendar dates. Each day is recomputed from your food log on
-        every sync, so edits and re-sends correct the day rather than adding to it. A dash
-        means the source did not report that nutrient — not zero. Targets stay in MacroFactor;
-        HealthTrack shows what you actually ate.
+        Days are America/Phoenix calendar dates. Each day is recomputed from your food log on every
+        sync, so edits and re-sends correct the day rather than adding to it. A dash means the
+        source did not report that nutrient — not zero. Targets stay in MacroFactor; HealthTrack
+        shows what you actually ate.
       </p>
     </div>
   );

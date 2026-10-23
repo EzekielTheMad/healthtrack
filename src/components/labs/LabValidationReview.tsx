@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useCallback, useMemo, useState } from 'react';
-import type {
-  ParsedLabResult,
-  ParsedLabResultItem,
-} from '@/lib/claude/parse-lab';
+import type { ParsedLabResult, ParsedLabResultItem } from '@/lib/claude/parse-lab';
 import FlagBadge from '@/components/shared/FlagBadge';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
 import type { Flag } from '@/lib/types';
+import { isValidDayKey } from '@/lib/dates';
+
+type DraftResult = Omit<ParsedLabResultItem, 'value'> & { value: number | '' };
 
 interface LabValidationReviewProps {
   parsedData: ParsedLabResult;
@@ -21,7 +21,7 @@ interface LabValidationReviewProps {
 function autoFlag(
   value: number,
   low: number | null,
-  high: number | null,
+  high: number | null
 ): 'normal' | 'high' | 'low' | null {
   if (low === null && high === null) return null;
   if (low !== null && value < low) return 'low';
@@ -55,12 +55,8 @@ export default function LabValidationReview({
   onCancel,
 }: LabValidationReviewProps) {
   const [visitDate, setVisitDate] = useState(parsedData.visit_date ?? '');
-  const [providerName, setProviderName] = useState(
-    parsedData.provider_name ?? '',
-  );
-  const [results, setResults] = useState<ParsedLabResultItem[]>(
-    () => [...parsedData.results],
-  );
+  const [providerName, setProviderName] = useState(parsedData.provider_name ?? '');
+  const [results, setResults] = useState<DraftResult[]>(() => [...parsedData.results]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,19 +66,22 @@ export default function LabValidationReview({
         const updated = [...prev];
         const row = { ...updated[index] };
 
-        if (field === 'value' || field === 'reference_range_low' || field === 'reference_range_high') {
+        if (
+          field === 'value' ||
+          field === 'reference_range_low' ||
+          field === 'reference_range_high'
+        ) {
           const num = rawValue === '' ? null : parseFloat(rawValue);
           if (field === 'value') {
-            row.value = num ?? 0;
+            row.value = num ?? '';
           } else {
             (row as Record<string, unknown>)[field] = num;
           }
           // Auto-recalculate flag
-          const computed = autoFlag(
-            row.value,
-            row.reference_range_low,
-            row.reference_range_high,
-          );
+          const computed =
+            typeof row.value === 'number' && Number.isFinite(row.value)
+              ? autoFlag(row.value, row.reference_range_low, row.reference_range_high)
+              : null;
           if (computed !== null) {
             row.flag = computed;
           }
@@ -98,7 +97,7 @@ export default function LabValidationReview({
         return updated;
       });
     },
-    [],
+    []
   );
 
   const addRow = useCallback(() => {
@@ -107,7 +106,7 @@ export default function LabValidationReview({
       {
         panel_name: null,
         test_name: '',
-        value: 0,
+        value: '' as const,
         unit: '',
         reference_range_low: null,
         reference_range_high: null,
@@ -123,16 +122,28 @@ export default function LabValidationReview({
   }, []);
 
   const handleSave = useCallback(async () => {
-    setSaving(true);
     setError(null);
+    if (!isValidDayKey(visitDate)) {
+      setError('Enter the collection / visit date from the report before saving.');
+      return;
+    }
+    if (
+      results.some(
+        (row) => !row.test_name?.trim() || row.value === '' || !Number.isFinite(row.value)
+      )
+    ) {
+      setError('Each result needs a test name and numeric value. Blank values are not zero.');
+      return;
+    }
+    setSaving(true);
     try {
       await onSave(
         {
           visit_date: visitDate || null,
           provider_name: providerName || null,
-          results,
+          results: results.map((row) => ({ ...row, value: row.value as number })),
         },
-        storagePath,
+        storagePath
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save');
@@ -143,9 +154,7 @@ export default function LabValidationReview({
 
   const summary = useMemo(() => {
     const panels = new Set(results.map((r) => r.panel_name).filter(Boolean));
-    const flagged = results.filter(
-      (r) => r.flag && r.flag !== 'normal',
-    ).length;
+    const flagged = results.filter((r) => r.flag && r.flag !== 'normal').length;
     return {
       resultCount: results.length,
       panelCount: panels.size,
@@ -174,8 +183,8 @@ export default function LabValidationReview({
           color: 'var(--color-text-primary)',
         }}
       >
-        AI-extracted values can contain errors. Check each value against your
-        original report before saving. {AI_DISCLAIMER}
+        AI-extracted values can contain errors. Check each value against your original report before
+        saving. {AI_DISCLAIMER}
       </div>
 
       {/* Header fields */}
@@ -188,6 +197,7 @@ export default function LabValidationReview({
             Visit Date
           </label>
           <input
+            aria-label="Collection / visit date"
             type="date"
             value={visitDate}
             onChange={(e) => setVisitDate(e.target.value)}
@@ -219,27 +229,33 @@ export default function LabValidationReview({
         <table className="w-full text-sm" style={{ minWidth: 900 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border-card)' }}>
-              {['Panel', 'Test Name', 'Value', 'Unit', 'Ref Low', 'Ref High', 'Flag', 'Conf.', ''].map(
-                (header) => (
-                  <th
-                    key={header}
-                    className="text-left px-3 py-2 text-xs font-medium"
-                    style={{ color: 'var(--color-text-muted)' }}
-                  >
-                    {header}
-                  </th>
-                ),
-              )}
+              {[
+                'Panel',
+                'Test Name',
+                'Value',
+                'Unit',
+                'Ref Low',
+                'Ref High',
+                'Flag',
+                'Conf.',
+                '',
+              ].map((header) => (
+                <th
+                  key={header}
+                  className="text-left px-3 py-2 text-xs font-medium"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
+                  {header}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {results.map((row, i) => (
-              <tr
-                key={i}
-                style={{ borderBottom: '1px solid var(--border-card)' }}
-              >
+              <tr key={i} style={{ borderBottom: '1px solid var(--border-card)' }}>
                 <td className="px-3 py-2">
                   <input
+                    aria-label={`Result ${i + 1} panel`}
                     type="text"
                     value={row.panel_name ?? ''}
                     onChange={(e) => updateResult(i, 'panel_name', e.target.value)}
@@ -248,6 +264,7 @@ export default function LabValidationReview({
                 </td>
                 <td className="px-3 py-2">
                   <input
+                    aria-label={`Result ${i + 1} test name`}
                     type="text"
                     value={row.test_name}
                     onChange={(e) => updateResult(i, 'test_name', e.target.value)}
@@ -257,6 +274,7 @@ export default function LabValidationReview({
                 <td className="px-3 py-2">
                   <div className="flex items-center">
                     <input
+                      aria-label={`Result ${i + 1} value`}
                       type="number"
                       step="any"
                       value={row.value}
@@ -279,9 +297,7 @@ export default function LabValidationReview({
                     type="number"
                     step="any"
                     value={row.reference_range_low ?? ''}
-                    onChange={(e) =>
-                      updateResult(i, 'reference_range_low', e.target.value)
-                    }
+                    onChange={(e) => updateResult(i, 'reference_range_low', e.target.value)}
                     style={{ ...inputStyle, width: 70 }}
                   />
                 </td>
@@ -290,9 +306,7 @@ export default function LabValidationReview({
                     type="number"
                     step="any"
                     value={row.reference_range_high ?? ''}
-                    onChange={(e) =>
-                      updateResult(i, 'reference_range_high', e.target.value)
-                    }
+                    onChange={(e) => updateResult(i, 'reference_range_high', e.target.value)}
                     style={{ ...inputStyle, width: 70 }}
                   />
                 </td>
@@ -322,8 +336,8 @@ export default function LabValidationReview({
                         row.confidence === 'high'
                           ? 'var(--color-sage)'
                           : row.confidence === 'medium'
-                          ? 'var(--color-warning)'
-                          : 'var(--color-terracotta)',
+                            ? 'var(--color-warning)'
+                            : 'var(--color-terracotta)',
                     }}
                   >
                     {row.confidence}
@@ -370,6 +384,7 @@ export default function LabValidationReview({
 
       {error && (
         <div
+          role="alert"
           className="rounded-lg px-4 py-3 text-sm"
           style={{
             backgroundColor: 'rgba(224, 122, 95, 0.1)',
@@ -387,7 +402,12 @@ export default function LabValidationReview({
           onClick={handleSave}
           disabled={saving || results.length === 0}
           className="px-5 py-2.5 rounded-lg text-sm font-medium cursor-pointer transition-colors disabled:opacity-50"
-          style={{ background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))', color: 'white', boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)' }}
+          style={{
+            background:
+              'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+            color: 'white',
+            boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)',
+          }}
         >
           {saving ? (
             <span className="flex items-center gap-2">

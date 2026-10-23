@@ -6,20 +6,15 @@ import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { safeError } from '@/lib/safe-log';
 import type { HealthSummary } from '@/lib/claude/health-summary';
 import { filterDismissedLabHighlights } from '@/lib/claude/lab-warnings';
-import {
-  generateAndCacheSummary,
-  ownerLocalDayKey,
-} from '@/lib/claude/summary-cache';
+import { generateAndCacheSummary, ownerLocalDayKey } from '@/lib/claude/summary-cache';
 import {
   getCachedSummary,
   getLatestCachedSummary,
   parseCachedSummary,
 } from '@/lib/repos/daily-summaries';
 import { scheduleAfterResponse } from '@/lib/api/after';
-import {
-  listLabWarningDismissals,
-  latestLabVisitDate,
-} from '@/lib/repos/lab-warning-dismissals';
+import { buildHealthContext, CONTEXT_VERSION } from '@/lib/health-context';
+import { listLabWarningDismissals, latestLabVisitDate } from '@/lib/repos/lab-warning-dismissals';
 
 interface SummaryMeta {
   cached: boolean;
@@ -35,7 +30,7 @@ interface SummaryMeta {
 async function buildResponse(
   userId: string,
   summary: HealthSummary,
-  meta: SummaryMeta,
+  meta: SummaryMeta
 ): Promise<NextResponse> {
   const [dismissals, latestDraw] = await Promise.all([
     listLabWarningDismissals(userId),
@@ -82,7 +77,11 @@ export async function GET(request: NextRequest) {
   // Only the manual-refresh path regenerates via AI; cap it (cached reads are
   // free and unlimited).
   if (force && !checkRateLimit(`summary-refresh:${userId}`, { max: 10, windowMs: HOUR_MS })) {
-    return apiError(429, 'rate_limited', 'Too many summary refreshes this hour. Please try again later.');
+    return apiError(
+      429,
+      'rate_limited',
+      'Too many summary refreshes this hour. Please try again later.'
+    );
   }
 
   try {
@@ -97,28 +96,27 @@ export async function GET(request: NextRequest) {
     }
 
     const today = ownerLocalDayKey();
-    const todayRow = await getCachedSummary(userId, today);
-    if (todayRow) {
-      return buildResponse(userId, parseCachedSummary(todayRow), {
-        cached: true,
-        stale: false,
-        generatedAt: todayRow.generatedAt,
-      });
-    }
-
-    // No row for today — serve the last good row (if any) instantly and warm
-    // today's cache in the background. Nothing is overwritten if regen fails.
-    const latest = await getLatestCachedSummary(userId);
+    const latest =
+      (await getCachedSummary(userId, today)) ?? (await getLatestCachedSummary(userId));
     if (latest) {
-      scheduleAfterResponse(() => generateAndCacheSummary(userId));
-      return buildResponse(userId, parseCachedSummary(latest), {
-        cached: true,
-        stale: true,
-        generatedAt: latest.generatedAt,
-      });
+      const summary = parseCachedSummary(latest);
+      const metadata = summary.contextMetadata;
+      // Old generated summaries may contain combined patient data. A matching
+      // owner row alone is insufficient proof that its clinical scope is safe.
+      if (metadata?.context_version === CONTEXT_VERSION && metadata.dependent_id === null) {
+        const current = await buildHealthContext(userId, null, 365);
+        const stale = latest.summaryDate !== today || metadata.fingerprint !== current.fingerprint;
+        if (stale) scheduleAfterResponse(() => generateAndCacheSummary(userId));
+        return buildResponse(userId, summary, {
+          cached: true,
+          stale,
+          generatedAt: latest.generatedAt,
+        });
+      }
     }
 
-    // First ever — nothing cached at all. Generate synchronously (blocks once).
+    // No safe cache (including legacy/mismatched patient scopes): generate the
+    // owner-only summary synchronously, never displaying the unsafe old text.
     const { summary } = await generateAndCacheSummary(userId);
     return buildResponse(userId, summary, {
       cached: false,

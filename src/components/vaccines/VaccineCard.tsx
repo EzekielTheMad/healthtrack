@@ -1,15 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { formatDateOnly } from '@/lib/dates';
 import type { Vaccine } from '@/lib/types';
 import AddVaccineForm, { type AddVaccineFormData } from './AddVaccineForm';
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return formatDateOnly(dateStr);
 }
 
 interface VaccineCardProps {
@@ -41,6 +38,7 @@ export default function VaccineCard({ vaccine, onUpdate, onDelete }: VaccineCard
   if (editing) {
     return (
       <div
+        id={`record-${vaccine.id}`}
         className="rounded-xl border p-5"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
       >
@@ -77,6 +75,7 @@ export default function VaccineCard({ vaccine, onUpdate, onDelete }: VaccineCard
 
   return (
     <div
+      id={`record-${vaccine.id}`}
       className="rounded-xl border p-5"
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
     >

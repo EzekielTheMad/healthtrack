@@ -114,7 +114,7 @@ function insertVital(opts: {
   ctx.sqlite
     .prepare(
       `insert into vitals (id, user_id, metric_key, value, unit, source, recorded_at, metadata, dependent_id, created_at)
-       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`,
+       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`
     )
     .run(
       crypto.randomUUID(),
@@ -124,7 +124,7 @@ function insertVital(opts: {
       opts.unit,
       opts.recordedAt,
       opts.dependentId,
-      new Date().toISOString(),
+      new Date().toISOString()
     );
 }
 
@@ -139,19 +139,29 @@ function seedData() {
   ctx.sqlite
     .prepare(
       `insert into conditions (id, user_id, name, status, created_at, updated_at)
-       values (?, ?, 'Hypertension', 'active', ?, ?)`,
+       values (?, ?, 'Hypertension', 'active', ?, ?)`
     )
     .run(crypto.randomUUID(), OWNER, now, now);
 }
 
 /** Insert a daily_summaries cache row directly. */
-function insertCacheRow(date: string, s: HealthSummary, generatedAt = new Date().toISOString()) {
+async function insertCacheRow(
+  date: string,
+  s: HealthSummary,
+  generatedAt = new Date().toISOString()
+) {
+  const { buildHealthContext, queryContextMetadata } = await import('@/lib/health-context');
+  const withMetadata = {
+    ...s,
+    contextMetadata:
+      s.contextMetadata ?? queryContextMetadata(await buildHealthContext(OWNER, null, 365)),
+  };
   ctx.sqlite
     .prepare(
       `insert into daily_summaries (id, user_id, summary_date, summary_json, generated_at, model)
-       values (?, ?, ?, ?, ?, 'test-model')`,
+       values (?, ?, ?, ?, ?, 'test-model')`
     )
-    .run(crypto.randomUUID(), OWNER, date, JSON.stringify(s), generatedAt);
+    .run(crypto.randomUUID(), OWNER, date, JSON.stringify(withMetadata), generatedAt);
 }
 
 describe('GET /api/health-summary — vitals scope (I1)', () => {
@@ -193,19 +203,20 @@ describe('GET /api/health-summary — vitals scope (I1)', () => {
     expect(snapshot).not.toContain('62');
   });
 
-  it('other domains keep the unfiltered scope (dependent conditions still included)', async () => {
+  it('dependent conditions never enter the owner overview', async () => {
     const depId = crypto.randomUUID();
     insertDependent(ctx.sqlite, depId, OWNER);
     ctx.sqlite
       .prepare(
         `insert into conditions (id, user_id, name, status, dependent_id, created_at, updated_at)
-         values (?, ?, 'Asthma', 'active', ?, ?, ?)`,
+         values (?, ?, 'Asthma', 'active', ?, ?, ?)`
       )
       .run(crypto.randomUUID(), OWNER, depId, new Date().toISOString(), new Date().toISOString());
 
     const res = await route.GET(req());
     expect(res.status).toBe(200);
-    expect(captured.input!.conditions.map((c) => c.name)).toContain('Asthma');
+    expect(captured.input).toBeNull();
+    expect(JSON.stringify(await res.json())).not.toContain('Asthma');
   });
 
   it('401 without a session', async () => {
@@ -220,10 +231,109 @@ describe('GET /api/health-summary — vitals scope (I1)', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /api/health-summary — cache-first read path', () => {
-  it('cache hit: today\'s row is served instantly with no model call', async () => {
+  it.each(['missing', 'old-version', 'dependent'] as const)(
+    'does not serve an unsafe %s context cache',
+    async (kind) => {
+      seedData();
+      const today = cacheMod.ownerLocalDayKey();
+      const { buildHealthContext, queryContextMetadata, CONTEXT_VERSION } =
+        await import('@/lib/health-context');
+      const metadata = queryContextMetadata(await buildHealthContext(OWNER, null, 365));
+      const unsafe: HealthSummary = {
+        summary: 'Unsafe old patient summary.',
+        highlights: [],
+        ...(kind === 'missing'
+          ? {}
+          : {
+              contextMetadata: {
+                ...metadata,
+                context_version: kind === 'old-version' ? CONTEXT_VERSION - 1 : CONTEXT_VERSION,
+                dependent_id: kind === 'dependent' ? 'different-patient' : null,
+              },
+            }),
+      };
+      ctx.sqlite
+        .prepare(
+          'insert into daily_summaries(id,user_id,summary_date,summary_json,generated_at,model) values(?,?,?,?,?,?)'
+        )
+        .run(
+          crypto.randomUUID(),
+          OWNER,
+          today,
+          JSON.stringify(unsafe),
+          new Date().toISOString(),
+          'test-model'
+        );
+      captured.result = { summary: 'Scoped owner summary.', highlights: [] };
+      const body = await (await route.GET(req())).json();
+      expect(body.summary).toBe('Scoped owner summary.');
+      expect(JSON.stringify(body)).not.toContain('Unsafe old patient summary');
+      expect(body.cached).toBe(false);
+      expect(captured.calls).toBe(1);
+    }
+  );
+
+  it('marks a same-day summary stale after a medication date correction and refreshes its fingerprint', async () => {
+    const medications = await import('@/lib/repos/medications');
+    const medication = await medications.createMedication(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      { name: 'Fixture medication', active: true, startDate: '2020-01-02' }
+    );
+    await route.GET(req());
+    const today = cacheMod.ownerLocalDayKey();
+    const first = dailyRepo.parseCachedSummary((await dailyRepo.getCachedSummary(OWNER, today))!);
+    await medications.updateMedication(OWNER, medication.id, { startDate: '2020-02-03' });
+    captured.result = { summary: 'Corrected overview.', highlights: [] };
+    const body = await (await route.GET(req())).json();
+    expect(body.cached).toBe(true);
+    expect(body.stale).toBe(true);
+    await vi.waitFor(async () => {
+      const updated = dailyRepo.parseCachedSummary(
+        (await dailyRepo.getCachedSummary(OWNER, today))!
+      );
+      expect(updated.summary).toBe('Corrected overview.');
+      expect(updated.contextMetadata?.fingerprint).not.toBe(first.contextMetadata?.fingerprint);
+    });
+    expect(captured.calls).toBe(2);
+    expect(captured.input?.medications[0].start_date).toBe('2020-02-03');
+  });
+
+  it('marks a same-day summary stale after the selected metric source changes', async () => {
+    const vitals = await import('@/lib/repos/vitals');
+    const { db } = await import('@/db');
+    const date = dayISO(1);
+    vitals.upsertOwnVital(db, OWNER, {
+      metricKey: 'steps',
+      value: 6000,
+      source: 'oura',
+      recordedAt: date,
+    });
+    vitals.upsertOwnVital(db, OWNER, {
+      metricKey: 'steps',
+      value: 7000,
+      source: 'health_connect_daily',
+      recordedAt: date,
+    });
+    await route.GET(req());
+    const today = cacheMod.ownerLocalDayKey();
+    const first = dailyRepo.parseCachedSummary((await dailyRepo.getCachedSummary(OWNER, today))!);
+    await vitals.setVitalSourcePreference(OWNER, 'steps', 'oura');
+    const body = await (await route.GET(req())).json();
+    expect(body.stale).toBe(true);
+    await vi.waitFor(async () => {
+      const updated = dailyRepo.parseCachedSummary(
+        (await dailyRepo.getCachedSummary(OWNER, today))!
+      );
+      expect(updated.contextMetadata?.fingerprint).not.toBe(first.contextMetadata?.fingerprint);
+    });
+    expect(captured.input?.vitals[0].value).toBe(6000);
+  });
+
+  it("cache hit: today's row is served instantly with no model call", async () => {
     seedData();
     const today = cacheMod.ownerLocalDayKey();
-    insertCacheRow(today, {
+    await insertCacheRow(today, {
       summary: 'Cached overview from earlier today.',
       highlights: [{ type: 'positive', text: 'All good.' }],
     });
@@ -260,7 +370,7 @@ describe('GET /api/health-summary — cache-first read path', () => {
   it('stale-serve: older row returned instantly, today warmed in the background', async () => {
     seedData();
     const yesterday = shiftDayKey(cacheMod.ownerLocalDayKey(), -1);
-    insertCacheRow(yesterday, { summary: 'Yesterday overview.', highlights: [] });
+    await insertCacheRow(yesterday, { summary: 'Yesterday overview.', highlights: [] });
     captured.result = { summary: 'Freshly regenerated today.', highlights: [] };
 
     const res = await route.GET(req());
@@ -284,7 +394,7 @@ describe('GET /api/health-summary — cache-first read path', () => {
   it('generation failure keeps the last good row (never overwrites)', async () => {
     seedData();
     const yesterday = shiftDayKey(cacheMod.ownerLocalDayKey(), -1);
-    insertCacheRow(yesterday, { summary: 'Last good overview.', highlights: [] });
+    await insertCacheRow(yesterday, { summary: 'Last good overview.', highlights: [] });
     captured.shouldThrow = true;
 
     const res = await route.GET(req());
@@ -313,7 +423,7 @@ describe('GET /api/health-summary — cache-first read path', () => {
   it('manual refresh (?refresh=1) regenerates even when today is cached', async () => {
     seedData();
     const today = cacheMod.ownerLocalDayKey();
-    insertCacheRow(today, { summary: 'Stale-but-today.', highlights: [] });
+    await insertCacheRow(today, { summary: 'Stale-but-today.', highlights: [] });
     captured.result = { summary: 'Force-refreshed.', highlights: [] };
 
     const res = await route.GET(req('http://localhost/api/health-summary?refresh=1'));
@@ -339,14 +449,12 @@ function insertLabVisitWithFlag(opts: {
   const now = new Date().toISOString();
   const visitId = crypto.randomUUID();
   ctx.sqlite
-    .prepare(
-      `insert into lab_visits (id, user_id, visit_date, created_at) values (?, ?, ?, ?)`,
-    )
+    .prepare(`insert into lab_visits (id, user_id, visit_date, created_at) values (?, ?, ?, ?)`)
     .run(visitId, OWNER, opts.visitDate, now);
   ctx.sqlite
     .prepare(
       `insert into lab_results (id, user_id, lab_visit_id, test_name, value, flag, created_at)
-       values (?, ?, ?, ?, 160, ?, ?)`,
+       values (?, ?, ?, ?, 160, ?, ?)`
     )
     .run(crypto.randomUUID(), OWNER, visitId, opts.testName, opts.flag, now);
 }
@@ -357,21 +465,21 @@ describe('GET /api/health-summary — fitness + lab-warning context', () => {
     ctx.sqlite
       .prepare(
         `insert into goals (id, user_id, kind, active, session_type, per_week, created_at, updated_at)
-         values (?, ?, 'frequency', 1, 'strength', 3, ?, ?)`,
+         values (?, ?, 'frequency', 1, 'strength', 3, ?, ?)`
       )
       .run(crypto.randomUUID(), OWNER, now, now);
     // An INACTIVE goal must not reach the prompt.
     ctx.sqlite
       .prepare(
         `insert into goals (id, user_id, kind, active, metric_key, direction, created_at, updated_at)
-         values (?, ?, 'metric', 0, 'weight', 'decrease', ?, ?)`,
+         values (?, ?, 'metric', 0, 'weight', 'decrease', ?, ?)`
       )
       .run(crypto.randomUUID(), OWNER, now, now);
     const recent = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
     const old = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString();
     const insertSession = ctx.sqlite.prepare(
       `insert into workout_sessions (id, user_id, type, label, started_at, created_at, updated_at)
-       values (?, ?, 'strength', ?, ?, ?, ?)`,
+       values (?, ?, 'strength', ?, ?, ?, ?)`
     );
     insertSession.run(crypto.randomUUID(), OWNER, 'Upper A', recent, now, now);
     insertSession.run(crypto.randomUUID(), OWNER, 'Old session', old, now, now);

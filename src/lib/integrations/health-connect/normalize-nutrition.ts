@@ -2,7 +2,7 @@
  * nutrition → nutrition_daily: the PURE half (PRD §6.7).
  *
  * Semantic: DAILY AGGREGATE producing a DAILY SNAPSHOT row. This module owns
- * the Phoenix calendar arithmetic and the collapse of a day's retained
+ * the configured instance calendar arithmetic and the collapse of a day's retained
  * records into one canonical set of totals. The database-facing rebuild that
  * uses it lives in ./rebuild-nutrition.ts, so the webhook and the Settings
  * "Reprocess retained nutrition" action share one implementation.
@@ -25,7 +25,8 @@
  * Null vs zero survives: a nutrient no record reported stays null.
  */
 import { dayKeyInTz } from '@/lib/fitness/weeks';
-import { OWNER_TZ } from '@/lib/fitness/rollup';
+import { getHealthTrackTimeZone } from '@/lib/oura/timezone';
+import { calendarDayWindow } from '@/lib/calendar-window';
 import type { HealthConnectRawRecordRow } from '@/lib/repos/health-connect';
 import type { NutritionStrategy } from '@/db/schema';
 import { nutritionRecordSchema } from './schema';
@@ -51,26 +52,20 @@ type NutrientColumn = (typeof NUTRIENTS)[number]['column'];
 const SUM_DECIMALS = 6;
 const SUM_SCALE = 10 ** SUM_DECIMALS;
 
-/** Owner-local calendar date for an instant (America/Phoenix, no DST). */
+/** Instance-local calendar date. The legacy function name is kept for callers. */
 export function phoenixDate(instant: string): string | null {
   const d = new Date(instant);
   if (Number.isNaN(d.getTime())) return null;
-  return dayKeyInTz(d, OWNER_TZ);
+  return dayKeyInTz(d, getHealthTrackTimeZone());
 }
 
 /**
- * UTC instant bounds that cover a whole Phoenix calendar day. Phoenix is a
- * fixed UTC-7 (MST, never observes DST), so the day runs [date 07:00Z,
- * date+1 07:00Z). The upper bound is returned INCLUSIVE-of-instant minus a
- * millisecond so it can be used with a <= comparison on ISO strings.
+ * UTC bounds of the configured local day, including daylight-saving changes.
+ * The legacy name is retained. The upper bound is inclusive to the millisecond
+ * so callers can compare stored ISO timestamps with <=.
  */
 export function phoenixDayWindow(date: string): { startAt: string; endAt: string } {
-  const startMs = new Date(`${date}T00:00:00Z`).getTime() + 7 * 60 * 60 * 1000;
-  const endMs = startMs + 24 * 60 * 60 * 1000 - 1;
-  return {
-    startAt: new Date(startMs).toISOString(),
-    endAt: new Date(endMs).toISOString(),
-  };
+  return calendarDayWindow(date);
 }
 
 export interface NutritionDayComputation {
@@ -93,7 +88,7 @@ export interface NutritionDayComputation {
  */
 export function computeDayTotals(
   rows: HealthConnectRawRecordRow[],
-  strategy: NutritionStrategy,
+  strategy: NutritionStrategy
 ): NutritionDayComputation {
   const parsed = rows
     .map((r) => nutritionRecordSchema.safeParse(r.payload))

@@ -12,6 +12,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { extractionModel } from './model';
 import { createMessage } from './call';
+import { detectDocumentMime } from '@/lib/import/document-file';
 
 // Model output is untrusted: normalize absent/undefined optionals to null so
 // consumers (review UI, import route) get a stable shape.
@@ -36,6 +37,7 @@ const extractedMedicationSchema = z.object({
   end_date: nullableString,
   active: nullableBoolean,
   notes: nullableString,
+  source_page: nullableNumber.optional(),
 });
 
 const extractedConditionSchema = z.object({
@@ -46,6 +48,7 @@ const extractedConditionSchema = z.object({
     .transform((v) => v ?? null),
   diagnosed_date: nullableString,
   notes: nullableString,
+  source_page: nullableNumber.optional(),
 });
 
 const extractedAllergySchema = z.object({
@@ -57,12 +60,14 @@ const extractedAllergySchema = z.object({
   reaction: nullableString,
   diagnosed_date: nullableString,
   notes: nullableString,
+  source_page: nullableNumber.optional(),
 });
 
 const extractedProcedureSchema = z.object({
   name: z.string().trim().min(1),
   procedure_date: nullableString,
   notes: nullableString,
+  source_page: nullableNumber.optional(),
 });
 
 const extractedVaccineSchema = z.object({
@@ -73,10 +78,12 @@ const extractedVaccineSchema = z.object({
   manufacturer: nullableString,
   lot_number: nullableString,
   notes: nullableString,
+  source_page: nullableNumber.optional(),
 });
 
 const extractedLabResultSchema = z.object({
   test_name: z.string().trim().min(1),
+  loinc_code: nullableString.optional(),
   value: z.number(),
   unit: nullableString,
   reference_range_text: nullableString,
@@ -84,10 +91,18 @@ const extractedLabResultSchema = z.object({
     .enum(['normal', 'high', 'low', 'critical'])
     .nullish()
     .transform((v) => v ?? null),
+  panel_name: nullableString.optional(),
+  reference_range_low: nullableNumber.optional(),
+  reference_range_high: nullableNumber.optional(),
+  accession_id: nullableString.optional(),
+  specimen_id: nullableString.optional(),
+  collected_at: nullableString.optional(),
+  source_page: nullableNumber.optional(),
+  raw_text: nullableString.optional(),
 });
 
 const extractedLabVisitSchema = z.object({
-  visit_date: z.string().trim().min(1),
+  visit_date: nullableString,
   results: z.array(z.unknown()).default([]),
 });
 
@@ -99,7 +114,7 @@ export type ExtractedVaccine = z.infer<typeof extractedVaccineSchema>;
 export type ExtractedLabResult = z.infer<typeof extractedLabResultSchema>;
 
 export interface ExtractedLabVisit {
-  visit_date: string;
+  visit_date: string | null;
   results: ExtractedLabResult[];
 }
 
@@ -168,6 +183,7 @@ Return ONLY valid JSON with this exact shape (every top-level array is required;
       "results": [
         {
           "test_name": "Test name (e.g. Hemoglobin)",
+          "loinc_code": "LOINC code exactly as printed" or null,
           "value": numeric value (number, not string),
           "unit": "unit string (e.g. g/dL)" or null,
           "reference_range_text": "range as printed (e.g. 4.5-11.0)" or null,
@@ -180,17 +196,16 @@ Return ONLY valid JSON with this exact shape (every top-level array is required;
 
 Rules:
 - Extract ONLY information explicitly present in the document. Never infer, guess, or fabricate values. When a field is not stated, use null.
-- Read ALL pages and extract EVERY entry in each domain.
-- All dates must be ISO YYYY-MM-DD. If only month/year is given, use the 1st of the month. If only a year is given, use January 1st of that year. If no date is given, use null.
-- Group lab results by collection/visit date — one lab_visits entry per distinct date. Skip lab results with no date, and skip non-numeric results (e.g. "Negative").
+- Read ALL pages and extract EVERY entry in each domain. Include optional source_page (1-based page) on entries when known.
+- Preserve date precision: YYYY-MM-DD for a full date, YYYY-MM for month/year, YYYY for year only, null for unknown. Never invent a day or month.
+- Group lab results by collection/visit date and specimen when printed. Preserve undated results with visit_date:null for review. Skip non-numeric results (e.g. "Negative").
+- For labs retain optional panel_name, reference_range_low/high, accession_id, specimen_id, collected_at, source_page (1-based) and raw_text exactly as printed. Never invent specimen identity.
+- Include loinc_code only when explicitly printed as a LOINC code. Never infer or look up a code from the test name; use null when absent.
 - Each repeated vaccine dose (booster series) is a separate entry.
 - Do NOT include the patient's demographics, insurance, or provider contact details.
 - Do NOT include commentary or markdown. Return ONLY the JSON object.`;
 
-function documentBlock(
-  buffer: Buffer,
-  mimeType: string,
-): Anthropic.Messages.ContentBlockParam {
+function documentBlock(buffer: Buffer, mimeType: string): Anthropic.Messages.ContentBlockParam {
   const data = buffer.toString('base64');
   if (mimeType === 'image/png' || mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
     return {
@@ -209,10 +224,7 @@ function documentBlock(
 }
 
 /** Keep the valid entries of an untrusted array, dropping malformed ones. */
-function filterValid<Schema extends z.ZodType>(
-  schema: Schema,
-  value: unknown,
-): z.infer<Schema>[] {
+function filterValid<Schema extends z.ZodType>(schema: Schema, value: unknown): z.infer<Schema>[] {
   if (!Array.isArray(value)) return [];
   const valid: z.infer<Schema>[] = [];
   for (const entry of value) {
@@ -224,8 +236,9 @@ function filterValid<Schema extends z.ZodType>(
 
 export async function parseMedicalHistory(
   fileBuffer: Buffer,
-  mimeType: string,
+  mimeType: string
 ): Promise<ParsedMedicalHistory> {
+  mimeType = detectDocumentMime(fileBuffer);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY is not configured');
