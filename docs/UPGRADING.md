@@ -25,6 +25,15 @@ Confirm real backing-pool capacity and UID/GID, rather than relying only on a
 user share's aggregate free space. The full data tree can contain sensitive
 retired integration configuration as well as records and keys.
 
+Check the Docker root filesystem separately from the data volume. Loading an
+image, temporary export layers, container logs and writable layers use Docker's
+storage even when `/data` has ample capacity. If export scratch is insufficient,
+reuse a protected old-image archive only after verifying its whole-file hash,
+configuration identity and layer hashes. Do not prune unrelated resources to
+make a deployment fit. An unset historical `OomKillDisable` and Docker's returned
+`false` both leave the normal OOM killer enabled; a configuration comparison
+may normalize that one default while still checking all other fields exactly.
+
 Rehearse using the exact old image and the candidate, synthetic records and
 disposable directories:
 
