@@ -121,7 +121,42 @@ medication API authentication probes returned 401.
 
 Existing backup files included two old SQLite files and four other files, with
 no verified current full-volume/key/upload coverage. They are not an acceptable
-rollback snapshot. No live data was copied,
-container stopped, template changed or publication performed during preflight.
-The real stopped-volume snapshot, isolated restore and post-deployment checks
-remain maintenance-window gates.
+rollback snapshot. That initial inspection made no live changes.
+
+### Approved real-volume snapshot and restore
+
+The operator subsequently authorized the snapshot-only maintenance window on
+2026-10-23. Only the application and its two bridges stopped; the unchanged
+v0.8.1 application resumed before offline restore verification. The stop/copy/
+resume interval was 97 seconds, including bridge shutdown time.
+
+The protected same-host snapshot contains all 27 files (116,111,191 bytes),
+including both generated keys and all 15 original PDFs. Source and backup
+matched byte hashes, ownership, modes and timestamps. Effective configuration,
+applied XML and an old-image archive were preserved privately; archive config
+and all 13 layer hashes verified. Backup/configuration parents are root-owned
+0700 and sensitive configuration files are 0600.
+
+A separate restored copy booted the exact old image on Unraid with networking
+disabled, no published ports, no provider environment credentials and Oura
+scheduling disabled. SQLite integrity, ten historical migrations, 104-object
+schema fingerprint and aggregate table-record counts matched before/after
+startup. All three saved encrypted integration values authenticated with the
+restored key using offline AES-GCM; this does not prove provider token validity.
+Keys and original files matched, and the master snapshot remained untouched.
+No actual password/session was supplied, so real-account sign-in was not tested;
+the synthetic exact-image authentication rehearsal remains the evidence for
+that workflow.
+
+All three original containers resumed with unchanged images, configuration,
+mounts and policies. Public health returned 200, both medication APIs returned
+401 anonymously, and HTTPS validated. The disposable container and runner
+exited; protected snapshot and restore files remain on the host. Sanitized local
+evidence is in ignored `tmpdata/v2-preflight/real-result.json`,
+`real-final-audit.json`, `image-archive-verification.json` and
+`public-probes-after-pause.json`.
+
+This closes the real snapshot/restore rehearsal gate. It is a same-host rollback
+backup, not off-host disaster recovery. Production writes have resumed, so take
+a new stopped snapshot immediately before an approved deployment. Publication,
+deployment, provider UAT and post-deployment checks remain separate gates.
