@@ -88,7 +88,7 @@ docker run -d \
   ghcr.io/ezekielthemad/healthtrack:latest
 ```
 
-Open http://localhost:3000 and register — **the first user becomes the instance admin**. After that, registration is **invite-only by default**: create single-use invite links under **Settings → Invites** to add family members. (Set `SIGNUPS_ENABLED=true` to open registration to anyone, or `false` to close it completely.)
+Open http://localhost:3000 and register — **the first user becomes the instance admin**. After that, registration is **invite-only by default**: create single-use invite links under **Settings → People & sharing → Invites** to add family members. (Set `SIGNUPS_ENABLED=true` to open registration to anyone, or `false` to close it completely.)
 
 > **Port 3000 already in use?** Map a different host port and point `APP_URL` at
 > it, e.g. `-p 3005:3000` with `-e APP_URL=http://localhost:3005`. The container
@@ -111,18 +111,18 @@ HealthTrack ships a Community Applications template: [`unraid/healthtrack.xml`](
 Registration is **invite-only by default** — nobody can create an account on
 your instance without your say-so. The ways to bring people in:
 
-1. **Invite links** (new accounts) — as admin, go to **Settings → Invites**,
+1. **Invite links** (new accounts) — as admin, go to **Settings → People & sharing → Invites**,
    create a link (optionally note who it's for) and send it. Each link is
    **single-use** and expires after 7 days. The recipient registers with email
    - password; afterwards they can also use "Sign in with Google" on the same
      email (accounts link automatically). Revoke unused links any time.
 2. **Dependents** (no account needed) — track children or family members as
-   profiles under your own account (**Settings → Family & Dependents**), with
+   profiles under your own account (**Settings → People & sharing → Family & Dependents**), with
    a transition flow to hand the record over when they grow up.
 3. **Delegates** — grant another _account_ read-only or read-write access to
-   manage your record (**Settings → Delegate Access**).
+   manage your record (**Settings → People & sharing → Delegate Access**).
 4. **Sharing** — share selected sections of a record with another account,
-   with expiry (**Settings → Health Sharing**).
+   with expiry (**Settings → People & sharing → Health Sharing**).
 
 Prefer open registration (e.g. a trusted LAN)? Set `SIGNUPS_ENABLED=true`.
 Set `SIGNUPS_ENABLED=false` to close registration completely, invites included.
@@ -136,7 +136,7 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 | `APP_URL`                                   | **yes**  | `http://localhost:3000`        | Absolute URL of the instance — must match what users browse to; used for auth callbacks                                                                                     |
 | `AUTH_SECRET`                               | no       | auto-generated to `/data/keys` | Session signing secret                                                                                                                                                      |
 | `ENCRYPTION_KEY`                            | no       | auto-generated to `/data/keys` | Encrypts stored OAuth tokens                                                                                                                                                |
-| `SIGNUPS_ENABLED`                           | no       | invite-only                    | Unset: first account registers freely (becomes admin), everyone after needs a single-use invite link (Settings → Invites). `true`: open registration. `false`: fully closed |
+| `SIGNUPS_ENABLED`                           | no       | invite-only                    | Unset: first account registers freely (becomes admin), everyone after needs a single-use invite link (Settings → People & sharing → Invites). `true`: open registration. `false`: fully closed |
 | `ANTHROPIC_API_KEY`                         | no       | —                              | Enables AI features (summaries, queries, PDF parsing, interaction checks)                                                                                                   |
 | `ANTHROPIC_MODEL`                           | no       | current Sonnet                 | Claude model for reasoning features (summaries, queries, interaction checks) — e.g. `claude-opus-4-8`                                                                       |
 | `ANTHROPIC_MODEL_EXTRACTION`                | no       | current Sonnet                 | Claude model for PDF extraction — a cheaper model like `claude-haiku-4-5` works well                                                                                        |

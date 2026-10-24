@@ -13,12 +13,14 @@ export async function GET(request: NextRequest) {
   // not via fetch — so on errors we redirect with a human-readable reason
   // rather than returning a JSON error the browser would render raw.
   const settingsUrl = new URL('/settings', request.nextUrl.origin);
+  settingsUrl.searchParams.set('tab', 'integrations');
+  settingsUrl.hash = 'oura';
   const loginUrl = new URL('/login', request.nextUrl.origin);
 
   const user = await getUser();
 
   if (!user) {
-    loginUrl.searchParams.set('redirect', '/settings');
+    loginUrl.searchParams.set('redirect', '/settings?tab=integrations#oura');
     return NextResponse.redirect(loginUrl);
   }
 
@@ -41,7 +43,9 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.set('state', state);
 
   const response = NextResponse.redirect(authUrl.toString());
-  response.cookies.set(STATE_COOKIE, state, {
+  // Keep the provider state opaque and bind this browser flow to its initiating
+  // account. A later sign-in as another account must restart authorization.
+  response.cookies.set(STATE_COOKIE, JSON.stringify({ state, userId: user.id }), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',

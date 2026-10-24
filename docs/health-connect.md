@@ -11,11 +11,13 @@ fetched at runtime, and a drift test fails if our record table stops matching it
 
 ## Setup
 
-1. **Create the integration.** Settings → **Health Connect** → *Create*. The
-   HMAC signing secret is shown **once** — copy it now.
-2. **Create the token.** Settings → **API Access** → generate a key with only
-   the `write:health_connect` scope. That scope admits the webhook receiver and
-   nothing else.
+1. **Create the integration.** Settings → **Integrations** → **Health Connect** →
+   *Create*. The HMAC signing secret is shown **once** — copy it now.
+2. **Choose the token in the same setup panel.** Use an existing delivery token,
+   or explicitly create a dedicated token with only `write:health_connect`.
+   Copy the one-time Authorization header. General token management remains in
+   Settings → **Advanced & about** → **API access**. Never share this token or
+   the signing secret in screenshots or logs.
 3. **Configure the phone** (Life Dashboard → Health Connect):
 
    | Setting | Value |
@@ -157,9 +159,10 @@ allowlist — approve whatever your own inventory reports.
 
 ### Reprocess retained nutrition
 
-Settings → Health Connect → **Reprocess retained nutrition** recomputes every
-Phoenix day from the food records already stored, and reports the dates
-rebuilt, rows written, records considered, records skipped and any errors.
+Settings → Integrations → Health Connect → **Reprocess retained nutrition**
+recomputes every Phoenix day from the food records already stored, and reports
+the dates rebuilt, rows written, records considered, records skipped and any
+errors.
 
 It is safe to run repeatedly: the rebuild is a pure function of the retained
 raw state, so it cannot inflate a day. Reach for it when you approved a source

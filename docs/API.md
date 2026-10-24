@@ -11,8 +11,8 @@ user data):
 
 ## Authentication
 
-Create a personal access token in **Settings → API Keys** and send it as a
-bearer token:
+Create a personal access token in **Settings → Advanced & about → API access**
+and send it as a bearer token:
 
 ```bash
 curl -H "Authorization: Bearer ohts_pat_..." https://your-instance/api/v1/vitals
@@ -157,7 +157,7 @@ choice. A missing reading from the selected source stays missing; another
 device does not silently fill it. Source choices currently apply to your own
 record; competing sources in dependent or delegated records are omitted.
 
-Settings → Integration health separates native Oura sync outcomes from accepted
+Settings → Integrations separates native Oura sync outcomes from accepted
 push deliveries. It reports last full success, partial/error status, rate-limit
 retry time, server receipt time, and measurement date. Renpho, myAir, and other
 external bridges control their own authorization and schedules; HealthTrack
@@ -242,7 +242,7 @@ in their original three-field shape.
 
 The [Life Dashboard companion app](https://github.com/owen282000/life-dashboard-companion-app)
 can POST Health Connect records straight to an instance. Set it up in
-**Settings → Health Connect**; full walkthrough in
+**Settings → Integrations → Health Connect**; full walkthrough in
 [health-connect.md](health-connect.md).
 
 ```

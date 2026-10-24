@@ -1,18 +1,25 @@
-import { and, eq, isNull, max } from 'drizzle-orm';
+import { and, eq, gt, isNull, max } from 'drizzle-orm';
 import { db } from '@/db';
-import { vitals } from '@/db/schema';
+import { healthConnectIngestRuns, nutritionDaily, vitals } from '@/db/schema';
 import { getCapabilities } from '@/lib/capabilities';
 import { getConnectedSource } from './connected-sources';
 import { getIntegration } from './health-connect';
 import type { IntegrationHealth } from '@/lib/integrations/status';
 import { getOuraSchedulerStatus, ouraSyncIntervalMs } from '@/lib/oura/scheduler';
+import { getHealthTrackTimeZone } from '@/lib/oura/timezone';
+
+const BRIDGE_LABELS = new Map([
+  ['renpho', 'Renpho'],
+  ['myair', 'myAir / CPAP'],
+]);
 
 /** Operational metadata for the signed-in account only. No values, tokens, or provider bodies. */
 export async function listIntegrationHealth(
   actorId: string,
   now = Date.now()
 ): Promise<IntegrationHealth[]> {
-  const [oura, hc, receipts] = await Promise.all([
+  const capabilities = getCapabilities();
+  const [oura, hc, receipts, nutrition] = await Promise.all([
     getConnectedSource(actorId, 'oura'),
     getIntegration(actorId),
     db
@@ -24,23 +31,42 @@ export async function listIntegrationHealth(
       .from(vitals)
       .where(and(eq(vitals.userId, actorId), isNull(vitals.dependentId)))
       .groupBy(vitals.source),
+    db
+      .select({ latestNutritionDate: max(nutritionDaily.date) })
+      .from(nutritionDaily)
+      .where(eq(nutritionDaily.userId, actorId)),
   ]);
+  // Query the retained history, not the management screen's latest ten runs.
+  // Exact retries reuse a run, so this is an import's first recorded receipt.
+  const lastImport = hc
+    ? await db
+        .select({ receivedAt: max(healthConnectIngestRuns.receivedAt) })
+        .from(healthConnectIngestRuns)
+        .where(
+          and(
+            eq(healthConnectIngestRuns.userId, actorId),
+            eq(healthConnectIngestRuns.integrationId, hc.id),
+            eq(healthConnectIngestRuns.status, 'accepted'),
+            gt(healthConnectIngestRuns.receivedCount, 0)
+          )
+        )
+    : [];
   const out: IntegrationHealth[] = [];
   const ouraData = receipts.find((row) => row.source === 'oura');
-  if (oura || getCapabilities().oura) {
+  {
     const blocked = !!(oura?.nextRetryAt && Date.parse(oura.nextRetryAt) > now);
     const running =
       oura?.lastOutcome === 'running' &&
       !!oura.lastAttemptAt &&
       now - Date.parse(oura.lastAttemptAt) < 5 * 60_000;
-    const status = !oura
-      ? 'not_connected'
-      : oura.status === 'expired'
-        ? 'reconnect_required'
-        : oura.status !== 'active'
-          ? oura.status
-          : !getCapabilities().oura
-            ? 'not_configured'
+    const status = !capabilities.oura
+      ? 'not_configured'
+      : !oura
+        ? 'not_connected'
+        : oura.status === 'expired'
+          ? 'reconnect_required'
+          : oura.status !== 'active'
+            ? oura.status
             : blocked
               ? 'backoff'
               : running
@@ -61,6 +87,7 @@ export async function listIntegrationHealth(
       label: 'Oura Ring',
       mode: 'pull',
       status,
+      connectionStatus: oura?.status ?? null,
       lastAttemptAt: oura?.lastAttemptAt ?? null,
       lastSuccessAt: oura?.lastSuccessAt ?? null,
       lastReceivedAt: ouraData?.lastReceivedAt ?? null,
@@ -68,21 +95,19 @@ export async function listIntegrationHealth(
       lastNormalizedAt: null,
       errorCode: oura?.lastErrorCode ?? null,
       nextRetryAt: oura?.nextRetryAt ?? null,
-      canSyncNow:
-        !!oura && oura.status === 'active' && getCapabilities().oura && !blocked && !running,
+      canSyncNow: !!oura && oura.status === 'active' && capabilities.oura && !blocked && !running,
       nextScheduledAt:
-        oura?.status === 'active' && getCapabilities().oura
-          ? getOuraSchedulerStatus().nextRunAt
-          : null,
+        oura?.status === 'active' && capabilities.oura ? getOuraSchedulerStatus().nextRunAt : null,
     });
   }
-  if (hc) {
+  {
     out.push({
       source: 'health_connect',
       label: 'Health Connect / nutrition',
       mode: 'push',
-      status:
-        hc.status === 'active'
+      status: !hc
+        ? 'not_connected'
+        : hc.status === 'active'
           ? hc.lastError
             ? 'delivery_error'
             : hc.lastReceivedAt
@@ -91,11 +116,13 @@ export async function listIntegrationHealth(
           : hc.status,
       lastAttemptAt: null,
       lastSuccessAt: null,
-      lastReceivedAt: hc.lastReceivedAt,
+      lastReceivedAt: hc?.lastReceivedAt ?? null,
+      lastRecordedImportAt: lastImport[0]?.receivedAt ?? null,
+      latestNutritionDate: nutrition[0]?.latestNutritionDate ?? null,
       latestMeasurementAt:
         receipts.find((row) => row.source === 'health_connect_daily')?.latestMeasurementAt ?? null,
-      lastNormalizedAt: hc.lastNormalizedAt,
-      errorCode: hc.lastError ? 'delivery_error' : null,
+      lastNormalizedAt: hc?.lastNormalizedAt ?? null,
+      errorCode: hc?.lastError ? 'delivery_error' : null,
       nextRetryAt: null,
       canSyncNow: false,
     });
@@ -104,7 +131,7 @@ export async function listIntegrationHealth(
     if (['oura', 'health_connect_daily', 'manual'].includes(receipt.source)) continue;
     out.push({
       source: receipt.source,
-      label: receipt.source,
+      label: BRIDGE_LABELS.get(receipt.source) ?? receipt.source,
       mode: 'push',
       status: 'upstream_unknown',
       lastAttemptAt: null,
@@ -117,5 +144,6 @@ export async function listIntegrationHealth(
       canSyncNow: false,
     });
   }
-  return out;
+  const timeZone = getHealthTrackTimeZone();
+  return out.map((item) => ({ ...item, timeZone }));
 }

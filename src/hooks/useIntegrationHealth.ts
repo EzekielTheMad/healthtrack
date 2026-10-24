@@ -1,33 +1,21 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { apiFetch } from '@/lib/api/client';
+import { createContext, useContext } from 'react';
 import type { IntegrationHealth } from '@/lib/integrations/status';
 
+export interface IntegrationHealthSnapshot {
+  integrations: IntegrationHealth[];
+  loading: boolean;
+  error: string | null;
+  lastCheckedAt: string | null;
+  refresh: (force?: boolean) => Promise<void>;
+}
+
+export const IntegrationHealthContext = createContext<IntegrationHealthSnapshot | null>(null);
+
+/** Account-scoped state is supplied once by the authenticated app layout. */
 export function useIntegrationHealth() {
-  const [integrations, setIntegrations] = useState<IntegrationHealth[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const refresh = useCallback(async () => {
-    try {
-      setIntegrations(await apiFetch<IntegrationHealth[]>('/api/integrations/status'));
-      setError(null);
-    } catch {
-      setError('Could not load integration status.');
-    }
-  }, []);
-  useEffect(() => {
-    const update = () => {
-      void refresh();
-    };
-    update();
-    const timer = window.setInterval(update, 60_000);
-    window.addEventListener('focus', update);
-    window.addEventListener('integration-health-changed', update);
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('focus', update);
-      window.removeEventListener('integration-health-changed', update);
-    };
-  }, [refresh]);
-  return { integrations, error, refresh };
+  const context = useContext(IntegrationHealthContext);
+  if (!context) throw new Error('IntegrationHealthProvider is required');
+  return context;
 }

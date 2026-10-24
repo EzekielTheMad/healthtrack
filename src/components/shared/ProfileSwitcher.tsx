@@ -267,7 +267,7 @@ export default function ProfileSwitcher() {
           {/* Manage link */}
           <div className="mt-1 mx-4" style={{ borderTop: '1px solid var(--border-card)' }} />
           <Link
-            href="/settings#dependents"
+            href="/settings?tab=people#dependents"
             onClick={() => setOpen(false)}
             className="block px-4 py-2.5 text-sm transition-colors"
             style={{ color: 'var(--color-sage)' }}

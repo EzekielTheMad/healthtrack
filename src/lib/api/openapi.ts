@@ -90,7 +90,7 @@ export const OPENAPI_DOCUMENT = {
         type: 'http',
         scheme: 'bearer',
         description:
-          'Personal access token created in Settings → API Keys ' +
+          'Personal access token created in Settings → Advanced & about → API access ' +
           '(format `ohts_pat_...`), sent as `Authorization: Bearer <token>`. ' +
           'Each token carries a set of scopes:\n' +
           SCOPE_DOC +

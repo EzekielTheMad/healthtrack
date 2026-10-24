@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import Skeleton from '@/components/shared/Skeleton';
 import EmptyState from '@/components/shared/EmptyState';
 import { shiftDayKey } from '@/lib/dates';
@@ -281,8 +282,17 @@ export default function NutritionView() {
         <EmptyState
           icon={<ForkKnifeIcon />}
           title="No nutrition data yet"
-          description="Connect the Life Dashboard Android app in Settings → Health Connect, approve your food-tracking app, and your daily calories and macros appear here. Already approved it? Use “Reprocess retained nutrition” to normalize what was already received."
+          description="Connect the Life Dashboard Android app in Settings → Integrations → Health Connect, approve your food-tracking app, and your daily calories and macros appear here. Already approved it? Use “Reprocess retained nutrition” to normalize what was already received."
         />
+        <div className="text-center">
+          <Link
+            href="/settings?tab=integrations#health-connect"
+            className="inline-flex min-h-11 items-center rounded-lg px-4 py-2 text-sm underline"
+            style={{ color: 'var(--color-sage)' }}
+          >
+            Set up Health Connect
+          </Link>
+        </div>
       </div>
     );
   }

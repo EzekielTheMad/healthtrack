@@ -149,7 +149,7 @@ export default function ApiDocsPage() {
           <section>
             <h2 className="text-xl md:text-2xl font-bold mb-4">1. Create a token</h2>
             <p className="leading-relaxed mb-4" style={{ color: 'var(--color-text-muted)' }}>
-              Sign in, open <strong>Settings → API Keys</strong>, and create a personal access
+              Sign in, open <strong>Settings → Advanced &amp; about → API access</strong>, and create a personal access
               token with the scopes you need. The token (format <code>ohts_pat_…</code>) is
               shown once — store it securely. Every token resolves to exactly one user, and all
               reads and writes are hard-scoped to that user&apos;s own data.
@@ -381,7 +381,7 @@ export default function ApiDocsPage() {
                 Life Dashboard companion app
               </a>{' '}
               (v1.8.x) can POST Health Connect records straight to this instance. Create the
-              integration in <strong>Settings → Health Connect</strong>; it hands you the webhook
+              integration in <strong>Settings → Integrations → Health Connect</strong>; it hands you the webhook
               URL, a dedicated <code>write:health_connect</code> token, and an HMAC signing
               secret. Payloads are validated against the published relay schema, pinned at
               upstream commit <code>{UPSTREAM_SCHEMA_COMMIT.slice(0, 12)}</code>.
