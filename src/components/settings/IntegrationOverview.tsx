@@ -98,10 +98,7 @@ export default function IntegrationOverview() {
     <section id="integration-health" className="space-y-4 scroll-mt-6">
       <div className="flex items-start flex-wrap justify-between gap-3">
         <div>
-          <h2 tabIndex={-1} data-settings-focus className="text-lg font-semibold">
-            Integrations
-          </h2>
-          <p className="text-sm text-[var(--color-text-muted)]">
+          <p tabIndex={-1} data-settings-focus className="text-sm text-[var(--color-text-muted)]">
             These connections belong to your signed-in account.
           </p>
         </div>
