@@ -165,6 +165,77 @@ cannot verify those upstream connections or trigger their syncs. Start Health
 Connect deliveries from the companion phone app. Refresh status only reads
 metadata already retained by HealthTrack.
 
+New Oura authorization requests include `stress` alongside `daily`, `heartrate`,
+`spo2` and `personal`. Existing grants do not gain a scope through refresh or an
+application upgrade. The owner can use **Review Oura permissions** in Settings
+and review Oura's consent screen. A missing Resilience permission leaves other
+usable feeds active and reports partial coverage; genuine terminal token
+failures still require reconnection.
+
+### Session-only metric comparison
+
+`GET /api/metric-comparison?days=30|90` supports Vitals → Compare. It requires a
+signed-in application session and returns `Cache-Control: no-store`, including
+on errors. A bearer PAT alone is not accepted, even with `read:all`. This is an
+application route, separate from the public v1/OpenAPI contract and existing
+PAT endpoints.
+
+The default window is 30 days. Both choices include today in the instance's
+configured reporting timezone. Query parameters select exactly one person:
+
+| Query | Result |
+| ----- | ------ |
+| No person parameter | The signed-in owner's own records. |
+| `dependent_id=<id>` | One authorized dependent's vitals. |
+| `owner_id=<id>` | An authorized delegate views that owner's own vitals; dependent observations are excluded. |
+
+Nutrition and fitness are included only for the signed-in owner's own
+comparison. Dependent and delegate responses list both in
+`unavailable_domains`. Unknown or unauthorized people return 404; anonymous
+requests return 401. `dependent_id=all`, mixed external-owner/dependent
+requests, repeated scope/window parameters and windows other than 30/90 return
+400. No route writes records or source preferences.
+
+The snake_case response has this shape:
+
+| Field | Meaning |
+| ----- | ------- |
+| `days`, `start_date`, `end_date`, `time_zone` | Window length, inclusive calendar bounds and reporting timezone. |
+| `metrics` | Available vital, nutrition and fitness metric catalog with source series. |
+| `unavailable_domains` | Domains unavailable for the selected person. |
+| `warnings` | Unsupported values/units, partial fitness coverage or bounded-history warnings. |
+
+Each metric includes `key`, `label`, `unit` (nullable), `domain`, `aggregation`,
+`selected_source` and `sources`. Keys use `vital:<registry_key>`,
+`nutrition:calories|protein|carbs|fat`, or
+`fitness:duration_min|volume_lbs`. A source contains `source`, `label`,
+`recorded_days` and `points`, with one `{date, value}` for every window day.
+`null` means unknown or unrecorded; numeric `0` is a recorded zero. Values are
+never carried forward between days. Unsupported legacy units produce gaps and
+a warning rather than a guessed conversion.
+
+`selected_source: null` requires a visible source choice. Vital selection uses
+the owner's saved preference, otherwise Health Connect for overlapping
+activity totals, otherwise the only source when unambiguous. A saved source
+with no observations remains selected with zero recorded days. Competing
+nutrition snapshots remain separate. The UI may choose another source locally
+without saving a global preference, including for authorized dependent and
+delegate comparisons; this does not change ordinary vital-list behavior.
+
+`aggregation` describes the operation **within each day**: means for applicable
+readings, latest snapshots for daily device totals/nutrition/latest-value
+metrics, or sums of logged workout sessions. Repeated daily device snapshots
+and competing feeds are not summed. Training duration includes known durations
+only. Working-set volume uses parsed weight/reps, excludes warmups and doubles
+per-side sets; absent qualifying sets stay unknown. Fitness warnings describe
+these coverage limits.
+
+Reads are bounded to 20,000 vital rows, 1,000 nutrition snapshots and 1,000
+workout sessions. Truncated reads produce warnings that coverage may be
+incomplete; nutrition also warns conservatively when its repository cap is
+reached. The response provides aligned observations, not a correlation estimate
+or a causal conclusion. See [v2 behavior](V2.md#comparisons-and-oura-permission-review-200-rc3).
+
 ### Body measurements (circumferences)
 
 HealthTrack is source-agnostic: it owns the canonical vocabulary, validation,

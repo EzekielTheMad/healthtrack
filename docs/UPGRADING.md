@@ -8,6 +8,86 @@ This checklist does not authorize publication, an outage, or a deployment.
 Use [RELEASE.md](RELEASE.md) for release gates and [UNRAID.md](UNRAID.md) for
 applied-template handling. Store instance-specific evidence outside Git.
 
+## rc.3 compatibility and recovery point
+
+The separately authorized comparison and Oura permission-review rollout was
+observed healthy on 2026-10-25 at 05:23 UTC (2026-10-24 22:23 America/Phoenix).
+Production ran **2.0.0-rc.3**, source
+`dd2241488908fe9c23316e8463b41e0c25fc7249`, Linux/amd64 image configuration
+`sha256:d591bd6211b3d6cf12ecfd13641e9eb0e6625a8dc87197b6fcb90d20b5b78201`.
+No migration was added. This was local image promotion, with no GitHub or
+registry publication.
+
+The protected full stopped recovery bundle and exact host paths are recorded
+in the private release report under ignored `tmpdata/comparisons-and-integrations/`.
+Bundle and configuration directories are mode 0700; sensitive configuration
+files remain private.
+Its matching old binary is **rc.2**, source
+`abd78eaa5ecef462ecb02e9c5fa3f9d8592f1084`, image configuration
+`sha256:452d5e9a00f0eb9085650256898aa0f7e4a9c6a6d4d2037ed525f576c4161aa8`.
+The old image, effective configuration and complete stopped data were preserved
+together. The exact old binary booted a separate offline restored copy, and
+candidate preservation checks passed for all 46 tables, 474 columns, the
+unchanged 13 migrations, keys, original files and encrypted-value usability.
+Final read-back confirmed healthy application identity, preserved runtime
+configuration/mounts, an untouched master snapshot and no remaining helper
+containers or deployment runner. Public login/anonymous denial checks passed.
+
+The existing Renpho/myAir bridges initially resumed unchanged; their subsequent
+scoped repairs passed the separate checks below. Real-account Compare use and
+additional Oura consent were not performed during the application promotion.
+The disposable browser checks already covered `/vitals?view=compare` at phone
+and desktop widths. For production user acceptance, verify the intended person:
+30/90-day windows, independently labeled axes, visible sources, recorded-day
+coverage, a true zero and an unrecorded-day gap. Dependent/delegate comparisons
+must report nutrition and fitness unavailable. The session-only
+`/api/metric-comparison` route must reject anonymous and PAT-only requests.
+Existing `/api/v1` APIs and token scopes remain unchanged.
+
+New Oura authorization requests add `stress` for Resilience. Existing saved
+credentials and grants are preserved; an upgrade cannot add provider consent.
+The owner may select **Review Oura permissions** and choose permissions on
+Oura's consent screen. Do not interpret missing Resilience access as expired
+authorization when other feeds remain usable. Confirm those feeds retain
+active/partial status while permission review is outstanding, and distinguish
+a genuine expired grant from a collection-level permission denial. Do not
+complete the owner's consent as part of an unattended upgrade check.
+
+This snapshot predates post-promotion production writes. A rollback requires
+pausing writers, preserving the current full volume and using this bundle's
+matching rc.2 image/configuration/data pair. Do not silently discard new writes
+or substitute an older rc.1/v0.8.1 recovery point. The bundle supports same-host
+rollback; off-host recovery remains unverified. See [the deployment evidence](V2.md#comparisons-and-oura-permission-review-200-rc3).
+
+### Bridge repair compatibility and recovery
+
+Final bridge read-back passed on 2026-10-25 at 05:40 UTC with the application
+unchanged and healthy. Runtime credentials, Config/HostConfig and network
+aliases were preserved for each bridge. Compose pins the verified patched
+images and removes only the original `build: .` line; host source files remain.
+Apply the reviewed patches before any later source rebuild or image
+replacement, or the original integration defects can return.
+
+Renpho's corrected protocol headers passed a real provider login and normal
+ten-day body/tape poll without errors. There were no eligible recent records:
+`success_no_recent_data` confirms the upstream poll, not a fresh HealthTrack
+receipt. Do not widen the backfill window or repost historical observations to
+manufacture receipt freshness. myAir's live gate confirmed a received
+provider-dated zero-use observation without newly posted AHI/leak/score;
+unknown usage remains unknown and previous records remain intact.
+
+Each bridge has its own private compatible old-image/configuration archive and
+retained stopped old container. Exact recovery locations and sanitized
+acceptance/retry evidence are in the ignored release report and
+`tmpdata/comparisons-and-integrations/post-bridge-audit.json`. A bridge-only
+failure calls for restoring that bridge's original container and startup image
+configuration. Preserve the running application and its current clinical data;
+do not restore the application database as part of bridge rollback.
+
+These bridge changes add no grant for Oura's `stress` permission and cannot
+trigger the companion phone's Health Connect delivery. Those remain user
+actions. No GitHub or registry publication was performed.
+
 ## Before a maintenance window
 
 Record the running platform, source revision, immutable image/platform digest,
