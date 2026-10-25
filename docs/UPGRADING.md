@@ -169,3 +169,36 @@ This closes the real snapshot/restore rehearsal gate. It is a same-host rollback
 backup, not off-host disaster recovery. Production writes have resumed, so take
 a new stopped snapshot immediately before an approved deployment. Publication,
 deployment, provider UAT and post-deployment checks remain separate gates.
+
+## rc.2 deployment recovery point
+
+The authorized integration/settings rollout completed on 2026-10-24
+(2026-10-25 01:46 UTC). Production ran **2.0.0-rc.2**, source
+`5faff897901facff2f6fcb6fa3cfc6eb4a787b6b`, at the final read-back. Its
+Linux/amd64 image configuration is
+`sha256:1e742651b9ee57660f54abb5faabc375a44a3d55efd2c77b8f3d7960476e19a6`.
+This is a local image promotion, not a registry publication.
+
+The fresh stopped snapshot and private effective configuration are retained at
+`/mnt/user/backups/healthtrack/deploy-integrations-rc2-20261025T014229Z`.
+The compatible rollback binary is **rc.1**, source
+`ef5745ab9c65e561e00c4334eb92a1958208ec70`, configuration
+`sha256:7a8baf875797fafe9b427a1c100c57653d868dc1296db38d9b716fe80dedbc2b`.
+Its verified archive is retained privately in that backup's `configuration`
+directory. Configuration parents are 0700 and sensitive files are 0600.
+Do not copy them into source control or publish diagnostic environment dumps.
+
+The exact rc.1 binary successfully booted a separate restored copy offline,
+and the candidate passed the same preservation checks before public access
+resumed. All 46 tables, 474 columns, the unchanged 13-migration ledger, keys,
+originals and encrypted-value usability passed. See
+[deployment evidence](V2.md#integrations-release-on-unraid-2026-10-24) for
+checks and qualifications.
+
+This snapshot predates subsequent production writes. A later rollback requires
+a fresh writer pause and preservation of the current full volume; use the
+recorded rc.1 image with a verified copy of its matching snapshot and original
+configuration. Do not overwrite newer records or start v0.8.1 against v2 data.
+No automatic snapshot rollback is performed after public writes reopen.
+The retained backup supports same-host rollback; off-host recovery and actual
+provider reconnection remain separate checks.
