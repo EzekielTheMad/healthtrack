@@ -7,7 +7,7 @@
 // ---------------------------------------------------------------------------
 
 /** Selector order, left to right. `focus` is the default. */
-export const VITALS_VIEWS = ['focus', 'daily', 'trends', 'measurements'] as const;
+export const VITALS_VIEWS = ['focus', 'daily', 'trends', 'measurements', 'compare'] as const;
 
 export type VitalsView = (typeof VITALS_VIEWS)[number];
 
@@ -18,6 +18,7 @@ export const VITALS_VIEW_LABELS: Record<VitalsView, string> = {
   daily: 'Daily',
   trends: 'All metrics',
   measurements: 'Measurements',
+  compare: 'Compare',
 };
 
 /**

@@ -32,6 +32,12 @@ describe('parseVitalsView', () => {
     expect(parseVitalsView('measurements')).toBe('measurements');
   });
 
+  it('makes Compare linkable and refresh-safe', () => {
+    expect(parseVitalsView('compare')).toBe('compare');
+    expect(vitalsViewHref('compare')).toBe('/vitals?view=compare');
+    expect(VITALS_VIEW_LABELS.compare).toBe('Compare');
+  });
+
   it('keeps the existing views addressable', () => {
     expect(parseVitalsView('daily')).toBe('daily');
     expect(parseVitalsView('trends')).toBe('trends');

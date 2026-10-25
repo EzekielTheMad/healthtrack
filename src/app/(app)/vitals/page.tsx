@@ -12,6 +12,7 @@ import TrendsView from '@/components/vitals/TrendsView';
 import DailyVitalsView from '@/components/vitals/DailyVitalsView';
 import FocusView from '@/components/vitals/FocusView';
 import MeasurementsPanel from '@/components/vitals/MeasurementsPanel';
+import ComparisonView from '@/components/vitals/ComparisonView';
 import SourcePreferencesPanel from '@/components/vitals/SourcePreferencesPanel';
 import { defaultDayKey } from '@/lib/metrics/vitals-view';
 import {
@@ -81,6 +82,7 @@ function VitalsPageContent() {
   // coloring; each view receives them as props.
   const { metricGoals, frequencyGoals, loading: goalsLoading } = useActiveGoals();
   const [showForm, setShowForm] = useState(false);
+  const [comparisonRevision, setComparisonRevision] = useState(0);
   // The selected view lives in `?view=` so it survives a refresh and can be
   // linked to (the Fitness weekly card deep-links to Measurements). Anything
   // unrecognized falls back to Focus.
@@ -136,6 +138,7 @@ function VitalsPageContent() {
 
   async function handleAddVital(vital: Omit<Vital, 'id' | 'user_id' | 'created_at'>) {
     await addVital(vital);
+    setComparisonRevision((revision) => revision + 1);
     setShowForm(false);
   }
 
@@ -175,7 +178,7 @@ function VitalsPageContent() {
               role="tab"
               aria-selected={active}
               onClick={() => selectView(v)}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
+              className="min-h-11 px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
               style={{
                 // Sage tint convention (see FocusView verdict badges).
                 backgroundColor: active ? 'rgba(129, 178, 154, 0.15)' : 'transparent',
@@ -199,27 +202,29 @@ function VitalsPageContent() {
       )}
 
       {/* Connected Sources Bar */}
-      <div
-        className="rounded-xl border p-4 flex items-center gap-3 flex-wrap"
-        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-      >
-        <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
-          Connected Sources:
-        </span>
-        {connectedSources.length === 0 ? (
-          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            None connected
+      {view !== 'compare' && (
+        <div
+          className="rounded-xl border p-4 flex items-center gap-3 flex-wrap"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+        >
+          <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
+            Connected Sources:
           </span>
-        ) : (
-          connectedSources.map((src) => <SourceBadge key={src} source={src} />)
-        )}
-      </div>
+          {connectedSources.length === 0 ? (
+            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              None connected
+            </span>
+          ) : (
+            connectedSources.map((src) => <SourceBadge key={src} source={src} />)
+          )}
+        </div>
+      )}
 
       {/* Manual entry form */}
       {showForm && <ManualVitalEntry onSubmit={handleAddVital} />}
 
       {/* Error */}
-      {error && (
+      {view !== 'compare' && error && (
         <div
           className="rounded-lg border px-4 py-3 text-sm"
           style={{
@@ -233,15 +238,19 @@ function VitalsPageContent() {
         </div>
       )}
 
-      <SourcePreferencesPanel
-        conflicts={sourceConflicts}
-        preferences={sourcePreferences}
-        onChoose={chooseSource}
-        error={sourcePreferenceError}
-        disabled={!canChooseSource}
-      />
+      {view !== 'compare' && (
+        <SourcePreferencesPanel
+          conflicts={sourceConflicts}
+          preferences={sourcePreferences}
+          onChoose={chooseSource}
+          error={sourcePreferenceError}
+          disabled={!canChooseSource}
+        />
+      )}
       {/* Loading state */}
-      {loading || profileLoading || goalsLoading ? (
+      {view === 'compare' ? (
+        <ComparisonView refreshRevision={comparisonRevision} />
+      ) : loading || profileLoading || goalsLoading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Skeleton variant="card" />

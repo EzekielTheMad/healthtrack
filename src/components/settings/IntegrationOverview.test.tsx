@@ -63,6 +63,23 @@ beforeEach(() => {
 });
 
 describe('unified integration controls', () => {
+  it('offers permission review without disconnecting usable Oura feeds', () => {
+    mocks.integrations = [integration({ errorCode: 'insufficient_scope' })];
+    const view = render(<IntegrationOverview />);
+    expect(screen.getByText(/Authorization:/)).toHaveTextContent('Connected');
+    expect(screen.getByText(/Resilience requires Oura/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review Oura permissions' })).toHaveAttribute(
+      'href',
+      '/api/oura/start'
+    );
+    expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled();
+    expect(screen.queryByRole('link', { name: 'Reconnect Oura' })).not.toBeInTheDocument();
+    expect(mocks.api).not.toHaveBeenCalled();
+    mocks.error = 'Unavailable';
+    view.rerender(<IntegrationOverview />);
+    expect(screen.queryByRole('link', { name: 'Review Oura permissions' })).not.toBeInTheDocument();
+  });
+
   it('keeps native sync on one Oura card and never implies bridge health', async () => {
     mocks.integrations = [
       integration(),

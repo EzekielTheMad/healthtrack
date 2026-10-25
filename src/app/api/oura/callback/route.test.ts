@@ -272,6 +272,16 @@ describe('safe Oura callback errors', () => {
     expect(mocks.save).toHaveBeenCalledWith('synthetic-owner', 'oura', expect.any(Object));
     expect(mocks.sync).toHaveBeenCalledWith('synthetic-owner', 'synthetic-access', true);
   });
+  it('requests the specific stress permission needed by Resilience without broadening to all scopes', async () => {
+    const { GET: start } = await import('../start/route');
+    const response = await start(new NextRequest('https://example.test/api/oura/start'));
+    const location = new URL(response.headers.get('location')!);
+    expect(location.origin).toBe('https://cloud.ouraring.com');
+    expect(location.searchParams.get('scope')).toBe('daily heartrate spo2 personal stress');
+    expect(location.searchParams.get('scope')).not.toContain('email');
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(mocks.sync).not.toHaveBeenCalled();
+  });
   it('serializes an expired Secure state cookie on the original path in production', async () => {
     vi.stubEnv('NODE_ENV', 'production');
     await expect(GET(request())).rejects.toThrow(redirectTo('oura=connected&initial_sync=success'));

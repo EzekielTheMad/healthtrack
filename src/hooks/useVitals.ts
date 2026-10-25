@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { Vital } from '@/lib/types';
@@ -50,6 +50,11 @@ export function useVitals(options: UseVitalsOptions = {}) {
     endDate,
     preferenceRevision,
   ]);
+  // Update before effects run so a response cannot mutate a newly selected
+  // person's list in the render-to-effect interval.
+  const currentScope = useRef(scopeKey);
+  // eslint-disable-next-line react-hooks/refs -- This cancellation guard is never rendered; it must change before a prior subject's async write can settle.
+  currentScope.current = scopeKey;
 
   useEffect(() => {
     const refresh = () => setPreferenceRevision((revision) => revision + 1);
@@ -115,7 +120,8 @@ export function useVitals(options: UseVitalsOptions = {}) {
 
   const addVital = useCallback(
     async (vital: Omit<Vital, 'id' | 'user_id' | 'created_at'>) => {
-      setError(null);
+      const writeScope = scopeKey;
+      if (currentScope.current === writeScope) setError(null);
 
       const payload: Record<string, unknown> = { ...vital };
       if (delegateOwnerId) payload.owner_id = delegateOwnerId;
@@ -126,12 +132,19 @@ export function useVitals(options: UseVitalsOptions = {}) {
           method: 'POST',
           body: JSON.stringify(payload),
         });
-        setVitals((prev) => [data, ...prev.filter((row) => row.id !== data.id)]);
+        if (currentScope.current === writeScope) {
+          setVitals((prev) => [data, ...prev.filter((row) => row.id !== data.id)]);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to add vital');
+        if (currentScope.current === writeScope) {
+          setError(err instanceof Error ? err.message : 'Failed to add vital');
+        }
+        // Let the form retain the draft and show its save error; a rejected
+        // write must never look like a successful submission to its caller.
+        throw err;
       }
     },
-    [dependentId, delegateOwnerId]
+    [dependentId, delegateOwnerId, scopeKey]
   );
 
   const inScope = loadedScope === scopeKey;

@@ -4,7 +4,9 @@ import { getUser } from '@/lib/auth/session';
 import { getCapabilities } from '@/lib/capabilities';
 import { getOuraRedirectUri } from '@/lib/oura/oauth-origin';
 
-const OURA_SCOPE = 'daily heartrate spo2 personal';
+// Resilience explicitly rejects otherwise usable tokens without `stress`.
+// Request that permission rather than repeatedly refreshing the same grant.
+const OURA_SCOPE = 'daily heartrate spo2 personal stress';
 const STATE_COOKIE = 'oura_oauth_state';
 const STATE_MAX_AGE = 600; // 10 minutes
 

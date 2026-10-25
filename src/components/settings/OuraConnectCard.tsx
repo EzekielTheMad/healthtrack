@@ -79,6 +79,22 @@ export function OuraConnectCard() {
       {state.errorCode && !error && (
         <p className="text-sm text-[var(--color-warning)]">{ouraErrorMessage(state.errorCode)}</p>
       )}
+      {connected && state.errorCode === 'insufficient_scope' && !error && (
+        <div className="space-y-2 text-sm">
+          <p>
+            Resilience requires Oura’s stress permission. Review the permissions if this data is
+            unavailable. Your existing feeds can continue syncing; reauthorization does not remove
+            imported records.
+          </p>
+          <a className={`${buttonClass} inline-block`} href="/api/oura/start">
+            Review Oura permissions
+          </a>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            This requests daily summaries, heart rate, oxygen, profile and stress access. You choose
+            what to share in Oura. Additional access still depends on your Oura account.
+          </p>
+        </div>
+      )}
       <dl className="grid gap-2 sm:grid-cols-2 text-sm">
         <div>
           <dt className="text-[var(--color-text-muted)]">Last full sync</dt>
