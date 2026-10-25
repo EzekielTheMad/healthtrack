@@ -2,7 +2,7 @@
 
 ## Scope
 
-This candidate adds the private Android companion and its server support to HealthTrack `2.0.0-rc.4`. Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). The APK is a separate private artifact, excluded from the web container and Git. No Unraid deployment, phone installation, Google authorization, or publication was performed during implementation.
+This candidate adds the private Android companion and its server support to HealthTrack `2.0.0-rc.4`. Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). The APK is a separate private artifact, excluded from the web container and Git. Implementation and the subsequently authorized server deployment are recorded separately below. Phone installation, Google authorization and publication remain outstanding.
 
 The website remains the clinical record editor. Native features are account pairing, Health Connect delivery, permission/status controls, and explicitly saved offline Doctor Essentials. Bulk imports and administration use browser handoffs bound to both the originating account and selected person.
 
@@ -34,6 +34,50 @@ The signing identity is outside Git under the current Windows user's protected L
 
 The server's optional `ANDROID_CERT_SHA256` setting accepts the public release certificate fingerprint. Its value is public identity metadata, not a credential. The private key and password are never server configuration. See `android/README.md` for build and signing instructions.
 
+## Authorized Unraid deployment — 2026-10-25
+
+The server rollout completed at 18:59 UTC (11:59 America/Phoenix). Independent
+read-back at 18:59:42 UTC confirmed **2.0.0-rc.4**, source
+`e2551523bac67ec4397c0c21b73435d587d1d0ab`, Linux/amd64 image configuration
+`sha256:8e6ccfa7dd8d48c1510fe643384ef6caff729476db7e3a8dfa2ee8bbdb6b9304`.
+This was a private local image promotion; no GitHub or registry publication occurred.
+
+- A fresh full stopped snapshot retains the compatible rc.3 image, effective
+  configuration, applied template, uploads and keys. An isolated copy upgraded
+  from 13 to 15 migrations and passed restart checks; another copy booted the
+  exact old image successfully. The master snapshot remained untouched.
+- Before public writes resumed, comparisons preserved every original row across
+  46 tables and 474 columns, including nullable historical migration IDs. The
+  only added original-table column was nullable native identity; the nine new
+  native tables remained empty. Existing encrypted values authenticated with
+  the preserved key. All 24 non-database files remained identical.
+- The normal-entrypoint synthetic drill also exercised password/session login,
+  owner/dependent clinical separation, original-document access, native pairing,
+  signed delivery/retry, Doctor Essentials and revocation, followed by an exact
+  rc.3 image/data restore. Real-account login and provider consent were not used
+  as unattended deployment probes.
+- Final independent verification passed all 33 checks: healthy revision, SQLite
+  integrity/schema, only intended configuration/template changes, unchanged
+  autostart, and the same running Renpho/myAir bridge identities/configuration.
+  Task-owned build, synthetic, stage and restore containers and runners exited.
+- Public HTTPS health/login returned 200. Tested clinical, native sync, summary
+  and device routes rejected anonymous access with 401. Asset Links returned
+  200 without redirection and matched the signed APK's package and certificate.
+
+An initial attempt stopped safely before production migration because the
+deployment verifier assumed non-null migration IDs. Recovery resumed rc.3 and
+both bridges. The verifier was corrected and exercised on the isolated real-data
+copies; 41 recovery fault scenarios and 58 preservation tests passed before the
+fresh successful retry. Protected locations and detailed sanitized evidence are
+retained under ignored `tmpdata/android-release/`, including
+`final-audit-results.json` and `copied-data-diagnostic.json`.
+
+The server is ready for the phone acceptance below. Deployment does not pair a
+phone or switch delivery mode: the existing relay remains active until the
+owner explicitly approves native pairing. This closes the server deployment
+gate only. See [the rc.4 recovery point](UPGRADING.md#rc4-android-compatibility-and-recovery-point)
+before any binary rollback.
+
 ## Required phone acceptance
 
 These checks require the intended Android 14+ phone and remain unverified:
@@ -50,7 +94,7 @@ These checks require the intended Android 14+ phone and remain unverified:
 
 Local acceptance does not authorize deployment. Before a separately approved Unraid update:
 
-1. Inspect and record the currently running image digest/revision, mounts, configuration and integration delivery paths. The running Unraid revision was not refreshed in this Android implementation task.
+1. Inspect and record the currently running image digest/revision, mounts, configuration and integration delivery paths. Refresh these for every deployment; the completed rollout above records its own observation time.
 2. Capture a consistent SQLite backup and preserve the complete compatible `/data` state, including uploads and encryption/authentication keys, with the running image and configuration. Protect backups as health data and credentials.
 3. Upgrade an isolated copy using the proposed image and exercise login, clinical records, imports, device pairing and sync. Then restore the old compatible image/data pair in isolation and exercise the same representative reads. Do not point the old image at a migrated production volume as a rollback shortcut.
 4. Configure the correct HTTPS `APP_URL`, reporting timezone and public Android signing fingerprint. Keep existing provider credentials and explicit source preferences intact.

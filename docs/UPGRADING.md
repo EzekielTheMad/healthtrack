@@ -8,6 +8,52 @@ This checklist does not authorize publication, an outage, or a deployment.
 Use [RELEASE.md](RELEASE.md) for release gates and [UNRAID.md](UNRAID.md) for
 applied-template handling. Store instance-specific evidence outside Git.
 
+## rc.4 Android compatibility and recovery point
+
+The authorized private Android server rollout completed on 2026-10-25 at
+18:59 UTC. Independent verification at 18:59:42 UTC confirmed **2.0.0-rc.4**,
+source `e2551523bac67ec4397c0c21b73435d587d1d0ab`, Linux/amd64 image configuration
+`sha256:8e6ccfa7dd8d48c1510fe643384ef6caff729476db7e3a8dfa2ee8bbdb6b9304`.
+No GitHub or registry publication occurred.
+
+The fresh full stopped recovery bundle, exact host paths and verification
+evidence are recorded privately under ignored `tmpdata/android-release/`.
+Its matching old binary is **rc.3**, source
+`dd2241488908fe9c23316e8463b41e0c25fc7249`, image configuration
+`sha256:d591bd6211b3d6cf12ecfd13641e9eb0e6625a8dc87197b6fcb90d20b5b78201`.
+The archive's image configuration and all 13 layer hashes verified; the old
+image, full data volume, effective configuration, applied template and keys are
+retained together. Bundle/configuration parents are 0700 and sensitive
+configuration files are 0600.
+
+This release adds two migrations (13 → 15), nine native-delivery tables and
+nullable `vitals.native_record_id`, with changed partial indexes. Do not boot
+rc.3 against the upgraded volume. Both an rc.4 upgrade/restart of a separate
+real-data copy and an exact rc.3 restore on another copy passed with networking
+disabled, no published ports and provider environment credentials omitted.
+Before the production write boundary, all original rows in 46 tables/474
+columns, migration identities, encrypted-value usability, keys and original
+files passed preservation checks. Nullable Drizzle ledger IDs were preserved;
+the verifier uses row identity rather than assuming numbered migration IDs.
+The independent final audit confirmed the master snapshot was untouched.
+
+The live application preserves its port, mount, network, restart policy,
+timezone, signup behavior and provider credentials. The applied template changes
+only image/revision and the public Android package/certificate settings.
+Autostart and both existing bridge identities/configuration remain unchanged.
+Native pairing is an owner action; upgrading alone leaves the legacy delivery
+path active. See [Android acceptance](ANDROID-ACCEPTANCE.md#authorized-unraid-deployment--2026-10-25)
+for evidence and the unverified physical-phone workflows.
+
+Public writes resumed after validation. A binary rollback requires a new writer
+pause and preservation of the current complete volume, then restoration of the
+matching rc.3 image/data/configuration pair. Preserve or reconcile records and
+phone enrollment written since deployment before reverting; do not silently
+discard them or point the old binary at rc.4 data. To return only to the relay
+while retaining rc.4 and its records, use Settings → Phone & sync → Return to
+legacy delivery. Same-host recovery is verified; off-host recovery remains
+unverified.
+
 ## rc.3 compatibility and recovery point
 
 The separately authorized comparison and Oura permission-review rollout was
