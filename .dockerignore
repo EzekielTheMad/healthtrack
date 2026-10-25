@@ -5,6 +5,8 @@ out
 coverage
 build
 tsconfig.tsbuildinfo
+# The APK and local Android toolchain are built independently of the web image.
+android
 
 # VCS / tooling
 .git

@@ -1,8 +1,6 @@
 'use client';
-
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { enqueueAction, getQueueLength, dequeueActions } from '@/lib/offline/queue';
-
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { getQueueLength } from '@/lib/offline/queue';
 function subscribeOnline(notify: () => void) {
   window.addEventListener('online', notify);
   window.addEventListener('offline', notify);
@@ -13,81 +11,26 @@ function subscribeOnline(notify: () => void) {
 }
 const onlineSnapshot = () => navigator.onLine;
 const serverOnlineSnapshot = () => true;
-
 export function useOffline() {
   const isOnline = useSyncExternalStore(subscribeOnline, onlineSnapshot, serverOnlineSnapshot);
   const [pendingActions, setPendingActions] = useState(0);
-  const syncingRef = useRef(false);
-
-  // Poll pending action count
   useEffect(() => {
-    let mounted = true;
-
-    const refresh = async () => {
-      try {
-        const count = await getQueueLength();
-        if (mounted) setPendingActions(count);
-      } catch {
-        // IndexedDB may be unavailable
-      }
-    };
-
-    refresh();
-    const interval = setInterval(refresh, 3000);
+    let alive = true;
+    getQueueLength()
+      .then((count) => {
+        if (alive) setPendingActions(count);
+      })
+      .catch(() => {});
     return () => {
-      mounted = false;
-      clearInterval(interval);
+      alive = false;
     };
   }, []);
-
-  /**
-   * Enqueue an action for later replay and register background sync if available.
-   */
-  const enqueue = useCallback(async (url: string, method: string, body: unknown) => {
-    await enqueueAction(url, method, body);
-    setPendingActions((prev) => prev + 1);
-
-    // Register background sync if supported
-    if ('serviceWorker' in navigator && 'SyncManager' in window) {
-      try {
-        const reg = await navigator.serviceWorker.ready;
-        await (
-          reg as ServiceWorkerRegistration & { sync: { register: (tag: string) => Promise<void> } }
-        ).sync.register('offline-queue');
-      } catch {
-        // Background sync not available — syncNow() will handle it
-      }
-    }
+  const enqueue = useCallback(async () => {
+    throw new Error(
+      'Reconnect before saving. Offline clinical editing is unavailable; keep this form open to retain your draft.'
+    );
   }, []);
-
-  /**
-   * Manually replay the offline queue (e.g. when back online).
-   */
-  const syncNow = useCallback(async () => {
-    if (syncingRef.current) return;
-    syncingRef.current = true;
-
-    try {
-      const actions = await dequeueActions();
-      for (const action of actions) {
-        try {
-          await fetch(action.url, {
-            method: action.method,
-            headers: { 'Content-Type': 'application/json' },
-            body: action.body,
-          });
-        } catch {
-          // If a replay fails, re-enqueue remaining actions
-          await enqueueAction(action.url, action.method, JSON.parse(action.body));
-          break;
-        }
-      }
-      const remaining = await getQueueLength();
-      setPendingActions(remaining);
-    } finally {
-      syncingRef.current = false;
-    }
-  }, []);
-
+  // Retained for compatibility: legacy actions have no account/subject binding.
+  const syncNow = useCallback(async () => {}, []);
   return { isOnline, pendingActions, enqueue, syncNow };
 }

@@ -276,7 +276,7 @@ export default function MeasurementsView({
               <time dateTime={session.asOf.slice(0, 10)}>{formatUtcDayYear(session.asOf)}</time>
             </span>
             {session.sources.map((s) => (
-              <SourceBadge key={s} source={s} />
+              <SourceBadge key={s} source={s} metadata={vitals.find((row) => row.source === s)?.metadata} />
             ))}
           </div>
         </div>

@@ -91,7 +91,7 @@ describe('updateIntegration', () => {
     expect(updated.allowedSources).toEqual({ nutrition: ['com.sbs.diet'] });
     await expect(
       repo.updateIntegration(OWNER, integration.id, {
-        allowedSources: { sleep: ['com.ouraring.oura'] },
+        allowedSources: { unmapped_type: ['com.ouraring.oura'] },
       }),
     ).rejects.toThrow();
   });

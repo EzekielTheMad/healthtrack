@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import BottomNav from '@/components/shared/BottomNav';
@@ -9,7 +9,9 @@ import { AutoLogout } from '@/components/shared/AutoLogout';
 import { DateRangeProvider } from '@/components/shared/DateRangeContext';
 import { OfflineIndicator } from '@/components/shared/OfflineIndicator';
 import { ActiveProfileProvider } from '@/components/shared/ActiveProfileProvider';
-import ProfileSwitcher from '@/components/shared/ProfileSwitcher';
+import MobileHeader from '@/components/mobile/MobileHeader';
+import { AndroidModeProvider } from '@/components/mobile/AndroidMode';
+import BrowserSubjectGate from '@/components/mobile/BrowserSubjectGate';
 import { registerServiceWorker } from '@/lib/offline/register-sw';
 import IntegrationWarning from '@/components/shared/IntegrationWarning';
 import { IntegrationHealthProvider } from '@/components/shared/IntegrationHealthProvider';
@@ -22,10 +24,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <DateRangeProvider>
+    <AndroidModeProvider><DateRangeProvider>
       <ActiveProfileProvider>
         <IntegrationHealthProvider>
-          <div className="flex min-h-screen">
+          <Suspense fallback={<p className="p-6">Loading HealthTrack…</p>}><BrowserSubjectGate><div className="flex min-h-screen">
             <AutoLogout timeoutMinutes={15} />
             <OfflineIndicator />
             {/* Desktop sidebar */}
@@ -35,9 +37,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Main content */}
             <main id="main-content" className="flex-1 min-w-0 pb-20 md:pb-0 md:ml-64 min-h-screen">
               <div className="max-w-[1000px] mx-auto px-4 py-6 xl:px-0">
-                <div className="flex justify-end mb-4">
-                  <ProfileSwitcher />
-                </div>
+                <MobileHeader />
                 <IntegrationWarning />
                 {children}
                 <footer
@@ -61,9 +61,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="md:hidden">
               <BottomNav activePath={pathname} />
             </div>
-          </div>
+          </div></BrowserSubjectGate></Suspense>
         </IntegrationHealthProvider>
       </ActiveProfileProvider>
-    </DateRangeProvider>
+    </DateRangeProvider></AndroidModeProvider>
   );
 }

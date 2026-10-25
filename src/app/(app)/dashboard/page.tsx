@@ -385,7 +385,7 @@ export default function DashboardPage() {
                           )}
                           {def.label}
                         </span>
-                        {hasData && <SourceBadge source={latest.source} />}
+                        {hasData && <SourceBadge source={latest.source} metadata={latest.metadata} />}
                       </div>
                       <div className="flex items-baseline gap-1.5">
                         <span

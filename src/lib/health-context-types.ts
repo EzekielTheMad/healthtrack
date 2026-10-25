@@ -5,6 +5,7 @@ export interface ContextEvidence {
   record_id: string;
   date: string | null;
   source: string | null;
+  source_label?: string;
   href: string;
 }
 

@@ -178,6 +178,8 @@ describe('unified integration controls', () => {
         mode: 'push',
         status: 'receiving',
         latestNutritionDate: '2026-10-22',
+        latestMeasurementAt: '2026-10-24T06:30:00Z',
+        latestMeasurementDate: '2026-10-23',
         lastRecordedImportAt: null,
       }),
     ];
@@ -185,6 +187,8 @@ describe('unified integration controls', () => {
     const card = document.getElementById('health-connect')!;
     expect(within(card).getByText('Last accepted phone contact')).toBeInTheDocument();
     expect(within(card).getByText('Latest recorded data import')).toBeInTheDocument();
+    expect(within(card).getByText('Latest Health Connect measurement date')).toBeInTheDocument();
+    expect(within(card).getByText('2026-10-23')).toBeInTheDocument();
     expect(within(card).getByText('2026-10-22')).toBeInTheDocument();
     expect(within(card).queryByRole('button', { name: 'Sync now' })).not.toBeInTheDocument();
   });

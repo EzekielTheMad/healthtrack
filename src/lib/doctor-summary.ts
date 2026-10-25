@@ -11,6 +11,7 @@ import { NotFoundError } from './authz';
 import { selectVitalSources, sourceConflicts } from './metrics/source-selection';
 import type { HealthSummaryPdfProps } from '@/components/export/HealthSummaryPdf';
 import { getHealthTrackTimeZone } from './oura/timezone';
+import { vitalSourceLabel } from './metrics/source-label';
 
 export async function buildDoctorSummary(
   actorId: string,
@@ -101,6 +102,8 @@ export async function buildDoctorSummary(
       value: v.value,
       unit: v.unit ?? undefined,
       recorded_at: v.recordedAt,
+      source: v.source,
+      source_label: vitalSourceLabel(v.source, v.metadata),
     })),
     labResults: latestLabs.map((r) => ({
       test_name: r.testName,

@@ -27,6 +27,7 @@ import EmptyState from '@/components/shared/EmptyState';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import Skeleton from '@/components/shared/Skeleton';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
+import { vitalSourceLabel } from '@/lib/metrics/source-label';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -215,7 +216,7 @@ function VitalsPageContent() {
               None connected
             </span>
           ) : (
-            connectedSources.map((src) => <SourceBadge key={src} source={src} />)
+            connectedSources.map((src) => <SourceBadge key={src} source={src} metadata={rawVitals.find((row) => row.source === src)?.metadata} />)
           )}
         </div>
       )}
@@ -242,6 +243,7 @@ function VitalsPageContent() {
         <SourcePreferencesPanel
           conflicts={sourceConflicts}
           preferences={sourcePreferences}
+          labels={Object.fromEntries(rawVitals.map((row) => [row.source, vitalSourceLabel(row.source, row.metadata)]))}
           onChoose={chooseSource}
           error={sourcePreferenceError}
           disabled={!canChooseSource}

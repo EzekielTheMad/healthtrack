@@ -1,6 +1,7 @@
 'use client';
 
 import NutritionView from '@/components/nutrition/NutritionView';
+import { useDateRangeContext } from '@/components/shared/DateRangeContext';
 
 // ---------------------------------------------------------------------------
 // Nutrition — a first-class health domain, not a Fitness sub-tab.
@@ -15,6 +16,7 @@ import NutritionView from '@/components/nutrition/NutritionView';
 // ---------------------------------------------------------------------------
 
 export default function NutritionPage() {
+  const { reportingTimeZone, calendarLoading } = useDateRangeContext();
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -22,7 +24,7 @@ export default function NutritionPage() {
           Nutrition
         </h1>
       </div>
-      <NutritionView />
+      {calendarLoading ? <p role="status">Resolving reporting calendar…</p> : <NutritionView timeZone={reportingTimeZone ?? 'Etc/UTC'} />}
     </div>
   );
 }

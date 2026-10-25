@@ -789,6 +789,159 @@ export const OPENAPI_DOCUMENT = {
     },
   },
   paths: {
+    '/api/v1/mobile/state': {
+      get: {
+        summary: 'Paired Android device state and live offline subject grants',
+        description:
+          'Requires a current paired-device PAT with write:health_connect. A generic PAT cannot access this route. Returns generation, next_sequence, grant_revision, allowed_subjects, integration_status, exact source approvals, configured timezone and accepted/read timestamps. Private no-store response.',
+        responses: {
+          '200': jsonResponse('Device state; never includes credentials', { type: 'object' }),
+          ...AUTH_ERRORS,
+        },
+      },
+    },
+    '/api/v1/mobile/disconnect': {
+      post: {
+        summary: 'Revoke this Android device credential',
+        description:
+          'Current paired-device PAT only, with write:health_connect. Preserves clinical/raw data and keeps legacy relay delivery fenced until the owner explicitly restores it.',
+        responses: {
+          '200': jsonResponse('Device revoked', {
+            type: 'object',
+            properties: { status: { const: 'revoked' } },
+          }),
+          ...AUTH_ERRORS,
+        },
+      },
+    },
+    '/api/v1/mobile/doctor-summary': {
+      get: {
+        summary: 'Doctor Essentials snapshot for an explicitly granted subject',
+        description:
+          'Current paired-device PAT with read:doctor_summary and an explicit current owner/dependent grant. A generic read:all PAT does not authorize this device-only route. Returns schema_version, subject, generated_at, content fingerprint, grant_revision and the shared doctor-summary DTO. Private no-store; ETag is the fingerprint.',
+        parameters: [
+          {
+            name: 'subject',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' },
+            description: 'self or the ID of an explicitly granted owned dependent',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Authorized doctor summary', { type: 'object' }),
+          ...AUTH_ERRORS,
+          ...NOT_FOUND_404,
+          '409': { description: 'Grant changed during generation; refresh state' },
+        },
+      },
+    },
+    '/api/v1/mobile/doctor-summary/pdf': {
+      get: {
+        summary: 'PDF matching a Doctor Essentials JSON fingerprint',
+        description:
+          'Same live paired-device authorization and subject grants as the JSON endpoint. Uses the shared doctor-summary template. Cache the JSON and PDF as one bundle only after both succeed.',
+        parameters: [
+          { name: 'subject', in: 'query', required: true, schema: { type: 'string' } },
+          {
+            name: 'fingerprint',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Matching PDF, private no-store, fingerprint ETag',
+            content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },
+          },
+          ...AUTH_ERRORS,
+          ...NOT_FOUND_404,
+          '409': { description: 'Summary or grant changed; refresh the JSON snapshot first' },
+        },
+      },
+    },
+    '/api/v1/mobile/health-connect/sync': {
+      post: {
+        summary: 'Ordered, idempotent first-party Android Health Connect batch',
+        description:
+          'Current paired-device PAT with write:health_connect plus mandatory HMAC-SHA256 over exact UTF-8 request bytes. Protocol 2; one owner and one active delivery generation. At most 1 MiB and 500 records. The server transaction rechecks credential/generation and saves the batch outcome. Identical retries return that outcome; conflicting bytes/sequences return 409. Raw records retain exact package and Health Connect IDs. Approved projections only. Completed, authorized, contiguous bounded rescans alone can infer deletions.',
+        parameters: [
+          {
+            name: 'X-Signature',
+            in: 'header',
+            required: true,
+            schema: { type: 'string', pattern: '^sha256=[a-f0-9]{64}$' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                required: [
+                  'protocol_version',
+                  'device_generation',
+                  'sequence',
+                  'batch_id',
+                  'read_at',
+                  'app_version',
+                  'events',
+                ],
+                properties: {
+                  protocol_version: { const: 2 },
+                  device_generation: { type: 'string', format: 'uuid' },
+                  sequence: { type: 'integer', minimum: 1 },
+                  batch_id: { type: 'string', format: 'uuid' },
+                  read_at: { type: 'string', format: 'date-time' },
+                  app_version: { type: 'string', maxLength: 64 },
+                  events: {
+                    type: 'array',
+                    maxItems: 500,
+                    items: {
+                      type: 'object',
+                      required: ['kind'],
+                      properties: {
+                        kind: {
+                          enum: [
+                            'upsert',
+                            'delete',
+                            'daily_snapshot',
+                            'rescan_begin',
+                            'rescan_page',
+                            'rescan_complete',
+                          ],
+                        },
+                      },
+                      description:
+                        'Executable per-event contract: native-schema.ts; scalar data uses value/unit, daily_snapshot is a full replacement, rescan requires explicit exact package/type/window and complete page count.',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': jsonResponse(
+            'Committed or replayed original outcome; counts and server received_at',
+            { type: 'object' }
+          ),
+          ...AUTH_ERRORS,
+          ...VALIDATION_400,
+          '409': {
+            description:
+              'Generation, sequence, batch or rescan conflict; do not advance local cursors',
+          },
+          '413': { description: 'Body or record limit exceeded' },
+          '429': {
+            description: 'Delivery rate limit exceeded; retry the pending exact batch later',
+          },
+        },
+      },
+    },
     '/api/v1/context': {
       get: {
         summary: 'Dated owner-only health context with source evidence and coverage',

@@ -40,6 +40,7 @@ export interface DailyReading {
   display: string;
   recordedAt: string;
   source: string;
+  sourceMetadata?: Record<string, unknown> | null;
   lastReceivedAt?: string | null;
 }
 
@@ -204,6 +205,7 @@ export function buildDailySections(
               : fmtNum(r.value, metric?.decimals ?? decimals),
           recordedAt: r.recorded_at,
           source: r.source,
+          sourceMetadata: r.metadata,
           lastReceivedAt: r.last_received_at ?? null,
         }))
       : (() => {
@@ -219,6 +221,7 @@ export function buildDailySections(
                     : fmtNum(dayValue, metric?.decimals ?? decimals),
               recordedAt: latest.recorded_at,
               source: latest.source,
+              sourceMetadata: latest.metadata,
               lastReceivedAt: latest.last_received_at ?? null,
             },
           ];

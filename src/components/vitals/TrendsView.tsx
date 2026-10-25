@@ -231,6 +231,7 @@ export default function TrendsView({
                     displayValue={card.displayValue}
                     unit={card.latest.unit ?? ''}
                     source={card.latest.source}
+                    sourceMetadata={card.latest.metadata}
                     timestamp={card.latest.recorded_at}
                     sparklineData={card.sparkline}
                     rangeInfo={range ? { low: range.low, high: range.high } : undefined}

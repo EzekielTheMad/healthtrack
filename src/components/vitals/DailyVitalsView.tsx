@@ -10,6 +10,7 @@ import { dayKeyToUtcIso, formatLocalTime, localDayKey, shiftDayKey } from '@/lib
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import { missingDailyReports } from '@/lib/metrics/daily-reporting';
 import { useDateRangeContext } from '@/components/shared/DateRangeContext';
+import { vitalSourceLabel } from '@/lib/metrics/source-label';
 
 // ---------------------------------------------------------------------------
 // Daily view — "how was <day>?": a compact per-day table grouped by registry
@@ -156,7 +157,7 @@ export function DailyTable({
                         className="block text-[11px] mt-0.5"
                         style={{ color: 'var(--color-text-muted)' }}
                       >
-                        {reading.source} ·{' '}
+                        {vitalSourceLabel(reading.source, reading.sourceMetadata)} ·{' '}
                         {reading.lastReceivedAt
                           ? `Received ${new Date(reading.lastReceivedAt).toLocaleString(undefined, { timeZone })}`
                           : 'Receipt time unknown'}
@@ -287,7 +288,7 @@ export default function DailyVitalsView({ initialDay, metricGoals = [] }: DailyV
                   <span>
                     {item.label}{' '}
                     <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                      · {item.source}
+                      · {vitalSourceLabel(item.source, vitals.find((row) => row.source === item.source)?.metadata)}
                     </span>
                   </span>
                   <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>

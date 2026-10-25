@@ -34,62 +34,20 @@ function openDB(): Promise<IDBDatabase> {
  * Stores an action in IndexedDB for later replay when back online.
  */
 export async function enqueueAction(
-  url: string,
-  method: string,
-  body: unknown
+  _url: string,
+  _method: string,
+  _body: unknown
 ): Promise<void> {
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
-
-  const action: OfflineAction = {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-    url,
-    method,
-    body: JSON.stringify(body),
-    timestamp: Date.now(),
-  };
-
-  store.add(action);
-
-  await new Promise<void>((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-
-  db.close();
+  void _url; void _method; void _body;
+  throw new Error('Offline clinical editing is disabled. Reconnect before saving; retain your draft in the current form.');
 }
 
 /**
- * Returns and removes all queued actions (sorted by timestamp).
+ * Legacy compatibility: quarantined actions cannot be replayed or consumed.
  */
 export async function dequeueActions(): Promise<OfflineAction[]> {
-  const db = await openDB();
-
-  // Read all actions
-  const readTx = db.transaction(STORE_NAME, 'readonly');
-  const readStore = readTx.objectStore(STORE_NAME);
-  const actions = await new Promise<OfflineAction[]>((resolve, reject) => {
-    const req = readStore.getAll();
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-
-  // Sort by timestamp ascending
-  actions.sort((a, b) => a.timestamp - b.timestamp);
-
-  // Clear the store
-  if (actions.length > 0) {
-    const clearTx = db.transaction(STORE_NAME, 'readwrite');
-    clearTx.objectStore(STORE_NAME).clear();
-    await new Promise<void>((resolve, reject) => {
-      clearTx.oncomplete = () => resolve();
-      clearTx.onerror = () => reject(clearTx.error);
-    });
-  }
-
-  db.close();
-  return actions;
+  // Legacy actions lack an account and subject binding. Quarantine in place.
+  return [];
 }
 
 /**

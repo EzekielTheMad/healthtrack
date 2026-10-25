@@ -15,6 +15,7 @@
  *    already-processed retry on the next attempt.
  */
 import crypto from 'crypto';
+import { assertLegacyDelivery } from '@/lib/mobile/devices';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { healthConnectIntegrations } from '@/db/schema';
@@ -302,6 +303,7 @@ export function ingestEnvelope(input: IngestInput): IngestResult {
   const appVersion = typeof envelope.app_version === 'string' ? envelope.app_version : null;
 
   return db.transaction((tx) => {
+    assertLegacyDelivery(userId);
     // Payload-level retry: the same exact bytes already committed once. Return
     // that run's stored outcome rather than re-reporting fresh counts, so a
     // retried delivery yields ONE ingest result (PRD §10 idempotency).
@@ -456,6 +458,7 @@ export function recordTestPing(
 ): IngestResult {
   const ingestId = crypto.randomUUID();
   return db.transaction((tx) => {
+    assertLegacyDelivery(userId);
     const prior = findRunByBodyDigest(tx, integration.id, bodySha256);
     if (!prior) {
       insertIngestRun(tx, userId, {

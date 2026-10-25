@@ -10,6 +10,7 @@ import { nutritionSourceLabel } from '@/lib/nutrition/sources';
 import { METRICS, getMetric } from './registry';
 import { sourceConflicts, type VitalSourcePreferences } from './source-selection';
 import { convertToCanonicalUnit } from './units';
+import { vitalSourceLabel } from './source-label';
 import type {
   ComparisonAggregation,
   ComparisonDays,
@@ -30,14 +31,6 @@ interface Observation {
   at: string;
   value: number;
 }
-
-const VITAL_SOURCE_LABELS: Readonly<Record<string, string>> = {
-  oura: 'Oura',
-  health_connect_daily: 'Health Connect',
-  renpho: 'Renpho',
-  myair: 'myAir',
-  manual: 'Manual entry',
-};
 
 function alignedSource(
   source: string,
@@ -146,7 +139,7 @@ export function comparisonMetrics(
         }
         return alignedSource(
           source,
-          Object.hasOwn(VITAL_SOURCE_LABELS, source) ? VITAL_SOURCE_LABELS[source] : source,
+          vitalSourceLabel(source, rowsBySource.get(source)?.[0]?.metadata),
           observations,
           dates,
           aggregation

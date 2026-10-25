@@ -1,5 +1,3 @@
-'use client';
-
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import { formatDateOnly, formatVitalDateLong } from '@/lib/dates';
 
@@ -200,7 +198,7 @@ export interface HealthSummaryPdfProps {
   warnings?: string[];
   conditions?: Array<{ name: string; status: string; diagnosed_date?: string }>;
   allergies?: Array<{ name: string; severity: string; reaction?: string }>;
-  vitals?: Array<{ metric_key: string; value: number; unit?: string; recorded_at: string }>;
+  vitals?: Array<{ metric_key: string; value: number; unit?: string; recorded_at: string; source?: string; source_label?: string }>;
   labResults?: Array<{
     test_name: string;
     value: number;
@@ -364,6 +362,7 @@ function VitalsSection({
           </Text>
           <Text style={[styles.tableCell, { flex: 3 }]}>
             {formatVitalDateLong(v.recorded_at, v.metric_key, timezone)}
+            {v.source_label ? `\n${v.source_label}` : ''}
           </Text>
         </View>
       ))}

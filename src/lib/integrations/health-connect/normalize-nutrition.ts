@@ -30,6 +30,7 @@ import { calendarDayWindow } from '@/lib/calendar-window';
 import type { HealthConnectRawRecordRow } from '@/lib/repos/health-connect';
 import type { NutritionStrategy } from '@/db/schema';
 import { nutritionRecordSchema } from './schema';
+import { nativeNutritionDataSchema } from './native-schema';
 
 /** Nutrient fields carried by the pinned relay schema, wire → column. */
 const NUTRIENTS = [
@@ -91,6 +92,7 @@ export function computeDayTotals(
   strategy: NutritionStrategy
 ): NutritionDayComputation {
   const parsed = rows
+    .filter((r) => r.payload.native_protocol !== 2 || nativeNutritionDataSchema.safeParse(r.payload.native_data).success)
     .map((r) => nutritionRecordSchema.safeParse(r.payload))
     .filter((p) => p.success)
     .map((p) => p.data);

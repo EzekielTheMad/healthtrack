@@ -28,12 +28,12 @@ function BridgeCard({
   return (
     <article
       id={source}
-      className="rounded-xl border p-4 sm:p-5 space-y-3 scroll-mt-6"
+      className="min-w-0 rounded-xl border p-4 sm:p-5 space-y-3 scroll-mt-6"
       style={{ background: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
     >
       <div className="flex flex-wrap justify-between gap-2">
-        <div>
-          <h3 className="font-semibold" tabIndex={-1} data-settings-focus>
+        <div className="min-w-0 max-w-full">
+          <h3 className="break-all font-semibold" tabIndex={-1} data-settings-focus>
             {label}
           </h3>
           <p className="text-sm text-[var(--color-text-muted)]">{detail}</p>
@@ -139,7 +139,7 @@ export default function IntegrationOverview() {
                     Health Connect
                   </h3>
                   <p className="text-sm text-[var(--color-text-muted)]">
-                    Android activity and nutrition, including MacroFactor
+                    Android activity, nutrition, sleep, and approved health measurements
                   </p>
                 </div>
                 <span className="text-sm">
@@ -161,9 +161,11 @@ export default function IntegrationOverview() {
                 </div>
                 <div>
                   <dt className="text-[var(--color-text-muted)]">
-                    Latest activity measurement date
+                    Latest Health Connect measurement date
                   </dt>
-                  <dd>{hc.latestMeasurementAt?.slice(0, 10) ?? 'Unknown'}</dd>
+                  <dd>
+                    {hc.latestMeasurementDate ?? hc.latestMeasurementAt?.slice(0, 10) ?? 'Unknown'}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-[var(--color-text-muted)]">Latest nutrition day</dt>

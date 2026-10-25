@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { getMetric } from '@/lib/metrics/registry';
 import type { VitalSourceConflict, VitalSourcePreferences } from '@/lib/metrics/source-selection';
+import { vitalSourceLabel } from '@/lib/metrics/source-label';
 
 export default function SourcePreferencesPanel({
   conflicts,
@@ -10,14 +11,18 @@ export default function SourcePreferencesPanel({
   onChoose,
   disabled = false,
   error,
+  labels = {},
 }: {
   conflicts: VitalSourceConflict[];
   preferences: VitalSourcePreferences;
   onChoose: (metricKey: string, source: string | null) => Promise<void>;
   disabled?: boolean;
   error?: string | null;
+  labels?: Readonly<Record<string, string>>;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
+  const sourceLabel = (source: string) =>
+    Object.hasOwn(labels, source) ? labels[source] : vitalSourceLabel(source);
   const competing = conflicts.filter((c) => c.sources.length > 1 || preferences[c.metricKey]);
   if (!competing.length && !error) return null;
   return (
@@ -74,7 +79,7 @@ export default function SourcePreferencesPanel({
               <option value="">
                 Automatic
                 {conflict.selectedSource && !preferences[conflict.metricKey]
-                  ? ` (${conflict.selectedSource})`
+                  ? ` (${sourceLabel(conflict.selectedSource)})`
                   : ' — choose a source'}
               </option>
               {[
@@ -84,7 +89,7 @@ export default function SourcePreferencesPanel({
                 ]),
               ].map((source) => (
                 <option key={source} value={source}>
-                  {source}
+                  {sourceLabel(source)}
                 </option>
               ))}
             </select>

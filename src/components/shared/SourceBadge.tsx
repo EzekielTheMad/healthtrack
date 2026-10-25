@@ -1,9 +1,11 @@
 'use client';
 
 import React from 'react';
+import { vitalSourceLabel } from '@/lib/metrics/source-label';
 
 interface SourceBadgeProps {
   source: string;
+  metadata?: Record<string, unknown> | null;
 }
 
 const colorMap: Record<string, string> = {
@@ -14,9 +16,10 @@ const colorMap: Record<string, string> = {
   manual: 'var(--color-text-muted)',
 };
 
-export default function SourceBadge({ source }: SourceBadgeProps) {
+export default function SourceBadge({ source, metadata }: SourceBadgeProps) {
   const key = source.toLowerCase();
-  const color = colorMap[key] ?? 'var(--color-text-muted)';
+  const color = Object.hasOwn(colorMap, key) ? colorMap[key] : 'var(--color-text-muted)';
+  const label = vitalSourceLabel(source, metadata);
 
   return (
     <span
@@ -25,9 +28,10 @@ export default function SourceBadge({ source }: SourceBadgeProps) {
         color,
         backgroundColor: `${color}20`,
       }}
-      aria-label={`Data source: ${source}`}
+      aria-label={`Data source: ${label}`}
+      title={source}
     >
-      {source}
+      {label}
     </span>
   );
 }

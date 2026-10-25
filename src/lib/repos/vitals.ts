@@ -53,7 +53,9 @@ export async function listVitals(
         opts.endDate ? lte(vitals.recordedAt, opts.endDate) : undefined
       )
     )
-    .orderBy(desc(vitals.recordedAt));
+    // Native BP components sharing an instant use the same identity tie
+    // break, so a latest selection cannot combine two different readings.
+    .orderBy(desc(vitals.recordedAt), desc(vitals.nativeRecordId), desc(vitals.id));
   return opts.limit !== undefined ? query.limit(opts.limit) : query;
 }
 
@@ -312,6 +314,9 @@ function upsertTupleFilter(
     eq(vitals.metricKey, key.metricKey),
     eq(vitals.recordedAt, key.recordedAt),
     eq(vitals.source, key.source),
+    // Legacy/manual tuples must never overwrite a native discrete record
+    // which happens to share the exact instant.
+    isNull(vitals.nativeRecordId),
     dependentId === null ? isNull(vitals.dependentId) : eq(vitals.dependentId, dependentId)
   );
 }

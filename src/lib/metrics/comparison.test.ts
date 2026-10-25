@@ -57,10 +57,18 @@ function vital(
     metadata: {},
     createdAt: at,
     lastReceivedAt: null,
+    nativeRecordId: null,
   };
 }
 
 describe('single-person comparison service', () => {
+  it('labels native packages without changing source identities or preferences', async () => {
+    const { comparisonMetrics } = await import('./comparison');
+    const source = 'hc:oXVka5w7YY-FL02zOl40n0VlJa6EoQFoRj6bZIpcjh0';
+    const reading = { ...vital('weight', 180, '2026-10-23T00:00:00Z', source, 'lbs'), metadata: { health_connect: true, source_package: 'com.example.scale' } };
+    const result = comparisonMetrics({ vitals: [reading], nutrition: [], workouts: [], preferences: { weight: source } }, ['2026-10-23'], 'America/Phoenix');
+    expect(metric(result.metrics, 'vital:weight')).toMatchObject({ selected_source: source, sources: [{ source, label: 'Health Connect · com.example.scale' }] });
+  });
   it('aligns 30/90 calendar days in the configured timezone without borrowing another patient', async () => {
     const { createVital } = await import('@/lib/repos/vitals');
     for (const [scope, n] of [
@@ -250,7 +258,7 @@ describe('single-person comparison service', () => {
     const result = await buildMetricComparison(OWNER, own, 30, now);
     expect(result.warnings.join(' ')).toContain('20000-row limit');
     expect(metric(result.metrics, 'vital:blood_glucose').sources).toHaveLength(1);
-  });
+  }, 15000); // Real 20,001-row fixture and indexed writes can exceed 5s during concurrent builds.
 });
 
 describe('daily comparison semantics', () => {

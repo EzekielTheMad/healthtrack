@@ -51,6 +51,116 @@ function run(
 }
 
 describe('integration health projection', () => {
+  it('folds native measurement sources into Health Connect without inventing external bridges or crossing patients', async () => {
+    const { createIntegration } = await import('./health-connect');
+    await createIntegration(OWNER, {});
+    const vitals = await import('./vitals');
+    const { nativeSource } = await import('@/lib/integrations/health-connect/native-normalize');
+    const source = nativeSource('com.example.scale');
+    const metadata = {
+      health_connect: true,
+      source_package: 'com.example.scale',
+      calendar_day: '2026-10-22',
+    };
+    const db = (await import('@/db')).db;
+    const child = randomUUID();
+    insertDependent(ctx.sqlite, child, OWNER);
+    vitals.upsertOwnVital(db, OWNER, {
+      metricKey: 'steps',
+      value: 100,
+      source: 'health_connect_daily',
+      recordedAt: '2026-10-20',
+    });
+    vitals.upsertOwnVital(db, OWNER, {
+      metricKey: 'weight',
+      value: 150,
+      source,
+      metadata,
+      recordedAt: '2026-10-22',
+    });
+    vitals.upsertOwnVital(db, VIEWER, {
+      metricKey: 'weight',
+      value: 200,
+      source,
+      metadata,
+      recordedAt: '2026-10-25',
+    });
+    await vitals.createVital(
+      OWNER,
+      { ownerId: OWNER, dependentId: child },
+      { metricKey: 'weight', value: 90, source, metadata, recordedAt: '2026-10-26' }
+    );
+    ctx.sqlite.prepare('UPDATE vitals SET last_received_at=NULL WHERE user_id=?').run(OWNER);
+    ctx.sqlite
+      .prepare(
+        "UPDATE vitals SET last_received_at='2026-10-24T12:00:00Z' WHERE user_id=? AND dependent_id IS NULL AND source=?"
+      )
+      .run(OWNER, source);
+    const rows = await list(OWNER);
+    expect(rows.filter((row) => row.source.startsWith('hc:'))).toEqual([]);
+    expect(rows.find((row) => row.source === 'health_connect')).toMatchObject({
+      label: 'Health Connect',
+      latestMeasurementAt: '2026-10-22T00:00:00Z',
+      latestMeasurementDate: '2026-10-22',
+      lastReceivedAt: '2026-10-24T12:00:00Z',
+    });
+  });
+  it('keeps custom hc-prefixed feeds external and requires matching native package provenance', async () => {
+    const { upsertOwnVital } = await import('./vitals');
+    const { nativeSource } = await import('@/lib/integrations/health-connect/native-normalize');
+    const db = (await import('@/db')).db;
+    const sources = [
+      'hc:garmin',
+      nativeSource('com.example.unverified'),
+      nativeSource('com.example.mismatch'),
+    ];
+    for (const source of sources)
+      upsertOwnVital(db, OWNER, {
+        metricKey: 'weight',
+        value: 150,
+        source,
+        recordedAt: '2026-10-24',
+        metadata:
+          source === sources[2] ? { health_connect: true, source_package: 'com.other.app' } : {},
+      });
+    const rows = await list(OWNER);
+    for (const source of sources)
+      expect(rows.find((row) => row.source === source)).toMatchObject({
+        source,
+        status: 'upstream_unknown',
+      });
+    expect(rows.find((row) => row.source === 'health_connect')?.latestMeasurementAt).toBeNull();
+  });
+  it('shows the native clinical calendar day separately from a Phoenix-boundary observation instant', async () => {
+    const { nativeSource } = await import('@/lib/integrations/health-connect/native-normalize');
+    const { createVital } = await import('./vitals');
+    await createVital(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      {
+        metricKey: 'blood_glucose',
+        value: 100,
+        unit: 'mg/dL',
+        source: nativeSource('com.example.glucose'),
+        recordedAt: '2026-10-24T06:30:00Z',
+        metadata: {
+          health_connect: true,
+          source_package: 'com.example.glucose',
+          calendar_day: '2026-10-23',
+        },
+      }
+    );
+    expect((await list(OWNER)).find((row) => row.source === 'health_connect')).toMatchObject({
+      latestMeasurementAt: '2026-10-24T06:30:00.000Z',
+      latestMeasurementDate: '2026-10-23',
+    });
+    ctx.sqlite
+      .prepare("UPDATE vitals SET metadata=json_remove(metadata,'$.calendar_day') WHERE user_id=?")
+      .run(OWNER);
+    expect(
+      (await list(OWNER)).find((row) => row.source === 'health_connect')?.latestMeasurementDate
+    ).toBe('2026-10-23');
+  });
   it('always lists native setup options and keeps unknown historical receipt times unknown', async () => {
     state.configured = false;
     const rows = await list(OWNER);

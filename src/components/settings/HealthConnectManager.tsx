@@ -10,6 +10,9 @@ import {
 } from '@/hooks/useHealthConnect';
 import Skeleton from '@/components/shared/Skeleton';
 import HealthConnectSetup from './HealthConnectSetup';
+import { CONFIGURABLE_NORMALIZABLE_TYPES } from '@/lib/integrations/health-connect/schema';
+import BrowserHandoff from '@/components/mobile/BrowserHandoff';
+import { useAndroidMode } from '@/components/mobile/AndroidMode';
 
 // ---------------------------------------------------------------------------
 // Health Connect integration — setup instructions, source inventory, exact
@@ -21,7 +24,7 @@ import HealthConnectSetup from './HealthConnectSetup';
 // ---------------------------------------------------------------------------
 
 /** Types this release can normalize. Anything else stays raw-only. */
-const NORMALIZABLE = [
+const LEGACY_NORMALIZABLE = [
   {
     type: 'daily_totals',
     label: 'Daily activity totals',
@@ -37,6 +40,8 @@ const NORMALIZABLE = [
     needsPackage: true,
   },
 ] as const;
+const nativeLabels: Record<string, string> = { weight: 'Weight', body_fat: 'Body fat', resting_heart_rate: 'Resting heart rate', heart_rate_variability: 'HRV (RMSSD)', oxygen_saturation: 'Oxygen saturation', respiratory_rate: 'Respiratory rate', blood_pressure: 'Blood pressure', blood_glucose: 'Blood glucose', body_temperature: 'Body temperature', basal_body_temperature: 'Basal body temperature', vo2_max: 'VO₂ max', hydration: 'Hydration', sleep: 'Sleep duration & stages' };
+const NORMALIZABLE = [...LEGACY_NORMALIZABLE, ...CONFIGURABLE_NORMALIZABLE_TYPES.filter((type) => !LEGACY_NORMALIZABLE.some((item) => item.type === type)).map((type) => ({ type, label: nativeLabels[type] ?? type, detail: 'Read by the HealthTrack Android app. Approve exact source packages; existing display source preferences stay separate.', needsPackage: true }))];
 
 function formatWhen(iso: string | null): string {
   if (!iso) return 'Never';
@@ -337,6 +342,7 @@ function RunLog({ runs }: { runs: IngestRun[] }) {
 }
 
 export default function HealthConnectManager({ embedded = false }: { embedded?: boolean }) {
+  const android = useAndroidMode();
   const {
     integration,
     inventory,
@@ -515,7 +521,7 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
         </div>
       )}
 
-      <HealthConnectSetup
+      <BrowserHandoff path="/settings?tab=integrations#health-connect" title="Legacy relay setup"><HealthConnectSetup
         active={integration.status === 'active'}
         hasContact={hasContact}
         hasRecords={hasRecords}
@@ -544,7 +550,7 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
           )
         }
         secretReveal={secret && <SecretReveal secret={secret} onDone={() => setSecret(null)} />}
-      />
+      /></BrowserHandoff>
 
       {/* Normalization approvals */}
       <div className="rounded-lg border p-4 space-y-3" style={cardStyle}>
@@ -554,15 +560,15 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
             : '3. Review sources and activate'}
         </p>
         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          Review what the phone actually delivered. Nutrition approval uses an exact Android
-          package, never a prefix or name fragment. Other types remain raw-only in this release.
+          Review what the phone actually delivered. Approval uses an exact Android package,
+          never a prefix or name fragment. Display source preferences remain separate.
         </p>
-        <InventoryTable
+        {android ? <div className="space-y-2">{inventory.filter((entry) => CONFIGURABLE_NORMALIZABLE_TYPES.includes(entry.recordType) && entry.recordType !== 'daily_totals').map((entry) => <label key={`${entry.recordType}:${entry.sourcePackage}`} className="flex min-h-14 items-start gap-3 rounded-lg border p-3" style={{ borderColor: 'var(--border-card)' }}><input type="checkbox" className="mt-1 size-5 shrink-0" aria-label={`Approve ${entry.sourcePackage} for ${entry.recordType}`} disabled={writesDisabled} checked={(approved[entry.recordType] ?? []).includes(entry.sourcePackage)} onChange={() => toggleApproval(entry.recordType, entry.sourcePackage)} /><span className="min-w-0 text-sm"><strong>{nativeLabels[entry.recordType] ?? entry.recordType}</strong><span className="block break-all text-xs">{entry.sourcePackage}</span><span className="block text-xs">{entry.count} records · {entry.oldest?.slice(0, 10) ?? 'Unknown'} – {entry.newest?.slice(0, 10) ?? 'Unknown'}</span></span></label>)}{!inventory.length && <p className="text-sm">Sync from the phone, then refresh to review source packages.</p>}</div> : <InventoryTable
           entries={inventory}
           approved={approved}
           onToggle={toggleApproval}
           disabled={writesDisabled}
-        />
+        />}
         {NORMALIZABLE.map((n) => {
           const packages = approved[n.type] ?? [];
           const blocked = n.needsPackage && packages.length === 0;
@@ -616,7 +622,7 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
                 });
                 setBusy(false);
               }}
-              className="rounded-lg border px-2 py-1 text-xs"
+              className="min-h-11 w-full min-w-0 max-w-full rounded-lg border px-2 py-1 text-xs"
               style={{ ...cardStyle, color: 'var(--color-text-primary)' }}
             >
               <option value="sum_items">Sum food/meal records for the day</option>
@@ -628,7 +634,7 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
               items — summing both would double count.
             </p>
 
-            <div className="pt-3 space-y-2">
+            <BrowserHandoff path="/settings?tab=integrations#health-connect" title="Retained record reprocessing"><div className="pt-3 space-y-2">
               <button
                 type="button"
                 disabled={writesDisabled}
@@ -651,7 +657,7 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
                 of what is retained, so it cannot inflate a day.
               </p>
               {rebuild && <RebuildSummary report={rebuild} />}
-            </div>
+            </div></BrowserHandoff>
           </div>
         )}
 
@@ -680,7 +686,7 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
             Activate normalization
           </button>
         )}
-        <details>
+        <BrowserHandoff path="/settings?tab=integrations#health-connect" title="Advanced integration controls"><details>
           <summary className="text-sm font-medium cursor-pointer">Advanced controls</summary>
           <div className="flex gap-2 pt-2 flex-wrap">
             {integration.status === 'active' && (
@@ -763,7 +769,7 @@ export default function HealthConnectManager({ embedded = false }: { embedded?: 
               Delete integration
             </button>
           </div>
-        </details>
+        </details></BrowserHandoff>
       </div>
 
       {/* Delivery log */}

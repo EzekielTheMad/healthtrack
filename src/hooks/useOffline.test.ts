@@ -10,6 +10,14 @@ vi.mock('@/lib/offline/queue', () => ({
 afterEach(() => vi.restoreAllMocks());
 
 describe('browser connectivity subscription', () => {
+  it('does not replay quarantined writes after reconnect or a manual request', async () => {
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    const hook = renderHook(() => useOffline());
+    await act(async () => { await hook.result.current.syncNow(); window.dispatchEvent(new Event('online')); });
+    expect(fetcher).not.toHaveBeenCalled();
+    await expect(hook.result.current.enqueue()).rejects.toThrow(/Reconnect/);
+    hook.unmount(); vi.unstubAllGlobals();
+  });
   it('reads an initially offline browser and updates on native connectivity events', async () => {
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     const hook = renderHook(() => useOffline());

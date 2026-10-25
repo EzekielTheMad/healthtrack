@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth/client';
 import { useDependents } from '@/hooks/useDependents';
 import { useDelegates } from '@/hooks/useDelegates';
@@ -36,7 +35,12 @@ export default function ProfileSwitcher() {
     delegateOwnerName,
     setDelegateProfile,
   } = useActiveProfile();
-  const router = useRouter();
+  function clearHandoffSelection() {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('browser_subject')) return;
+    for (const name of ['browser_subject', 'dependent_id', 'owner_id', 'account_id']) url.searchParams.delete(name);
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }
 
   // Close on click outside
   useEffect(() => {
@@ -68,7 +72,9 @@ export default function ProfileSwitcher() {
       <button
         onClick={() => setOpen(!open)}
         type="button"
-        className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-pointer"
+        aria-label={`Selected person: ${displayName}`}
+        aria-expanded={open}
+        className="flex min-h-11 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-pointer"
         style={{
           backgroundColor: 'var(--bg-card)',
           border: '1px solid var(--border-card)',
@@ -97,7 +103,7 @@ export default function ProfileSwitcher() {
 
       {open && (
         <div
-          className="absolute left-0 top-full mt-2 w-64 rounded-xl border py-2 z-40"
+          className="absolute right-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border py-2 z-40"
           style={{
             backgroundColor: 'var(--bg-card)',
             borderColor: 'var(--border-card)',
@@ -107,6 +113,7 @@ export default function ProfileSwitcher() {
           {/* My Health (self) */}
           <button
             onClick={() => {
+              clearHandoffSelection();
               setActiveProfile(null, null);
               setOpen(false);
             }}
@@ -158,6 +165,7 @@ export default function ProfileSwitcher() {
                 <button
                   key={dep.id}
                   onClick={() => {
+                    clearHandoffSelection();
                     setActiveProfile(dep.id, dep.name);
                     setOpen(false);
                   }}
@@ -231,6 +239,7 @@ export default function ProfileSwitcher() {
                 <button
                   key={del.id}
                   onClick={() => {
+                    clearHandoffSelection();
                     setDelegateProfile(del.owner_id, ownerName, del.permission_level);
                     setOpen(false);
                   }}
@@ -281,6 +290,8 @@ export default function ProfileSwitcher() {
             onClick={async () => {
               setOpen(false);
               await authClient.signOut();
+              // Full navigation discards account/subject state after session revocation.
+              // eslint-disable-next-line @next/next/no-location-assign-relative-destination
               window.location.href = '/login';
             }}
             type="button"

@@ -24,6 +24,7 @@ import { getMetric, METRICS } from './metrics/registry';
 import { listIntegrationHealth } from './repos/integration-health';
 import type { HealthContext } from './claude/query';
 import type { ContextEvidence, QueryContextMetadata } from './health-context-types';
+import { vitalSourceLabel } from './metrics/source-label';
 
 export const CONTEXT_VERSION = 2;
 export const contextDaysSchema = z.coerce
@@ -140,7 +141,8 @@ export async function buildHealthContext(
     id: string,
     date: string | null,
     source: string | null,
-    href: string
+    href: string,
+    sourceLabel?: string
   ) {
     const anchored = [
       'medications',
@@ -156,12 +158,13 @@ export async function buildHealthContext(
       record_id: id,
       date,
       source,
+      ...(sourceLabel ? { source_label: sourceLabel } : {}),
       href: anchored ? `${href}#record-${id}` : href,
     });
   }
   medications.forEach((m) => cite('medications', m.id, m.startDate, null, '/medications'));
   labs.forEach((r) => cite('labs', r.id, r.visitDate, null, '/labs'));
-  selectedVitals.forEach((r) => cite('vitals', r.id, r.recordedAt, r.source, '/vitals'));
+  selectedVitals.forEach((r) => cite('vitals', r.id, r.recordedAt, r.source, '/vitals', vitalSourceLabel(r.source, r.metadata)));
   nutrition.forEach((r) => cite('nutrition', r.id, r.date, r.sourcePackage, '/nutrition'));
   training.forEach((r) => cite('fitness', r.id, r.started_at, null, '/fitness'));
   conditions.forEach((r) => cite('conditions', r.id, r.diagnosedDate, null, '/conditions'));
@@ -184,6 +187,7 @@ export async function buildHealthContext(
       unit: r.unit,
       recorded_at: r.recordedAt,
       source: r.source,
+      source_label: vitalSourceLabel(r.source, r.metadata),
       last_received_at: r.lastReceivedAt,
     })),
     conditions: rowsToSnake(conditions),
@@ -279,6 +283,7 @@ export function contextForPrompt(snapshot: HealthContextSnapshot, question = '')
         [...Map.groupBy(f.vitals, (row) => row.metric_key)].map(([metric, rows]) => ({
           metric,
           source: rows[0].source,
+          source_label: rows[0].source_label,
           samples: rows.length,
           days_observed: new Set(
             rows.map((r) =>
@@ -304,7 +309,7 @@ export function contextForPrompt(snapshot: HealthContextSnapshot, question = '')
       detail
         .map(
           (v) =>
-            `[vitals:${v.id}] ${v.recorded_at} ${v.metric_key}=${v.value} ${v.unit ?? ''} source=${v.source}`
+            `[vitals:${v.id}] ${v.recorded_at} ${v.metric_key}=${v.value} ${v.unit ?? ''} source=${v.source_label} [${v.source}]`
         )
         .join('\n'),
     flagged_data: json(f.labs.filter((r) => r.flag && r.flag !== 'normal')),

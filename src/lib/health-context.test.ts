@@ -25,6 +25,18 @@ afterEach(() => {
 });
 
 describe('shared health facts and doctor summary', () => {
+  it('keeps native source identity and a readable package in app/API facts, evidence and doctor summaries', async () => {
+    const source = 'hc:oXVka5w7YY-FL02zOl40n0VlJa6EoQFoRj6bZIpcjh0';
+    const { createVital } = await import('./repos/vitals');
+    await createVital(OWNER, { ownerId: OWNER, dependentId: null }, { metricKey: 'weight', value: 180, unit: 'lbs', source, recordedAt: '2026-10-22T00:00:00Z', metadata: { health_connect: true, source_package: 'com.example.scale' } });
+    const { buildHealthContext, contextForPrompt } = await import('./health-context');
+    const snapshot = await buildHealthContext(OWNER, null, 30, new Date('2026-10-23T20:00:00Z'));
+    expect(snapshot.facts.vitals[0]).toMatchObject({ source, source_label: 'Health Connect · com.example.scale' });
+    expect(snapshot.evidence.find((item) => item.domain === 'vitals')).toMatchObject({ source, source_label: 'Health Connect · com.example.scale' });
+    expect(contextForPrompt(snapshot, 'weight').vitals_data).toContain('Health Connect · com.example.scale');
+    const { buildDoctorSummary } = await import('./doctor-summary');
+    expect((await buildDoctorSummary(OWNER)).vitals?.[0]).toMatchObject({ source, source_label: 'Health Connect · com.example.scale' });
+  });
   it('uses the configured local day for true intraday observations and validates references', async () => {
     vi.stubEnv('TZ', 'America/Phoenix');
     const { createVital } = await import('./repos/vitals');
