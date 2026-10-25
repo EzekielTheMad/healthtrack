@@ -22,6 +22,98 @@ describe('OuraClient endpoint semantics', () => {
   });
 });
 describe('Oura safe provider requests', () => {
+  const permissionMessage =
+    'Oura denied access to one or more data types. Available data can still sync; review the permissions granted to HealthTrack in Oura.';
+
+  it.each([
+    [401, { detail: 'Token is not authorized access daily scope' }],
+    [401, { detail: 'Token is not authorized access synthetic-unavailable-data scope.' }],
+    [401, { error: 'insufficient_scope' }],
+    [401, { error: 'invalid_scope' }],
+    [403, { error: 'insufficient_scope' }],
+    [403, { title: 'Missing Scopes' }],
+    [403, { title: 'Insufficient Scope' }],
+  ])('keeps an explicit permission denial separate from expiry (%s, %j)', async (status, body) => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(body, { status }));
+    const refresh = vi.fn().mockResolvedValue('rotated');
+    await expect(
+      new OuraClient('valid', refresh).getDailyResilience('2026-10-01', '2026-10-02')
+    ).rejects.toMatchObject({ status, code: 'insufficient_scope', message: permissionMessage });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('recognizes a permission denial after one refresh without refreshing again', async () => {
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json({ error: 'invalid_token' }, { status: 401 }))
+      .mockResolvedValueOnce(
+        Response.json({ detail: 'Token is not authorized access daily scope' }, { status: 401 })
+      );
+    const refresh = vi.fn().mockResolvedValue('rotated');
+    await expect(
+      new OuraClient('old', refresh).getDailyResilience('2026-10-01', '2026-10-02')
+    ).rejects.toMatchObject({
+      status: 401,
+      code: 'insufficient_scope',
+      message: permissionMessage,
+    });
+    expect(refresh).toHaveBeenCalledExactlyOnceWith('old');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('never echoes the scope name or other sensitive provider fields', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json(
+        {
+          detail: 'Token is not authorized access synthetic-sensitive-scope scope',
+          access_token: 'synthetic-sensitive-token',
+          user: 'synthetic-sensitive-user',
+        },
+        { status: 401 }
+      )
+    );
+    const refresh = vi.fn();
+    const error = await new OuraClient('valid', refresh)
+      .getDailyResilience('2026-10-01', '2026-10-02')
+      .catch((failure: unknown) => failure);
+    expect(error).toMatchObject({ code: 'insufficient_scope', message: permissionMessage });
+    expect(String(error)).not.toContain('synthetic-sensitive');
+    expect(JSON.stringify(error)).not.toContain('synthetic-sensitive');
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { detail: 'An unrelated scope problem occurred' },
+    { detail: 'prefix Token is not authorized access daily scope' },
+    { detail: 'Token is not authorized access daily scope suffix' },
+    { detail: 'Token is not authorized access daily\nprivate scope' },
+    { detail: `Token is not authorized access ${'x'.repeat(161)} scope` },
+    { detail: 'insufficient_scope' },
+  ])('does not infer token permissions from generic or malformed detail (%j)', async (body) => {
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(Response.json(body, { status: 401 }))
+      .mockResolvedValueOnce(Response.json(body, { status: 401 }));
+    const refresh = vi.fn().mockResolvedValue('rotated');
+    await expect(
+      new OuraClient('old', refresh).getDailyResilience('2026-10-01', '2026-10-02')
+    ).rejects.toMatchObject({ status: 401, code: 'auth_required' });
+    expect(refresh).toHaveBeenCalledExactlyOnceWith('old');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not treat a provider failure as a permission denial based on its body', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      Response.json({ error: 'insufficient_scope' }, { status: 503 })
+    );
+    const refresh = vi.fn();
+    await expect(
+      new OuraClient('valid', refresh).getDailyResilience('2026-10-01', '2026-10-02')
+    ).rejects.toMatchObject({ status: 503, code: 'provider_unavailable' });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it('refreshes and retries once on an unexpected access-token 401', async () => {
     const fetch = vi
       .spyOn(globalThis, 'fetch')

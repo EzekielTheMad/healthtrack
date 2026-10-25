@@ -28,6 +28,7 @@ beforeEach(async () => {
   list = (await import('./integration-health')).listIntegrationHealth;
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   ctx.restore();
 });
@@ -111,6 +112,72 @@ describe('integration health projection', () => {
     expect((await list(OWNER))[0]).toMatchObject({
       status: 'disconnected',
       connectionStatus: 'disconnected',
+      canSyncNow: false,
+    });
+  });
+
+  it('persists a real partial sync without expiring authorization when one collection lacks permission', async () => {
+    const sources = await import('./connected-sources');
+    await sources.upsertConnectedSource(OWNER, 'oura', {
+      accessTokenEncrypted: 'synthetic-ciphertext',
+      refreshTokenEncrypted: null,
+      tokenExpiresAt: null,
+    });
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const endpoint = new URL(String(input)).pathname;
+      if (endpoint === '/v2/usercollection/daily_resilience')
+        return Response.json(
+          { detail: 'Token is not authorized access daily scope' },
+          { status: 401 }
+        );
+      if (endpoint === '/v2/usercollection/daily_activity')
+        return Response.json({
+          data: [{ id: 'synthetic-activity', day: '2026-10-24', steps: 7000 }],
+          next_token: null,
+        });
+      if (endpoint.startsWith('/v2/usercollection/'))
+        return Response.json({ data: [], next_token: null });
+      throw new Error('Unexpected provider request');
+    });
+    const { syncOuraData } = await import('@/lib/oura/sync');
+    const summary = await syncOuraData(
+      OWNER,
+      'synthetic-valid-token',
+      false,
+      new Date('2026-10-24T19:00:00Z')
+    );
+
+    expect(summary).toMatchObject({
+      synced: 1,
+      outcome: 'partial',
+      errorCode: 'insufficient_scope',
+    });
+    expect(fetch).toHaveBeenCalledTimes(7);
+    expect(await sources.getConnectedSource(OWNER, 'oura')).toMatchObject({
+      status: 'active',
+      lastOutcome: 'partial',
+      lastErrorCode: 'insufficient_scope',
+      lastSyncAt: null,
+      lastSuccessAt: null,
+    });
+    expect(
+      ctx.sqlite
+        .prepare('select user_id, metric_key, value, source from vitals where user_id=?')
+        .all(OWNER)
+    ).toEqual([{ user_id: OWNER, metric_key: 'steps', value: 7000, source: 'oura' }]);
+
+    expect((await list(OWNER))[0]).toMatchObject({
+      status: 'partial',
+      connectionStatus: 'active',
+      errorCode: 'insufficient_scope',
+      canSyncNow: true,
+      lastSuccessAt: null,
+      nextRetryAt: null,
+    });
+    expect((await list(VIEWER))[0]).toMatchObject({
+      status: 'not_connected',
+      connectionStatus: null,
+      errorCode: null,
       canSyncNow: false,
     });
   });

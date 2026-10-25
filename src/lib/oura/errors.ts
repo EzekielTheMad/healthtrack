@@ -14,6 +14,8 @@ export function ouraErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     auth_required: 'Oura authorization expired. Reconnect your Oura Ring.',
     invalid_grant: 'Oura authorization expired (invalid_grant). Reconnect your Oura Ring.',
+    insufficient_scope:
+      'Oura denied access to one or more data types. Available data can still sync; review the permissions granted to HealthTrack in Oura.',
     rate_limited: 'Oura rate limit reached. Sync will resume after the retry time.',
     provider_unavailable: 'Oura is temporarily unavailable. A later sync will retry.',
     timeout: 'Oura did not respond in time. A later sync will retry.',
@@ -59,4 +61,35 @@ export function responseError(response: Response): OuraApiError {
           new Date(Date.now() + 60 * 60_000).toISOString())
       : null
   );
+}
+
+/**
+ * Oura also uses 401 for collection permissions. Refreshing cannot grant scopes,
+ * and treating that response as expiry disables every otherwise working feed.
+ * Only recognize explicit scope errors; unknown 401s retain token recovery.
+ * Provider bodies are inspected in memory and never included in the error.
+ */
+export async function ouraResponseError(response: Response): Promise<OuraApiError> {
+  if (response.status === 401 || response.status === 403) {
+    try {
+      const body: unknown = await response.json();
+      if (body && typeof body === 'object') {
+        const error = 'error' in body ? body.error : undefined;
+        const title = 'title' in body ? body.title : undefined;
+        const detail = 'detail' in body ? body.detail : undefined;
+        if (
+          error === 'insufficient_scope' ||
+          error === 'invalid_scope' ||
+          (typeof title === 'string' && /^(Missing Scopes|Insufficient Scope)$/i.test(title)) ||
+          (typeof detail === 'string' &&
+            /^Token is not authorized access [^\r\n]{1,160} scope[.!]?$/i.test(detail.trim()))
+        ) {
+          return new OuraApiError(response.status, 'insufficient_scope');
+        }
+      }
+    } catch {
+      // Non-JSON, malformed and unrecognized bodies use the normal status path.
+    }
+  }
+  return responseError(response);
 }

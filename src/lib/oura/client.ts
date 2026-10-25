@@ -1,5 +1,5 @@
 // Oura Ring API v2 client. Date ranges follow endpoint semantics documented by Oura.
-import { fetchOura, responseError, OuraApiError } from './errors';
+import { fetchOura, ouraResponseError, OuraApiError } from './errors';
 export interface OuraSleepDoc {
   id: string;
   day: string;
@@ -60,13 +60,16 @@ export class OuraClient {
     let response = await fetchOura(url.toString(), {
       headers: { Authorization: `Bearer ${requestedToken}` },
     });
+    let error = response.ok ? null : await ouraResponseError(response);
+    if (error?.code === 'insufficient_scope') throw error;
     if (response.status === 401 && this.refreshToken) {
       this.accessToken = await this.refreshToken(requestedToken);
       response = await fetchOura(url.toString(), {
         headers: { Authorization: `Bearer ${this.accessToken}` },
       });
+      error = response.ok ? null : await ouraResponseError(response);
     }
-    if (!response.ok) throw responseError(response);
+    if (error) throw error;
     try {
       return (await response.json()) as T;
     } catch {

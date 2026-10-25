@@ -126,6 +126,43 @@ describe('Oura sync window', () => {
 });
 
 describe('Oura canonical mapping and persistence', () => {
+  it('saves available data and records partial permission failure without expiring authorization', async () => {
+    vi.mocked(OuraClient.prototype.getSleepData).mockResolvedValue([sleep()]);
+    vi.mocked(OuraClient.prototype.getDailyResilience).mockRejectedValue(
+      new OuraApiError(401, 'insufficient_scope')
+    );
+
+    const summary = await syncOuraData('user-1', 'valid-access-token', false, NOW);
+
+    expect(summary).toMatchObject({
+      outcome: 'partial',
+      errorCode: 'insufficient_scope',
+      nextRetryAt: null,
+    });
+    expect(summary.synced).toBeGreaterThan(0);
+    expect(summary.errors).toEqual([
+      'Resilience: Oura denied access to one or more data types. Available data can still sync; review the permissions granted to HealthTrack in Oura.',
+    ]);
+    expect(summary.collections).toEqual(
+      expect.arrayContaining([
+        { name: 'Sleep', status: 'success' },
+        { name: 'Resilience', status: 'failed', errorCode: 'insufficient_scope' },
+      ])
+    );
+    expect(repoMocks.upsertOwnVital).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      expect.objectContaining({ metricKey: 'sleep_duration', value: 7, source: 'oura' })
+    );
+    expect(repoMocks.setConnectedSourceStatus).not.toHaveBeenCalled();
+    expect(repoMocks.touchLastSync).not.toHaveBeenCalled();
+    expect(repoMocks.recordConnectedSourceSync).toHaveBeenLastCalledWith(
+      'user-1',
+      'oura',
+      expect.objectContaining({ outcome: 'partial', errorCode: 'insufficient_scope' })
+    );
+  });
+
   it('persists partial failure without advancing full success', async () => {
     vi.mocked(OuraClient.prototype.getDailySleep).mockRejectedValue(
       new OuraApiError(503, 'provider_unavailable')
