@@ -202,3 +202,23 @@ configuration. Do not overwrite newer records or start v0.8.1 against v2 data.
 No automatic snapshot rollback is performed after public writes reopen.
 The retained backup supports same-host rollback; off-host recovery and actual
 provider reconnection remain separate checks.
+
+### Oura corrective deployment recovery point
+
+The 2026-10-24 corrective deployment (2026-10-25 04:33 UTC) retained version
+2.0.0-rc.2 and promoted revision `abd78eaa5ecef462ecb02e9c5fa3f9d8592f1084`,
+image configuration
+`sha256:452d5e9a00f0eb9085650256898aa0f7e4a9c6a6d4d2037ed525f576c4161aa8`.
+It adds no migration. The fresh recovery bundle is
+`/mnt/user/backups/healthtrack/oura-permission-fix-20261025T042957Z`.
+Its matching old binary is the earlier rc.2 revision `5faff89`, image
+`sha256:1e742651b9ee57660f54abb5faabc375a44a3d55efd2c77b8f3d7960476e19a6`;
+the old image archive and original effective configuration are retained privately
+in that bundle. This pair passed the isolated restore and full preservation
+checks described in [V2.md](V2.md#oura-permission-correction-2026-10-24).
+
+The snapshot predates the conditional correction of the falsely expired Oura
+status. Reverting to that binary also reintroduces its scope-error bug. Preserve
+newer writes before any separately authorized rollback and account for that
+operational state; do not silently discard data or automatically restore an old
+snapshot after public writes resume. This remains same-host recovery evidence.
