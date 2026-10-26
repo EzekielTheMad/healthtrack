@@ -2,7 +2,7 @@
 
 ## Scope
 
-The private Android companion and its server support were initially delivered in HealthTrack `2.0.0-rc.4`. The website-first update is server candidate `2.0.0-rc.5` with APK `0.1.1` (version code 2). Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). APKs are separate private artifacts, excluded from the web container and Git. Implementation, the earlier authorized server deployment and physical-phone checks are recorded separately below. The rc.5 server rollout, full phone acceptance, provider-specific consent testing and publication remain separate gates.
+The private Android companion and its server support were initially delivered in HealthTrack `2.0.0-rc.4`. The website-first update is server `2.0.0-rc.5` with APK `0.1.1` (version code 2); its authorized private Unraid rollout completed on 2026-10-26. Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). APKs are separate private artifacts, excluded from the web container and Git. Implementation, deployments and physical-phone checks are recorded separately below. Full phone acceptance, provider-specific consent testing and publication remain separate gates.
 
 The website remains the clinical record editor, including imports and administration in the same online context. Native features are account pairing, Health Connect delivery, permission/status controls, and explicitly saved offline Doctor Essentials. Actual transitions between browser and native tools preserve the originating account and selected person through validated return context.
 
@@ -56,12 +56,51 @@ existing Android enrollment storage remain compatible. Versioned private
 artifacts and sanitized evidence are under ignored `tmpdata/artifacts/` and
 `tmpdata/seamless-release/`.
 
-The phone checks used the currently deployed rc.4 site plus the already-existing
-guarded return interface. The rc.5 website changes were tested on an isolated
-local production runtime. Until its separately authorized rollout, the live
-website retains its earlier browser-handoff interstitials. No production
-clinical records, phone enrollment, provider grants or live server configuration
-were changed during this implementation.
+Those 12 phone checks used the earlier rc.4 site plus the existing guarded
+return interface. The rc.5 website changes also passed the isolated production
+browser checks above before deployment. No clinical records, phone enrollment
+or provider grants were changed during that implementation.
+
+## Authorized website-first rollout — 2026-10-26
+
+The private Unraid rollout completed at **17:38:16 UTC (10:38 America/Phoenix)**.
+HealthTrack runs **2.0.0-rc.5**, source
+`48f99c8e32fbece39e6533ee4e079fdeb72cf165`, Linux/amd64 image configuration
+`sha256:e0e501fb36ca5dfac9030fa66f46626cfe69e67126b6d235e4477e798422f6d5`.
+This is local image promotion; no GitHub or registry publication occurred.
+
+Before stopping production, that exact Linux image passed normal-entrypoint
+UID 99/GID 100, static assets, fresh HTTP registration/profile/password login,
+medication date/RxNorm retention and owner/dependent/foreign-account isolation
+checks on disposable data. Anonymous clinical/native routes returned 401 and
+Asset Links matched the unchanged APK signing identity.
+
+The application and both bridges paused for a fresh full-volume/configuration/
+image snapshot. Candidate startup/restart and an exact rc.4 restore booted
+separate real-data copies without network access, published ports or provider
+credentials. All **55 tables / 545 columns**, typed values, row identities,
+duplicates, native enrollment/delivery state, keys, originals and the complete
+15-migration ledger were preserved. SQLite integrity and the unchanged
+128-object schema fingerprint passed. Saved encrypted values remained usable.
+The master snapshot was not opened as a runtime database.
+
+Production changes are limited to the application image/revision/version labels
+and matching template values. Existing Android identity, settings, credentials,
+autostart and both bridge identities remain unchanged. Public health/login
+returned 200, protected routes returned 401 and public Asset Links matched.
+The old stopped container was removed after retaining its compatible recovery
+pair, preventing an accidental duplicate start. See the
+[rc.5 recovery point](UPGRADING.md#rc5-website-first-android-recovery-point).
+
+Independent live audit at **17:38:51 UTC passed 39/39 checks**, covering exact
+runtime identity, all preservation comparisons, immutable backup, private
+recovery material, settings/template/autostart equality, unchanged bridges,
+anonymous access denials, Android identity and removal of task helpers.
+
+Sanitized deployment, image-smoke and independent-review evidence is retained
+under ignored `tmpdata/seamless-rollout/`; full private recovery material stays
+on the host. Server verification does not establish new Health Connect delivery,
+biometric offline use, PDF sharing or 24-hour background acceptance on the spare.
 
 ## Original rc.4 local verification
 

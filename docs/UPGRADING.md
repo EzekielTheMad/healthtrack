@@ -8,6 +8,45 @@ This checklist does not authorize publication, an outage, or a deployment.
 Use [RELEASE.md](RELEASE.md) for release gates and [UNRAID.md](UNRAID.md) for
 applied-template handling. Store instance-specific evidence outside Git.
 
+## rc.5 website-first Android recovery point
+
+The authorized private website-first rollout completed on 2026-10-26 at
+17:38:16 UTC, running **2.0.0-rc.5**, source
+`48f99c8e32fbece39e6533ee4e079fdeb72cf165`, Linux/amd64 image configuration
+`sha256:e0e501fb36ca5dfac9030fa66f46626cfe69e67126b6d235e4477e798422f6d5`.
+It adds no migration: the schema remains 15 migrations, 55 tables and 128
+noninternal objects. GitHub and registry publication were not performed.
+
+A fresh writer-paused full recovery bundle retains all 27 files, keys, uploads,
+effective configuration, applied template and the matching **rc.4** image,
+source `e2551523bac67ec4397c0c21b73435d587d1d0ab`, image configuration
+`sha256:8e6ccfa7dd8d48c1510fe643384ef6caff729476db7e3a8dfa2ee8bbdb6b9304`.
+Exact host paths and sanitized checks are recorded privately under ignored
+`tmpdata/seamless-rollout/`. Bundle/configuration parents are 0700 and sensitive
+configuration files are 0600. The old image archive and all 13 layers verified.
+
+Both candidate startup/restart and exact-old-image restore passed on separate
+copies with no external network, ports or provider credentials. All original
+55 tables/545 columns, typed values, hidden rowids, multiplicity, native/mobile
+records, nullable migration identities and sequences were checked without
+assuming native tables were empty. Keys, originals, encrypted-value usability,
+SQLite integrity and the immutable master snapshot passed. See
+[rollout evidence](ANDROID-ACCEPTANCE.md#authorized-website-first-rollout--2026-10-26).
+
+Only the application image/revision/version labels and corresponding template
+values changed. Android identity, providers, autostart and both bridge
+configurations were preserved. Existing native pairing and delivery state remain
+intact; this update does not require re-enrollment. The prior stopped container
+was removed after its complete compatible recovery pair was retained.
+
+Public writes have resumed. Any rollback requires a new writer pause and
+preservation of the current full volume before deciding how to reconcile later
+records and phone activity. Never automatically overwrite new writes with this
+snapshot. A binary-only downgrade still requires separate behavior-compatibility
+verification, even when schemas match.
+Use the recorded matching image/data/configuration pair for snapshot recovery.
+This is same-host rollback evidence; off-host disaster recovery is unverified.
+
 ## rc.4 Android compatibility and recovery point
 
 The authorized private Android server rollout completed on 2026-10-25 at
