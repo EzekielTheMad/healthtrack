@@ -120,7 +120,7 @@ reproduction confirmed the faulty component behavior. Earlier scripted attempts
 also encountered test-only Android label, tab-target and tap-occlusion issues;
 those attempts are not accepted as full user-flow passes.
 
-A **local corrective candidate** shares activity timestamps per login and
+The corrective revision shares activity timestamps per login and
 prevents hidden/unfocused pages from revoking an active session. It retains the
 15-minute inactivity limit, checks elapsed time before accepting resumed input,
 and clears stale account views without revoking a replacement login. The shared
@@ -130,7 +130,7 @@ remains authoritative. Client session checking and sign-out are not atomic
 against a simultaneous login in another window; that pre-existing race remains
 a separate limitation.
 
-The corrective candidate passed **177 files / 1,778 repository tests**, all
+The corrective revision passed **177 files / 1,778 repository tests**, all
 29 focused idle/logout regressions, the production standalone build and
 sanitization, and repository lint (zero errors, 15 advisory warnings).
 Independent review passed with nine additional synthetic scenarios. A real
@@ -140,13 +140,34 @@ the shared idle deadline. That fixture shortened the component's timeout prop
 to three seconds; production still passes 15 minutes. It used mocked auth calls
 and no real health data, so it is not live phone evidence for the correction.
 
-The corrective candidate is not yet deployed. The live phone launch acceptance
-remains qualified until the correction is promoted and the active/idle/reopen
-checks are repeated. Sanitized evidence is in ignored `tmpdata/idle-logout/` and
-`tmpdata/seamless-rollout/phone-doctor-flow-results.json`.
-After promotion, reload or close existing HealthTrack browser/TWA pages before
-the phone retest: an already-open page can still run the earlier timer code.
-No new APK is required for this server-side correction.
+After separate approval, the correction deployed at **18:50:58 UTC (11:50
+America/Phoenix)**, source `9290c6b1c2b358e69c417a181c8af719bbeab9b6`, Linux image
+`sha256:30ca829dc2827d16169aa1b11609139e115fa724aa30a760b5d1519f39b609cb`.
+Version remains 2.0.0-rc.5; Settings distinguishes this corrective revision.
+A fresh stopped full backup, isolated candidate startup/restart, exact prior
+rc.5 restore, and **39/39 independent final checks** passed. All 55 tables/545
+columns, native state, keys, originals, settings and both bridges were preserved.
+No migration or APK change was required. The old unused rc.2 image cache entry
+was removed only after its complete archive verified; recovery archives remain.
+
+Sanitized evidence is in ignored `tmpdata/idle-logout/` and the earlier
+`tmpdata/seamless-rollout/phone-doctor-flow-results.json`. Reload or close existing
+HealthTrack browser/TWA pages after upgrading: an already-open page can still
+run the earlier timer code. The three existing HealthTrack phone documents were
+refreshed before the corrective phone retest; sign-in remained a human action.
+
+The final corrective live-phone run passed **13/13 checks** at 18:57:23 UTC:
+actual Settings/API controls stayed inline, Labs respected the existing disabled
+AI-import capability, the current-owner Doctor link opened unpaired native
+tools, Android Back produced a fresh exact guarded website navigation, and a
+Home/launcher reopening kept the signed-in five-tab website. The deployed idle
+coordination marker was present, and the phone was left on Health. Independent
+review verified the evidence and its use of visible taps rather than background
+browser navigation. No key generation, report upload, PDF generation, native
+pairing, sync, Health Connect read, cookie/token extraction or clinical write
+was performed. This approximately 85-second phone run did not exercise a literal
+15-minute timeout or 24-hour background delivery; idle-policy proof comes from
+the focused tests and the accelerated two-page browser fixture above.
 
 ## Original rc.4 local verification
 

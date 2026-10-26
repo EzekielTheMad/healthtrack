@@ -8,6 +8,36 @@ This checklist does not authorize publication, an outage, or a deployment.
 Use [RELEASE.md](RELEASE.md) for release gates and [UNRAID.md](UNRAID.md) for
 applied-template handling. Store instance-specific evidence outside Git.
 
+## rc.5 inactivity correction recovery point
+
+The separately authorized correction deployed on 2026-10-26 at 18:50:58 UTC,
+source `9290c6b1c2b358e69c417a181c8af719bbeab9b6`, image configuration
+`sha256:30ca829dc2827d16169aa1b11609139e115fa724aa30a760b5d1519f39b609cb`.
+It retains version 2.0.0-rc.5 and the existing 15-minute inactivity rule while
+coordinating activity across browser/TWA documents. There is no migration,
+server API change, provider change or new APK.
+
+A new writer-paused complete recovery bundle pairs the current data, keys,
+original files and configuration with the exact prior rc.5 binary, source
+`48f99c8e32fbece39e6533ee4e079fdeb72cf165`, image configuration
+`sha256:e0e501fb36ca5dfac9030fa66f46626cfe69e67126b6d235e4477e798422f6d5`.
+Private paths and verification reports are retained under ignored
+`tmpdata/idle-logout/`. Separate candidate/restart and exact-old-image copies
+passed full 55-table/545-column, typed-value/rowid/multiplicity/native-state,
+15-migration, encryption/key/original and immutable-master checks. The independent
+live audit passed 39/39. Provider configuration, bridge identities, Android
+identity and autostart remain unchanged.
+
+Only the approved unused rc.2 cached image was removed for space; its verified
+archive and historical recovery material remain intact. The immediate rc.5
+rollback image remains available. Public writes have resumed: preserve the
+current complete volume and reconcile later records before any rollback. Do
+not automatically overwrite new writes with this snapshot. Returning to the
+previous binary also restores its per-document idle-timer behavior.
+
+Reload existing website/app documents after promotion so they stop running the
+old timer. Same-host restore evidence does not establish off-host recovery.
+
 ## rc.5 website-first Android recovery point
 
 The authorized private website-first rollout completed on 2026-10-26 at
