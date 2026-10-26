@@ -12,14 +12,11 @@ import TrendCard from '@/components/labs/TrendCard';
 import VisitCard from '@/components/labs/VisitCard';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import ImportBatchReview from '@/components/settings/ImportBatchReview';
-import BrowserHandoff from '@/components/mobile/BrowserHandoff';
-import { useAndroidMode } from '@/components/mobile/AndroidMode';
 
 type View = 'trends' | 'visits';
 type Flow = 'idle' | 'import' | 'review';
 
 export default function LabsPage() {
-  const android = useAndroidMode();
   const { capabilities } = useCapabilities();
   // PDF import runs through the AI parser — hide its entry points when the
   // instance has no ANTHROPIC_API_KEY configured.
@@ -194,7 +191,7 @@ export default function LabsPage() {
           Lab Results
         </h1>
         {!aiHidden && !delegateOwnerId && (
-          <BrowserHandoff path="/labs" title="Lab uploads"><button
+          <button
             onClick={() => setFlow('import')}
             className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors"
             style={{
@@ -205,7 +202,7 @@ export default function LabsPage() {
             }}
           >
             Upload Lab PDF
-          </button></BrowserHandoff>
+          </button>
         )}
       </div>
 
@@ -273,12 +270,12 @@ export default function LabsPage() {
             }
             title="No lab results yet"
             description={
-              aiHidden || delegateOwnerId || android
+              aiHidden || delegateOwnerId
                 ? 'Lab results imported on this instance will appear here.'
                 : "Upload a lab PDF to get started. We'll parse your results and track trends over time."
             }
             action={
-              aiHidden || delegateOwnerId || android
+              aiHidden || delegateOwnerId
                 ? undefined
                 : {
                     label: 'Upload Lab PDF',

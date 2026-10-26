@@ -28,8 +28,12 @@
     </queries>
     <application android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:icon="@drawable/ic_healthtrack" android:label="@string/app_name" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:supportsRtl="true">
         <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true" android:theme="@style/WebsiteLauncherTheme">
+            <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="https://omnihealthtracker.com/dashboard?app=android" />
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity>
+        <activity android:name=".NativeToolsActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.DEFAULT" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="healthtrack" /><data android:host="sync" /><data android:host="doctor" /></intent-filter>
         </activity>
         <activity android:name=".PrivacyActivity" android:exported="true">

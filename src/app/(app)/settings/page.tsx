@@ -17,7 +17,6 @@ import SettingsGroups from '@/components/settings/SettingsGroups';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import { useSession } from '@/lib/auth/client';
 import { useRouter } from 'next/navigation';
-import BrowserHandoff from '@/components/mobile/BrowserHandoff';
 import Link from 'next/link';
 
 // Native disclosures keep their forms mounted when closed and expose their
@@ -191,7 +190,17 @@ function SettingsContent() {
               <ProfileForm />
             </SettingsSection>
           ),
-          integrations: <><Link href="/mobile/devices" className="inline-flex min-h-11 items-center underline mb-3">Android phone pairing & sync</Link><IntegrationOverview /></>,
+          integrations: (
+            <>
+              <Link
+                href="/mobile/devices"
+                className="inline-flex min-h-11 items-center underline mb-3"
+              >
+                Phone & sync
+              </Link>
+              <IntegrationOverview />
+            </>
+          ),
           people: (
             <>
               <SettingsSection
@@ -213,14 +222,14 @@ function SettingsContent() {
                 title="Delegate Access"
                 description="Grant other adults account-level access to view or manage your health data."
               >
-                <BrowserHandoff path="/settings?tab=people" title="Delegate access"><DelegateManager /></BrowserHandoff>
+                <DelegateManager />
               </SettingsSection>
               <SettingsSection
                 id="health-sharing"
                 title="Health Sharing"
                 description="Share your health data with family members, caregivers, or providers."
               >
-                <BrowserHandoff path="/settings?tab=people" title="Health sharing"><HealthShareManager /></BrowserHandoff>
+                <HealthShareManager />
               </SettingsSection>
               {isAdmin && (
                 <SettingsSection
@@ -228,7 +237,7 @@ function SettingsContent() {
                   title="Invites"
                   description="Create single-use invite links so family members can register on this instance."
                 >
-                  <BrowserHandoff path="/settings?tab=people" title="Invites"><InviteManager /></BrowserHandoff>
+                  <InviteManager />
                 </SettingsSection>
               )}
             </>
@@ -240,14 +249,14 @@ function SettingsContent() {
                 title="Import Medical History"
                 description="Review saved document imports, or extract a medical history for you or a dependent."
               >
-                <BrowserHandoff path="/settings?tab=data" title="Medical history imports"><MedicalHistoryImport extractionEnabled={capabilities?.ai === true} /></BrowserHandoff>
+                <MedicalHistoryImport extractionEnabled={capabilities?.ai === true} />
               </SettingsSection>
               <SettingsSection
                 id="data-export"
                 title="Data Export"
                 description="Export your health data as a JSON file for personal backup."
               >
-                <BrowserHandoff path="/settings?tab=data" title="Full data export"><DataExportSection /></BrowserHandoff>
+                <DataExportSection />
               </SettingsSection>
               <SettingsSection
                 id="pdf-summary"
@@ -265,7 +274,7 @@ function SettingsContent() {
                 title="API access"
                 description="Generate tokens for Hermes, device bridges, and other external apps or scripts."
               >
-                <BrowserHandoff path="/settings?tab=advanced" title="API access"><ApiKeyManager /></BrowserHandoff>
+                <ApiKeyManager />
               </SettingsSection>
               <div id="build" className="scroll-mt-6">
                 <h3 className="mb-2 font-semibold">About this instance</h3>
@@ -277,7 +286,7 @@ function SettingsContent() {
                 description="Permanently delete your account and all associated health data."
                 borderColor="#991B1B"
               >
-                <BrowserHandoff path="/settings?tab=advanced" title="Account deletion"><div className="space-y-4">
+                <div className="space-y-4">
                   <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
                     Once you delete your account, all of your data will be permanently removed. This
                     action cannot be undone.
@@ -294,7 +303,7 @@ function SettingsContent() {
                   >
                     Delete Account
                   </button>
-                </div></BrowserHandoff>
+                </div>
               </SettingsSection>
             </>
           ),

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useSession } from '@/lib/auth/client';
+import { useNativeActionHref, useAndroidMode } from './AndroidMode';
 type PairRequest = {
   request_id: string;
   status: string;
@@ -23,6 +24,8 @@ export default function PairApproval({ requestId }: { requestId: string }) {
   return <PairApprovalContent key={`${session.user.id}:${requestId}`} requestId={requestId} />;
 }
 function PairApprovalContent({ requestId }: { requestId: string }) {
+  const android = useAndroidMode();
+  const nativeSyncHref = useNativeActionHref('sync');
   const [request, setRequest] = useState<PairRequest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -76,10 +79,18 @@ function PairApprovalContent({ requestId }: { requestId: string }) {
     return (
       <div role="status" className="space-y-3">
         <h1 className="text-2xl font-bold">Phone approved</h1>
-        <p>
-          Return to HealthTrack on Android to finish pairing and choose Health Connect permissions.
-          No credentials are shared through this browser page.
-        </p>
+        <p>Finish connecting this phone, then choose which Health Connect readings to share.</p>
+        {android && nativeSyncHref ? (
+          <a
+            href={nativeSyncHref}
+            className="inline-flex min-h-11 items-center rounded-lg border px-4 py-2"
+            style={{ borderColor: 'var(--border-card)' }}
+          >
+            Continue phone setup
+          </a>
+        ) : (
+          <p>Return to HealthTrack on Android to complete phone setup.</p>
+        )}
       </div>
     );
   if (!request)

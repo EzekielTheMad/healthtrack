@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { nativeActionHref, useAndroidMode } from './AndroidMode';
+import { useNativeActionHref, useAndroidMode } from './AndroidMode';
 import { useSession } from '@/lib/auth/client';
 type DeviceList = {
   devices: {
@@ -22,6 +22,7 @@ export default function DeviceManager() {
 }
 function AccountDevices() {
   const android = useAndroidMode();
+  const nativeSyncHref = useNativeActionHref('sync');
   const [data, setData] = useState<DeviceList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -74,17 +75,17 @@ function AccountDevices() {
     <div className="space-y-5">
       <h1 className="text-2xl font-bold">Phone & sync</h1>
       <p>
-        Health Connect synchronization belongs to your paired account. It continues independently of
-        the person selected in the website.
+        Bring readings from this Android phone into HealthTrack. Phone sync sends to your account,
+        even when you are viewing another person’s record.
       </p>
       <div className="flex flex-wrap gap-2">
-        {android && (
+        {android && nativeSyncHref && (
           <a
-            href={nativeActionHref('sync')}
+            href={nativeSyncHref}
             className="inline-flex min-h-11 items-center rounded-lg border px-4 py-2"
             style={{ borderColor: 'var(--border-card)' }}
           >
-            Open phone sync
+            Set up or manage phone sync
           </a>
         )}
         <Link
@@ -105,8 +106,9 @@ function AccountDevices() {
           <p>Legacy relay delivery: {data.legacy_delivery_active ? 'enabled' : 'not active'}.</p>
           {!data.devices.length && (
             <p>
-              No phones paired. In the Android app, enter this server’s HTTPS address and choose
-              Pair account.
+              {android
+                ? 'This account has no paired phones. Choose Set up or manage phone sync to connect this phone. You can keep using your records without pairing.'
+                : 'This account has no paired phones. Open HealthTrack on Android, then Phone & sync to connect a phone. Your online records are available without pairing.'}
             </p>
           )}
           {data.devices.map((device) => (

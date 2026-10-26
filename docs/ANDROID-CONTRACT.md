@@ -1,8 +1,15 @@
 # Private Android companion
 
-The Android companion uses the existing HealthTrack website for everyday work. Kotlin/Compose handles phone pairing, read-only Health Connect delivery, and encrypted offline Doctor Essentials. It does not embed login in a WebView. The shipped APK declares its association with the default `https://omnihealthtracker.com` origin and attempts a Trusted Web Activity there, with a Custom Tab fallback. Other configured HTTPS origins use Custom Tabs explicitly; a custom build can declare a different origin.
+The Android companion opens the existing HealthTrack website directly for everyday work. Browsing does not require phone enrollment. Kotlin/Compose handles only phone setup, read-only Health Connect delivery, and encrypted offline Doctor Essentials. There is no second native Home or four-tab navigation system, and login is not embedded in a WebView. The shipped APK declares its association with the default `https://omnihealthtracker.com` origin and attempts a Trusted Web Activity there, with a Custom Tab fallback. Other configured HTTPS origins use Custom Tabs explicitly; a custom build can declare a different origin.
 
 The private APK supports Android 14+. The package is `com.omnihealthtracker.app`. Each installation selects an HTTPS HealthTrack origin (default `https://omnihealthtracker.com`). The server must set `APP_URL` to that origin. LAN HTTP web login is unchanged, but the native companion requires HTTPS.
+
+The chosen browsing origin is stored independently of enrollment and survives
+disconnecting the phone. An enrolled or pending pairing's server remains
+authoritative; changing instances requires disconnecting first. A launcher
+shortcut opens phone settings for initial self-hosted configuration. Normal
+launch opens the website, while browser login and native enrollment remain
+separate permissions.
 
 ## Pairing and permissions
 
@@ -46,11 +53,42 @@ Scalar data uses `{value,unit}`; nutrition uses calories/protein_grams/carbs_gra
 
 ## Presentation and offline boundaries
 
-The mobile website uses Today, Health, Fitness, Nutrition, More. Daily clinical editing, vitals, measurements/comparison, workouts/goals/catalog, nutrition history, Query, notes and appointments remain available. Bulk document upload/reconciliation, raw inventories/reprocessing, token/HMAC management, sharing/delegates, broad export and destructive account administration use an explicit browser handoff with a validated selected subject. No missing subject falls back to the owner.
+The mobile website supplies Today, Health, Fitness, Nutrition, More and the same
+online workflows as ordinary mobile browsing. Clinical editing, document
+upload/reconciliation, measurements, fitness, nutrition, sharing, API access and
+exports remain in that website context. Android mode adds optional phone-sync
+and saved-summary actions; it does not replace working online controls with
+another browser-handoff screen.
 
-Browser handoffs also carry the originating `account_id`. Both the handoff page and destination validate it against the current authenticated account. Missing or mismatched accounts show sign-in/account-switch recovery while keeping clinical children unmounted; the selected subject and account survive login continuation.
+Previously issued browser-handoff links remain supported. They carry the
+originating `account_id`; both the handoff page and destination validate it
+against the current authenticated account. Missing or mismatched accounts show
+sign-in/account-switch recovery while keeping clinical children unmounted; the
+selected subject and account survive login continuation.
 
-`?app=android` is a display hint only. `healthtrack://sync` and `healthtrack://doctor` open native screens without credentials/clinical data in the link. Digital Asset Links at `/.well-known/assetlinks.json` is published only when valid `ANDROID_CERT_SHA256` fingerprints are configured; optional `ANDROID_APP_PACKAGE` defaults to the private package above. Domain verification is not a security credential.
+`?app=android` is a display hint only. `healthtrack://sync` and
+`healthtrack://doctor` open native tools without starting pairing or sync.
+New native links include an encoded `return_to` and `return_origin`:
+
+- The return path is exactly `/mobile/devices` for sync or `/mobile/doctor` for
+  saved summaries. Its query includes `app=android`, `account_id` and
+  `browser_subject=self|dependent|owner`, with only the corresponding
+  `dependent_id` or `owner_id` when needed.
+- `return_origin` must match the configured HTTPS instance. It is a comparison
+  hint, never permission to switch servers. Changing an unpaired instance
+  invalidates the previous return context.
+- Native code validates the path, unique query keys, bounded public identifiers
+  and consistent subject shape. These identifiers do not change the sync owner,
+  credentials or offline grants. The website's existing `BrowserSubjectGate`
+  revalidates the signed-in account and authorized person before showing records.
+- Invalid supplied context fails visibly and offers a neutral return. Older
+  queryless links remain usable; without captured person context they must not
+  silently choose the owner's clinical summary when rebuilding the web page.
+
+Digital Asset Links at `/.well-known/assetlinks.json` is published only when valid
+`ANDROID_CERT_SHA256` fingerprints are configured; optional
+`ANDROID_APP_PACKAGE` defaults to the private package above. Domain verification
+is not a security credential. APK updates retain the same signing identity.
 
 The service worker caches only explicitly public assets. It never caches authenticated HTML, RSC payloads or API responses and does not replay old unscoped actions. Offline Doctor Essentials has separate device-unlock-protected encryption from background sync storage, no Android cloud backup, visible identity/captured time and a warning after seven days. Saving a summary does not imply the underlying feeds are current.
 

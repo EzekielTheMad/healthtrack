@@ -2,11 +2,68 @@
 
 ## Scope
 
-This candidate adds the private Android companion and its server support to HealthTrack `2.0.0-rc.4`. Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). The APK is a separate private artifact, excluded from the web container and Git. Implementation, the subsequently authorized server deployment and a bounded physical-phone navigation review are recorded separately below. Full phone acceptance, provider-specific consent testing and publication remain outstanding.
+The private Android companion and its server support were initially delivered in HealthTrack `2.0.0-rc.4`. The website-first update is server candidate `2.0.0-rc.5` with APK `0.1.1` (version code 2). Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). APKs are separate private artifacts, excluded from the web container and Git. Implementation, the earlier authorized server deployment and physical-phone checks are recorded separately below. The rc.5 server rollout, full phone acceptance, provider-specific consent testing and publication remain separate gates.
 
-The website remains the clinical record editor. Native features are account pairing, Health Connect delivery, permission/status controls, and explicitly saved offline Doctor Essentials. Bulk imports and administration use browser handoffs bound to both the originating account and selected person.
+The website remains the clinical record editor, including imports and administration in the same online context. Native features are account pairing, Health Connect delivery, permission/status controls, and explicitly saved offline Doctor Essentials. Actual transitions between browser and native tools preserve the originating account and selected person through validated return context.
 
-## Local verification
+## Website-first update — 2026-10-26
+
+APK 0.1.1 opens the configured website directly without enrollment or a native
+Home screen. The website supplies its ordinary five-tab navigation and online
+workflows. Native sync/setup and saved summaries are optional actions; launcher
+shortcuts provide server settings and offline summary access without needing
+the website to load.
+
+Back and Return to HealthTrack explicitly navigate guarded return destinations
+when account/person context is supplied. The browser launcher and native tools
+share a stable TWA session; native tools finish only after the browser launch
+callback. This corrected the physical-phone case where Android resumed an old
+web page instead of the requested guarded destination. Return context is
+validated against the configured origin and then reauthorized by the website;
+it never changes sync ownership or offline grants.
+
+Validation of this candidate:
+
+- Full repository suite: **176 files / 1,749 tests passed**. A later test-only
+  matcher typing correction passed its six focused tests and the production
+  TypeScript build. Lint has zero errors and 16 existing warnings.
+- Signed Android release: **38 JVM tests passed**, compilation and release
+  packaging passed; release lint has zero errors and 18 advisory warnings.
+  Independent APK signature verification matched the existing public certificate.
+- The isolated production standalone runtime passed **15 browser checks** at
+  375px/390px, with zero page errors or unexpected browser writes. Inline
+  API/import/export controls, self/dependent/delegate returns, clinical
+  isolation, changed permissions, foreign accounts and expired-session recovery
+  passed on fresh synthetic accounts.
+- The authorized spare Samsung SM-S906U on Android 14 passed **12 physical-phone
+  checks**: direct website launch, signed-in navigation, native Doctor entry,
+  exact guarded return and selected owner restoration, online summary access
+  without pairing, older queryless links, rejected origin context, neutral
+  recovery, reopening and the final website Health page.
+
+The physical guarded-return case used the current owner's session; dependent
+and delegated returns were exercised with synthetic browser fixtures, not real
+dependent records on the phone. The spare remained unpaired: Health Connect
+reads, delivery, biometric offline copies and PDF sharing were not exercised.
+Alternate self-hosted Custom Tabs routing has policy-test coverage, without a
+separate physical test against another trusted HTTPS instance. Native screen
+protection remained enabled.
+
+The APK is installed on the spare phone. Its final size is **27,419,001 bytes**;
+SHA-256 is `06d84075bbfafc78d625ef178b0536f20e99c7424aa500c5ccf34dd2d6bd3fac`.
+The signing certificate is unchanged, so the configured Asset Links identity and
+existing Android enrollment storage remain compatible. Versioned private
+artifacts and sanitized evidence are under ignored `tmpdata/artifacts/` and
+`tmpdata/seamless-release/`.
+
+The phone checks used the currently deployed rc.4 site plus the already-existing
+guarded return interface. The rc.5 website changes were tested on an isolated
+local production runtime. Until its separately authorized rollout, the live
+website retains its earlier browser-handoff interstitials. No production
+clinical records, phone enrollment, provider grants or live server configuration
+were changed during this implementation.
+
+## Original rc.4 local verification
 
 - Repository test suite: 174 files / 1,718 tests passed before the final targeted status and credential-display regressions. Subsequent focused results are recorded below.
 - Final authorization, ingestion, status and UI regression run: 59 tests passed, including direct API-key revocation, exact native source provenance and the Phoenix midnight boundary. The last select-width adjustment passed its 10 component tests and scoped lint.
@@ -24,9 +81,9 @@ The local HTTPS proxy used a disposable self-signed certificate trusted only by 
 
 ## Artifact and signing
 
-The private artifact is `tmpdata/artifacts/healthtrack-android-beta.apk`; its checksum, signing certificate fingerprint, JVM test totals and build metadata are saved beside it in `healthtrack-android-beta.json`. Use the final artifact metadata, not an earlier build's checksum.
+The current private artifact is `tmpdata/artifacts/healthtrack-android-0.1.1.apk`; the stable `healthtrack-android-beta.apk` name and metadata are updated to the same verified bytes. Use the corresponding final artifact metadata, not an earlier build's checksum.
 
-Final local artifact: 27,400,881 bytes; SHA-256 `08ac9b14b120726bc5a2222fbd21a6a72e8494aa370c9caac2c363faae8b49ef`. All 30 Android JVM tests passed. Debug and release lint each reported zero errors and 16 dependency/target/KTX suggestions. The signed release build and independent APK signature verification passed. Physical-device behavior remains subject to the checks below.
+The original 0.1.0 artifact was 27,400,881 bytes, SHA-256 `08ac9b14b120726bc5a2222fbd21a6a72e8494aa370c9caac2c363faae8b49ef`, with 30 passing JVM tests. Current 0.1.1 artifact and verification details are recorded above. Full physical-device acceptance remains subject to the checks below.
 
 The disposable container, HTTPS proxy and test browsers were stopped after verification. The Android build's task-owned Java helpers also exited; task ports 3117/3118 were confirmed closed. The local image `healthtrack:android-local-preflight` and ignored synthetic evidence remain available for review.
 

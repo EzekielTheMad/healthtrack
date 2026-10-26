@@ -1,6 +1,8 @@
+// @vitest-environment-options {"url":"https://synthetic.invalid"}
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import PairApproval from './PairApproval';
+import { AndroidModeProvider } from './AndroidMode';
 const account = vi.hoisted(() => ({ id: 'owner' }));
 vi.mock('@/lib/auth/client', () => ({
   useSession: () => ({ data: { user: { id: account.id } }, isPending: false }),
@@ -21,9 +23,32 @@ const request = {
 };
 beforeEach(() => {
   account.id = 'owner';
+  sessionStorage.clear();
+  window.history.replaceState(null, '', '/mobile/pair');
 });
 afterEach(() => vi.unstubAllGlobals());
 describe('phone pairing approval', () => {
+  it('offers an explicit native continuation only after the user approves', async () => {
+    window.history.replaceState(null, '', '/mobile/pair?app=android');
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ...request, legacy_delivery_active: false }),
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(
+      <AndroidModeProvider>
+        <PairApproval requestId="synthetic-request" />
+      </AndroidModeProvider>
+    );
+    const approve = await screen.findByRole('button', { name: 'Approve this phone' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('link', { name: 'Continue phone setup' })).not.toBeInTheDocument();
+    fireEvent.click(approve);
+    const continuation = await screen.findByRole('link', { name: 'Continue phone setup' });
+    expect(continuation).toHaveAttribute('href', expect.stringContaining('intent://sync?'));
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1][0]).toBe('/api/mobile/pairing/synthetic-request/approve');
+  });
   it('requires explicit sender replacement and sends only selected offline grants', async () => {
     const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => request });
     vi.stubGlobal('fetch', fetcher);
