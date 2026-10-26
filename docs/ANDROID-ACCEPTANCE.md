@@ -102,6 +102,52 @@ under ignored `tmpdata/seamless-rollout/`; full private recovery material stays
 on the host. Server verification does not establish new Health Connect delivery,
 biometric offline use, PDF sharing or 24-hour background acceptance on the spare.
 
+### Post-deployment phone check and inactivity correction
+
+The approved live-phone check on 2026-10-26 used APK **0.1.1 / code 2** on the
+same Android 14 spare. Six checks passed using actual visible controls and fresh
+browser navigation events: website launch with five navigation tabs, online
+Doctor PDF control, encoded current-owner return context, native Doctor entry,
+Android Back to the exact guarded owner page, and the final website Health page.
+The spare remained unpaired. PDF generation, offline copies, dependent/delegate
+returns and Health Connect delivery were not exercised.
+
+Reopening immediately afterward exposed an existing inactivity bug. Each open
+web document independently revoked the shared login after 15 minutes; an older
+background TWA could therefore sign out a person actively using another page.
+The phone's login URL reported `reason=timeout`, and a separate two-document
+reproduction confirmed the faulty component behavior. Earlier scripted attempts
+also encountered test-only Android label, tab-target and tap-occlusion issues;
+those attempts are not accepted as full user-flow passes.
+
+A **local corrective candidate** shares activity timestamps per login and
+prevents hidden/unfocused pages from revoking an active session. It retains the
+15-minute inactivity limit, checks elapsed time before accepting resumed input,
+and clears stale account views without revoking a replacement login. The shared
+storage contains only a timestamp under a public session-record identifier;
+it contains no bearer token, cookie or clinical value. Server authorization
+remains authoritative. Client session checking and sign-out are not atomic
+against a simultaneous login in another window; that pre-existing race remains
+a separate limitation.
+
+The corrective candidate passed **177 files / 1,778 repository tests**, all
+29 focused idle/logout regressions, the production standalone build and
+sanitization, and repository lint (zero errors, 15 advisory warnings).
+Independent review passed with nine additional synthetic scenarios. A real
+two-page browser fixture reproduced the old premature logout and verified the
+corrected component retained an actively used session, then revoked it after
+the shared idle deadline. That fixture shortened the component's timeout prop
+to three seconds; production still passes 15 minutes. It used mocked auth calls
+and no real health data, so it is not live phone evidence for the correction.
+
+The corrective candidate is not yet deployed. The live phone launch acceptance
+remains qualified until the correction is promoted and the active/idle/reopen
+checks are repeated. Sanitized evidence is in ignored `tmpdata/idle-logout/` and
+`tmpdata/seamless-rollout/phone-doctor-flow-results.json`.
+After promotion, reload or close existing HealthTrack browser/TWA pages before
+the phone retest: an already-open page can still run the earlier timer code.
+No new APK is required for this server-side correction.
+
 ## Original rc.4 local verification
 
 - Repository test suite: 174 files / 1,718 tests passed before the final targeted status and credential-display regressions. Subsequent focused results are recorded below.
