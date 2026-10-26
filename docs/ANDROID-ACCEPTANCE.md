@@ -2,7 +2,7 @@
 
 ## Scope
 
-This candidate adds the private Android companion and its server support to HealthTrack `2.0.0-rc.4`. Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). The APK is a separate private artifact, excluded from the web container and Git. Implementation and the subsequently authorized server deployment are recorded separately below. Phone installation, Google authorization and publication remain outstanding.
+This candidate adds the private Android companion and its server support to HealthTrack `2.0.0-rc.4`. Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). The APK is a separate private artifact, excluded from the web container and Git. Implementation, the subsequently authorized server deployment and a bounded physical-phone navigation review are recorded separately below. Full phone acceptance, provider-specific consent testing and publication remain outstanding.
 
 The website remains the clinical record editor. Native features are account pairing, Health Connect delivery, permission/status controls, and explicitly saved offline Doctor Essentials. Bulk imports and administration use browser handoffs bound to both the originating account and selected person.
 
@@ -78,9 +78,52 @@ owner explicitly approves native pairing. This closes the server deployment
 gate only. See [the rc.4 recovery point](UPGRADING.md#rc4-android-compatibility-and-recovery-point)
 before any binary rollback.
 
+## Physical-phone navigation review — 2026-10-26
+
+The owner authorized USB debugging on a spare Samsung SM-S906U running Android
+14/API 34 with a 1080×2340 display. The existing signed APK (version 0.1.0,
+version code 1, checksum above) installed successfully. The owner completed
+website sign-in on the phone; the subsequent dashboard, Health, Settings and
+Doctor screens were exercised without editing records, pairing the phone or
+starting native sync. Native screen protection remained enabled. Sanitized UI
+observations and a website Health-menu screenshot are retained in ignored
+`tmpdata/android-device-ux/`; no authentication material or clinical values were
+retained in those observations.
+
+The walkthrough confirmed these usability failures:
+
+- Cold launch shows a native **Everyday health** launcher with four tabs.
+  Choosing a destination then opens the website, which has its own five-tab
+  navigation. The website rendered fullscreen on this phone without a browser
+  toolbar; that observation alone is not a separate domain-verification audit.
+- Back from the website exposes the native launcher again. Opening the native
+  **Doctor Essentials · online and saved** action instead presents an offline
+  pairing requirement, rather than the normal online doctor summary.
+- From the website's Doctor page, **Open saved Doctor Essentials** opens that
+  native screen. In this tested sequence, Android Back then exposed the
+  previously open Android Settings app, rather than the originating website
+  page. Reopening HealthTrack returned to native Home. This records the observed
+  device behavior; the underlying task-stack cause was not established.
+- Website Settings in Android mode replaces API access with an extra browser
+  handoff. Following it makes the normal API controls available; Back returns
+  to the interstitial. No token was created or revoked.
+
+The incorrect native source-settings URL remains a static finding: it sends
+`section=integrations`, while the website resolves `tab=integrations`. The wrong
+Profile destination was previously reproduced in a browser. The paired-only
+native button was not exercised on this unpaired spare phone.
+
+The recommended correction is to use the existing mobile website as the normal
+entry and sole online navigation, with native sync/offline actions returning to
+the originating web page. This review changed no application behavior and does
+not close the remaining Health Connect, offline authentication, replacement,
+revocation or 24-hour background-delivery gates.
+
 ## Required phone acceptance
 
-These checks require the intended Android 14+ phone and remain unverified:
+These checks require the intended Android 14+ phone. Only the bounded install,
+sign-in and navigation observations above have been performed; full acceptance
+remains outstanding:
 
 1. Install the signed APK and open the configured HTTPS instance. Verify default-origin TWA behavior or the documented Custom Tab fallback; test email/password and, if configured, Google login in the system browser.
 2. Pair the intended owner, explicitly choose offline people, and verify replacing a phone fences its old credential. Confirm browser profile selection never redirects native sync to another owner or dependent.
