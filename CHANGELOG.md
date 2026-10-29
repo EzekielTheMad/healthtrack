@@ -33,6 +33,9 @@ All notable changes to HealthTrack are documented here for GitHub releases.
   totals are selected instead of added; missing CPAP nights remain unknown and
   recorded zeros remain zero. Instance timezone governs reporting windows.
 - Active browser pages share the existing 15-minute inactivity deadline.
+- Doctor PDF section headings stay with their first row. README screenshots
+  use a newly generated fictional account; native AMD64/ARM64 CI smoke checks
+  can run before publication.
 - Next.js remains on 16.4.3; Better Auth is patched to 1.7.7. See release evidence
   for the remaining moderate development-tool advisories and their limits.
 
@@ -46,7 +49,7 @@ migration is explicit. Rerun interaction checks after upgrading, and complete
 the timezone/source preflight before ingestion or reprocessing.
 
 See [v2 scope/evidence](docs/V2.md), [upgrade and rollback](docs/UPGRADING.md),
-[AI setup](docs/AI.md) and [release gates](docs/RELEASE.md). Real-provider
+[AI setup](docs/AI.md), [candidate checkpoint](docs/RELEASE-CANDIDATE.md) and [release gates](docs/RELEASE.md). Real-provider
 text/document acceptance, full physical-phone/background/offline acceptance,
 advertised container architecture execution and publication must be recorded
 for the exact candidate before a public release is claimed. This entry is a

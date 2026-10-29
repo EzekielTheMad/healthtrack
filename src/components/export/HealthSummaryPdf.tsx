@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
+import { Children } from 'react';
 import { formatDateOnly, formatVitalDateLong } from '@/lib/dates';
 
 const colors = {
@@ -198,7 +199,14 @@ export interface HealthSummaryPdfProps {
   warnings?: string[];
   conditions?: Array<{ name: string; status: string; diagnosed_date?: string }>;
   allergies?: Array<{ name: string; severity: string; reaction?: string }>;
-  vitals?: Array<{ metric_key: string; value: number; unit?: string; recorded_at: string; source?: string; source_label?: string }>;
+  vitals?: Array<{
+    metric_key: string;
+    value: number;
+    unit?: string;
+    recorded_at: string;
+    source?: string;
+    source_label?: string;
+  }>;
   labResults?: Array<{
     test_name: string;
     value: number;
@@ -223,12 +231,16 @@ export interface HealthSummaryPdfProps {
 // ---------------------------------------------------------------------------
 
 function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  const rows = Children.toArray(children);
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeader} wrap={false} minPresenceAhead={50}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <View wrap={false}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+        <View style={styles.table}>{rows.slice(0, 2)}</View>
       </View>
-      <View style={styles.table}>{children}</View>
+      {rows.length > 2 && <View style={styles.table}>{rows.slice(2)}</View>}
     </View>
   );
 }

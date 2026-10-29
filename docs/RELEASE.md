@@ -2,11 +2,8 @@
 
 This document owns HealthTrack-specific container and release knowledge. It is
 not permission to publish an image, change package visibility, submit a CA
-listing or deploy an instance. For Rook's generic engineering workflow, use the
-[engineering SOP](obsidian://open?file=systems%2Fengineering-sops) (private
-operator vault entry); reusable procedures live in Rook's linked skills, not
-copies here. Other contributors follow the repository instructions and their
-maintainer's authorization.
+listing or deploy an instance. Contributors follow the repository instructions
+and their maintainer's authorization.
 
 ## Container implementation
 
@@ -42,6 +39,11 @@ the source SHA, workflow result and manifest/platform digests for an authorized
 release. If anonymous installation is intended, verify an unauthenticated pull;
 a workflow push does not prove package visibility. Visibility changes and
 release-tag pushes require separate publication authority.
+
+The non-publishing CI container smoke job uses the same native AMD64 and ARM64
+runner types, verifies the running Node architecture, and can also be dispatched
+manually. A passing build on one architecture does not clear the other. Running
+this workflow remotely still requires authorization to push or dispatch it.
 
 ## Release evidence requirements
 

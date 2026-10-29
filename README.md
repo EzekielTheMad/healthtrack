@@ -23,7 +23,7 @@ use chunked extraction with warnings and a review step before records are writte
 are implementation choices, not measured savings or clinical validation.
 
 The repository includes unit and integration tests, plus CI lint, build and
-container smoke checks. See [release verification](docs/RELEASE.md) for the
+native AMD64/ARM64 container smoke checks. See [release verification](docs/RELEASE.md) for the
 checks required for a specific candidate. Review [SECURITY.md](SECURITY.md),
 including unverified email identities and legacy share-token limits, before
 using multi-user sharing or exposing an instance to the internet. AI output
@@ -35,8 +35,8 @@ Private v2 work includes [aligned metric comparisons](docs/V2.md#comparisons-and
 and a [website-first Android companion](docs/ANDROID-ACCEPTANCE.md). The dated
 notes record private Unraid rollouts and bounded phone navigation checks; full
 phone sync/offline acceptance remains open. These notes do not announce a public
-GitHub or registry v2 release. See [current scope and continuation](docs/dashboard/CONTINUE.md)
-for reporting ownership and remaining verification limits.
+GitHub or registry v2 release. See [current scope and evidence](docs/V2.md)
+for remaining verification limits.
 
 - **Medications** — dosages, schedules, editable start/end dates, active/inactive history, AI interaction checks\*
 - **Conditions, allergies, procedures, vaccines** — full clinical history
