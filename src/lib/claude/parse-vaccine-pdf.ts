@@ -1,6 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { extractionModel } from './model';
+import type { AiConfiguration } from '@/lib/ai/types';
 import { createMessage } from './call';
+import { detectDocumentMime } from '@/lib/import/document-file';
 
 export interface ParsedVaccineRecord {
   name: string;
@@ -13,6 +13,7 @@ export interface ParsedVaccineRecord {
 }
 
 export interface ParsedVaccinePdfResult {
+  import_batch_id?: string;
   vaccines: ParsedVaccineRecord[];
 }
 
@@ -36,24 +37,18 @@ Return ONLY valid JSON with this exact shape:
 Rules:
 - Extract ALL vaccine entries from ALL pages.
 - Use the most specific vaccine name available (e.g. "Pfizer-BioNTech COVID-19" not just "COVID-19").
-- Dates must be in YYYY-MM-DD format. If only month/year is given, use the 1st of the month.
+- Preserve partial dates as YYYY or YYYY-MM, or null when unknown. Never invent a day or month; uncertain dates require review.
 - If the same vaccine appears multiple times (booster series), each should be a separate entry.
 - Do NOT include commentary or markdown. Return ONLY the JSON object.`;
 
 export async function parseVaccinePdf(
   pdfBuffer: Buffer,
+  config: AiConfiguration
 ): Promise<ParsedVaccinePdfResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
-  }
-
-  const client = new Anthropic({ apiKey });
   const base64Content = pdfBuffer.toString('base64');
+  const mimeType = detectDocumentMime(pdfBuffer);
 
-  const message = await createMessage(client, {
-    model: extractionModel(),
-    thinking: { type: 'disabled' },
+  const message = await createMessage(config, 'extraction', {
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [
@@ -61,10 +56,10 @@ export async function parseVaccinePdf(
         role: 'user',
         content: [
           {
-            type: 'document',
+            type: mimeType === 'application/pdf' ? 'document' : 'image',
             source: {
               type: 'base64',
-              media_type: 'application/pdf',
+              media_type: mimeType,
               data: base64Content,
             },
           },
@@ -79,7 +74,7 @@ export async function parseVaccinePdf(
 
   const textBlock = message.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
+    throw new Error('No text response from AI');
   }
 
   let jsonText = textBlock.text.trim();
@@ -94,7 +89,7 @@ export async function parseVaccinePdf(
   try {
     parsed = JSON.parse(jsonText) as ParsedVaccinePdfResult;
   } catch {
-    throw new Error('Failed to parse Claude response as JSON');
+    throw new Error('Failed to parse AI response as JSON');
   }
 
   if (!Array.isArray(parsed.vaccines)) {
@@ -102,9 +97,7 @@ export async function parseVaccinePdf(
   }
 
   // Filter to valid entries
-  parsed.vaccines = parsed.vaccines.filter(
-    (v) => typeof v.name === 'string' && v.name.length > 0,
-  );
+  parsed.vaccines = parsed.vaccines.filter((v) => typeof v.name === 'string' && v.name.length > 0);
 
   return parsed;
 }

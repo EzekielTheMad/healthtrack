@@ -56,8 +56,11 @@ export default function QueryPage() {
             color: 'var(--color-text-muted)',
           }}
         >
-          AI features are not configured on this instance. The administrator can enable health
-          queries by setting the <code>ANTHROPIC_API_KEY</code> environment variable.
+          Choose and test your own provider in{' '}
+          <a href="/settings?tab=ai#ai-settings" className="underline">
+            Settings → AI
+          </a>{' '}
+          to enable health questions.
         </div>
       </div>
     );

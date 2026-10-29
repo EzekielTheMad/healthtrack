@@ -1,7 +1,8 @@
 /** Shared patient-scoped facts feed both app queries and dashboard summaries. */
 import { getHealthTrackTimeZone, calendarDayInTimeZone } from '@/lib/oura/timezone';
 import { buildHealthContext, queryContextMetadata } from '@/lib/health-context';
-import { reasoningModel } from './model';
+import { resolveAiConfiguration, assertCurrentAiConfiguration } from '@/lib/ai/settings';
+import { aiProvenance } from '@/lib/ai/types';
 import {
   generateHealthSummary,
   type HealthSummary,
@@ -85,10 +86,15 @@ export async function generateAndCacheSummary(
   userId: string,
   now = new Date()
 ): Promise<GenerateResult> {
+  const config = resolveAiConfiguration(userId);
   const input = await buildSummaryInputForUser(userId);
   if (!hasSummaryData(input)) return { summary: WELCOME_SUMMARY, cached: false };
-  const generated = await generateHealthSummary(input);
-  const summary = { ...generated, contextMetadata: input.contextMetadata };
-  await upsertCachedSummary(userId, ownerLocalDayKey(now), summary, reasoningModel());
+  const generated = await generateHealthSummary(input, config);
+  assertCurrentAiConfiguration(config);
+  const summary = {
+    ...generated,
+    contextMetadata: { ...input.contextMetadata!, ai: aiProvenance(config) },
+  };
+  await upsertCachedSummary(userId, ownerLocalDayKey(now), summary, config.primaryModel, config);
   return { summary, cached: true };
 }

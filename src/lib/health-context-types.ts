@@ -19,6 +19,7 @@ export interface ContextCoverage {
 }
 
 export interface QueryContextMetadata {
+  ai?: import('@/lib/ai/types').AiProvenance;
   context_version: number;
   fingerprint: string;
   subject_name: string;

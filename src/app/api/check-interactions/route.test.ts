@@ -1,3 +1,4 @@
+import { seedAiConfiguration } from '@/lib/repos/repo-test-harness';
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -49,6 +50,8 @@ beforeEach(async () => {
     import('@/lib/repos/interaction-alerts'),
   ]);
   for (const id of [OWNER, VIEWER, STRANGER]) insertUser(ctx.sqlite, id);
+  seedAiConfiguration(ctx.sqlite, OWNER);
+  seedAiConfiguration(ctx.sqlite, VIEWER);
   insertDependent(ctx.sqlite, child, OWNER);
   insertDependent(ctx.sqlite, otherChild, STRANGER);
   ownerMeds = await Promise.all(
@@ -219,7 +222,7 @@ describe('interaction checks isolate the selected patient', () => {
     authState.userId = null;
     expect((await route.POST(post({}))).status).toBe(401);
     authState.userId = OWNER;
-    vi.stubEnv('ANTHROPIC_API_KEY', '');
+    ctx.sqlite.prepare('DELETE FROM ai_settings').run();
     expect((await route.POST(post({}))).status).toBe(501);
     expect(checkAI).not.toHaveBeenCalled();
   });

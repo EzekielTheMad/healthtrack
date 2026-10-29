@@ -1,3 +1,4 @@
+import { seedAiConfiguration } from '@/lib/repos/repo-test-harness';
 // @vitest-environment node
 /**
  * GET /api/health-summary — cache-first read path + the clinical-correctness
@@ -89,6 +90,7 @@ beforeEach(async () => {
   cacheMod = await import('@/lib/claude/summary-cache');
   dailyRepo = await import('@/lib/repos/daily-summaries');
   insertUser(ctx.sqlite, OWNER);
+  seedAiConfiguration(ctx.sqlite, OWNER);
   authState.userId = OWNER;
   captured.input = null;
   captured.result = { summary: 'ok', highlights: [] };
@@ -153,8 +155,14 @@ async function insertCacheRow(
   const { buildHealthContext, queryContextMetadata } = await import('@/lib/health-context');
   const withMetadata = {
     ...s,
-    contextMetadata:
-      s.contextMetadata ?? queryContextMetadata(await buildHealthContext(OWNER, null, 365)),
+    contextMetadata: {
+      ...(s.contextMetadata ?? queryContextMetadata(await buildHealthContext(OWNER, null, 365))),
+      ai: {
+        provider: 'anthropic',
+        model: 'claude-synthetic',
+        configuration_revision: 'test-ai-v1',
+      },
+    },
   };
   ctx.sqlite
     .prepare(

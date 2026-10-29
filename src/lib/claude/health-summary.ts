@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { reasoningModel } from './model';
+import type { AiConfiguration } from '@/lib/ai/types';
 import { createMessage } from './call';
 import { aggregateVitals, formatAggregatesForPrompt } from '@/lib/metrics/aggregate';
 import {
@@ -201,19 +200,13 @@ export function extractSummaryJson(responseText: string): HealthSummary | undefi
   return undefined;
 }
 
-export async function generateHealthSummary(input: HealthSummaryInput): Promise<HealthSummary> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
-  }
-
-  const client = new Anthropic({ apiKey });
-
+export async function generateHealthSummary(
+  input: HealthSummaryInput,
+  config: AiConfiguration
+): Promise<HealthSummary> {
   const userMessage = buildHealthSnapshot(input);
 
-  const message = await createMessage(client, {
-    model: reasoningModel(),
-    thinking: { type: 'disabled' },
+  const message = await createMessage(config, 'primary', {
     max_tokens: 1536,
     system: SYSTEM_PROMPT,
     messages: [
@@ -228,15 +221,11 @@ export async function generateHealthSummary(input: HealthSummaryInput): Promise<
   const responseText = textBlock?.type === 'text' ? textBlock.text : '';
 
   if (!responseText) {
-    throw new Error('No text response from Claude');
+    throw new Error('No text response from AI');
   }
 
   const parsed = extractSummaryJson(responseText);
   if (!parsed) {
-    console.error(
-      'Health summary parse failed. Raw response (first 800 chars):',
-      responseText.slice(0, 800)
-    );
     throw new Error('Failed to parse health summary response');
   }
 

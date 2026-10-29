@@ -11,6 +11,8 @@ import { db } from '@/db';
 import { queryHistory, queryContexts } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
 import type { QueryContextMetadata } from '@/lib/health-context-types';
+import { assertCurrentAiConfiguration } from '@/lib/ai/settings';
+import type { AiConfiguration } from '@/lib/ai/types';
 
 export type QueryHistoryRow = typeof queryHistory.$inferSelect & {
   contextMetadata?: QueryContextMetadata;
@@ -46,11 +48,13 @@ export async function createQueryHistoryEntry(
     responseText: string;
     dependentId?: string | null;
     contextMetadata?: QueryContextMetadata;
+    aiConfiguration?: AiConfiguration;
   }
 ): Promise<QueryHistoryRow> {
   if (!actorId) throw new NotFoundError();
   const values = entrySchema.parse(input);
   const row = db.transaction((tx) => {
+    if (input.aiConfiguration) assertCurrentAiConfiguration(input.aiConfiguration);
     const [entry] = tx
       .insert(queryHistory)
       .values({

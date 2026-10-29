@@ -8,9 +8,8 @@
  * snake_case to match the API wire format; each domain's fields are derived
  * from the corresponding repo's create-input schema.
  */
-import Anthropic from '@anthropic-ai/sdk';
+import type { AiConfiguration, AiContent } from '@/lib/ai/types';
 import { z } from 'zod';
-import { extractionModel } from './model';
 import { createMessage } from './call';
 import { detectDocumentMime } from '@/lib/import/document-file';
 
@@ -205,7 +204,7 @@ Rules:
 - Do NOT include the patient's demographics, insurance, or provider contact details.
 - Do NOT include commentary or markdown. Return ONLY the JSON object.`;
 
-function documentBlock(buffer: Buffer, mimeType: string): Anthropic.Messages.ContentBlockParam {
+function documentBlock(buffer: Buffer, mimeType: string): AiContent {
   const data = buffer.toString('base64');
   if (mimeType === 'image/png' || mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
     return {
@@ -236,19 +235,12 @@ function filterValid<Schema extends z.ZodType>(schema: Schema, value: unknown): 
 
 export async function parseMedicalHistory(
   fileBuffer: Buffer,
-  mimeType: string
+  mimeType: string,
+  config: AiConfiguration
 ): Promise<ParsedMedicalHistory> {
   mimeType = detectDocumentMime(fileBuffer);
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
-  }
 
-  const client = new Anthropic({ apiKey });
-
-  const message = await createMessage(client, {
-    model: extractionModel(),
-    thinking: { type: 'disabled' },
+  const message = await createMessage(config, 'extraction', {
     max_tokens: 16384,
     system: SYSTEM_PROMPT,
     messages: [
@@ -267,7 +259,7 @@ export async function parseMedicalHistory(
 
   const textBlock = message.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
+    throw new Error('No text response from AI');
   }
 
   let jsonText = textBlock.text.trim();
@@ -282,7 +274,7 @@ export async function parseMedicalHistory(
   try {
     raw = JSON.parse(jsonText);
   } catch {
-    throw new Error('Failed to parse Claude response as JSON');
+    throw new Error('Failed to parse AI response as JSON');
   }
 
   if (typeof raw !== 'object' || raw === null) {

@@ -7,10 +7,15 @@
  */
 import { NextResponse } from 'next/server';
 import { getCapabilities } from '@/lib/capabilities';
+import { getUser } from '@/lib/auth/session';
+import { hasAiConfiguration } from '@/lib/ai/settings';
 
 // Env is read at request time (the Docker image is built without these vars).
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  return NextResponse.json(getCapabilities());
+  const user = await getUser();
+  return NextResponse.json(getCapabilities(user ? hasAiConfiguration(user.id) : false), {
+    headers: { 'Cache-Control': 'no-store' },
+  });
 }

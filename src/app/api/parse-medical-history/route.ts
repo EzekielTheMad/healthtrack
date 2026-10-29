@@ -1,3 +1,6 @@
+import { AiError } from '@/lib/ai/errors';
+import { type AiConfiguration } from '@/lib/ai/types';
+import { hasAiConfiguration, resolveAiConfiguration } from '@/lib/ai/settings';
 /**
  * POST /api/parse-medical-history — extract a doctor-provided medical-history
  * PDF/image into structured items across six domains, annotated with a dedupe
@@ -18,7 +21,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
-import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
+import { AI_NOT_CONFIGURED } from '@/lib/capabilities';
 import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { safeError } from '@/lib/safe-log';
 import { NotFoundError } from '@/lib/authz';
@@ -52,6 +55,8 @@ import {
   type ImportBatchReview,
 } from '@/lib/import/batches';
 import { historyClaims } from '@/lib/import/claims';
+import { aiProvenance } from '@/lib/ai/types';
+import { errorResponse } from '@/lib/api/respond';
 import { saveUpload } from '@/lib/storage';
 import { UnsupportedUploadTypeError } from '@/lib/storage';
 import { detectDocumentMime } from '@/lib/import/document-file';
@@ -108,7 +113,10 @@ function pageRangeLabel(startPage: number, endPage: number): string {
  * chunk becomes a warning and extraction continues. Throws only when the
  * document is unreadable, too long, or every chunk fails.
  */
-async function extractPdf(buffer: Buffer): Promise<{
+async function extractPdf(
+  buffer: Buffer,
+  config: AiConfiguration
+): Promise<{
   parsed: ParsedMedicalHistory;
   pageCount: number;
   warnings: string[];
@@ -121,7 +129,7 @@ async function extractPdf(buffer: Buffer): Promise<{
 
   if (pageCount <= CHUNK_PAGE_THRESHOLD) {
     // Small document — single-shot with the original buffer, no chunking.
-    const parsed = await parseMedicalHistory(buffer, 'application/pdf');
+    const parsed = await parseMedicalHistory(buffer, 'application/pdf', config);
     return { parsed, pageCount, warnings: [] };
   }
 
@@ -132,7 +140,7 @@ async function extractPdf(buffer: Buffer): Promise<{
     const startPage = i * PAGES_PER_CHUNK + 1;
     const endPage = Math.min((i + 1) * PAGES_PER_CHUNK, pageCount);
     try {
-      const part = await parseMedicalHistory(chunks[i], 'application/pdf');
+      const part = await parseMedicalHistory(chunks[i], 'application/pdf', config);
       // Source page numbers from a chunk are local to that chunk. Preserve an
       // absolute range even when extraction could not identify the exact page.
       const annotate = (entry: Record<string, unknown>) => {
@@ -150,13 +158,22 @@ async function extractPdf(buffer: Buffer): Promise<{
       for (const visit of part.lab_visits) for (const entry of visit.results) annotate(entry);
       parts.push(part);
     } catch (err) {
+      if (err instanceof AiError && err.code === 'changed') throw err;
       safeError(`Medical history chunk extraction failed (pages ${startPage}-${endPage})`, err);
       warnings.push(`${pageRangeLabel(startPage, endPage)} could not be processed`);
+      if (err instanceof AiError && ['authentication', 'quota'].includes(err.code)) {
+        warnings.push(err.message);
+        for (let next = i + 1; next < chunks.length; next++)
+          warnings.push(
+            `${pageRangeLabel(next * PAGES_PER_CHUNK + 1, Math.min((next + 1) * PAGES_PER_CHUNK, pageCount))} could not be processed`
+          );
+        break;
+      }
     }
   }
 
   if (parts.length === 0) {
-    throw new Error('Failed to parse medical history document');
+    throw new Error(`Failed to parse medical history document. ${warnings.join('; ')}`);
   }
 
   return { parsed: mergeExtractions(parts), pageCount, warnings };
@@ -174,7 +191,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Gated after auth so unauthenticated callers can't probe instance config.
-  if (!getCapabilities().ai) {
+  if (!hasAiConfiguration(userId)) {
     return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
   }
 
@@ -241,23 +258,25 @@ export async function POST(request: NextRequest) {
     if (prior && !retryExtraction)
       return NextResponse.json({ batch_id: prior.id, batch: prior, warnings: prior.warnings });
 
-    // Parse with Claude (PDFs page-chunk when large; images are single-shot).
+    const config = resolveAiConfiguration(userId);
+    // Parse with the selected account configuration (PDFs page-chunk when large; images are single-shot).
     let parsed: ParsedMedicalHistory;
     let pageCount: number | undefined;
     let warnings: string[] = [];
     try {
       if (isPdf) {
-        const result = await extractPdf(buffer);
+        const result = await extractPdf(buffer, config);
         parsed = result.parsed;
         pageCount = result.pageCount;
         warnings = result.warnings;
       } else {
-        parsed = await parseMedicalHistory(buffer, mimeType);
+        parsed = await parseMedicalHistory(buffer, mimeType, config);
       }
     } catch (parseError) {
       if (parseError instanceof PdfTooLongError) {
         return apiError(400, 'too_many_pages', parseError.message);
       }
+      if (parseError instanceof AiError) return errorResponse(parseError);
       safeError('Medical history parsing error', parseError);
       const message =
         parseError instanceof Error
@@ -325,7 +344,11 @@ export async function POST(request: NextRequest) {
       name: file.name,
       sourcePath,
       warnings,
-      items: historyClaims(parsed),
+      items: historyClaims(parsed).map((item) => ({
+        ...item,
+        payload: { ...item.payload, ai_provenance: aiProvenance(config, 'extraction') },
+      })),
+      aiConfiguration: config,
       retryExtraction,
     });
     const response: ParseMedicalHistoryResponse = { items, batch_id: batch.id, batch };
@@ -335,6 +358,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     if (err instanceof UnsupportedUploadTypeError)
       return apiError(415, 'invalid_file_type', err.message);
+    if (err instanceof AiError) return errorResponse(err);
     safeError('Medical history processing error', err);
     return apiError(500, 'internal_error', 'Failed to process medical history document');
   }

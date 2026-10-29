@@ -1,7 +1,14 @@
+import { AiError } from '@/lib/ai/errors';
+import { aiProvenance } from '@/lib/ai/types';
+import {
+  hasAiConfiguration,
+  resolveAiConfiguration,
+  assertCurrentAiConfiguration,
+} from '@/lib/ai/settings';
 import { NextRequest } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
-import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
+import { AI_NOT_CONFIGURED } from '@/lib/capabilities';
 import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { rowToSnake } from '@/lib/api/snake';
 import { checkMedicationInteractions } from '@/lib/claude/check-interactions';
@@ -33,7 +40,7 @@ export async function POST(request: NextRequest) {
     const user = await requireUser();
 
     // Gated after auth so unauthenticated callers can't probe instance config.
-    if (!getCapabilities().ai) {
+    if (!hasAiConfiguration(user.id)) {
       return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
     }
 
@@ -73,7 +80,9 @@ export async function POST(request: NextRequest) {
     const medications = rows.map(rowToSnake) as unknown as Medication[];
 
     // Run the interaction check
-    const result = await checkMedicationInteractions(medications);
+    const config = resolveAiConfiguration(user.id);
+    const result = await checkMedicationInteractions(medications, config, scope);
+    assertCurrentAiConfiguration(config);
 
     // Append disclaimer to each alert
     const alertsWithDisclaimer = result.alerts.map((a) => ({
@@ -101,7 +110,7 @@ export async function POST(request: NextRequest) {
       triggerMedicationId: triggerFor(a.medication_names),
       alertText: a.alert_text,
       severity: a.severity,
-      medicationSnapshot: { medication_names: a.medication_names },
+      medicationSnapshot: { medication_names: a.medication_names, ai: aiProvenance(config) },
     }));
 
     // Reconcile stored alerts for this exact patient: preserves snoozes on unchanged
@@ -110,7 +119,14 @@ export async function POST(request: NextRequest) {
     // Snapshot guard and writes share one synchronous transaction, so a late
     // result cannot replace the invalidation from a concurrent medication edit.
     if (
-      !commitInteractionCheck(user.id, scope.dependentId, rows, detected, result.has_interactions)
+      !commitInteractionCheck(
+        user.id,
+        scope.dependentId,
+        rows,
+        detected,
+        result.has_interactions,
+        config
+      )
     ) {
       return apiError(
         409,
@@ -121,6 +137,7 @@ export async function POST(request: NextRequest) {
 
     return Response.json({
       ...result,
+      ai: aiProvenance(config),
       alerts: alertsWithDisclaimer,
       checked_at: new Date().toISOString(),
     });
@@ -129,8 +146,9 @@ export async function POST(request: NextRequest) {
       return apiError(401, 'unauthorized', 'Authentication required');
     }
     if (err instanceof NotFoundError || err instanceof z.ZodError) return errorResponse(err);
+    if (err instanceof AiError) return errorResponse(err);
     // Message surfaced on purpose — the client shows AI-check failures verbatim
-    const message = err instanceof Error ? err.message : 'Failed to check interactions';
+    const message = 'Failed to check interactions. Please try again.';
     return apiError(500, 'internal_error', message);
   }
 }

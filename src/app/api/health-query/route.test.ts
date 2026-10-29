@@ -1,3 +1,4 @@
+import { seedAiConfiguration } from '@/lib/repos/repo-test-harness';
 // @vitest-environment node
 /**
  * POST /api/health-query — pins the clinical-correctness fix (review I1):
@@ -63,6 +64,7 @@ beforeEach(async () => {
   route = await import('./route');
   query = await import('@/lib/claude/query');
   insertUser(ctx.sqlite, OWNER);
+  seedAiConfiguration(ctx.sqlite, OWNER);
   authState.userId = OWNER;
   captured.context = null;
 });

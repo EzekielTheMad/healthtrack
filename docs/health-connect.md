@@ -56,7 +56,7 @@ is no wildcard, and package matching is exact — never prefix or substring.
 | Record type | Destination | Semantic |
 |---|---|---|
 | `daily_totals` | vitals `steps`, `distance`, `active_calories`, `total_calories`, source `health_connect_daily` | Daily snapshot — the newest delivery **replaces** the day |
-| `nutrition` | `nutrition_daily` (one row per Phoenix date + package) | Daily aggregate — the day is recomputed and **overwritten** |
+| `nutrition` | `nutrition_daily` (one row per instance-local date + package) | Daily aggregate — the day is recomputed and **overwritten** |
 
 `distance_meters` is converted to miles (÷ 1609.344) because miles is the
 registry's canonical unit for `distance`. A metric a snapshot omits is
@@ -130,16 +130,18 @@ approved daily metrics, `/api/v1/workouts` for completed workouts.
 
 ## Nutrition is a daily snapshot, not a running total
 
-There is exactly one canonical row per (user, `America/Phoenix` date, source
-package). Every sync recalculates the whole affected day from the retained,
-deduplicated raw records and overwrites that row.
+There is exactly one canonical row per (user, instance-local calendar date, source
+package). Dates use the configured IANA `TZ`, with `Etc/UTC` as the default;
+an instance configured with `America/Phoenix` uses Phoenix dates. Every sync
+recalculates the whole affected day from the retained, deduplicated raw records
+and overwrites that row.
 
 An incoming subtotal is **never added** to the stored total. Webhook batches
 overlap, retry and carry only changed records, so an additive path would double
 count. Concretely:
 
 - Food logged later in the day updates the same row.
-- The first record after the Phoenix date rolls over creates a new day's row.
+- The first record after the instance-local date rolls over creates a new day's row.
 - Editing a record recomputes the day from all retained records for it.
 - Editing a record across midnight recomputes **both** affected days.
 - A missing nutrient stays `null` (unknown) — never `0`.
@@ -160,9 +162,9 @@ allowlist — approve whatever your own inventory reports.
 ### Reprocess retained nutrition
 
 Settings → Integrations → Health Connect → **Reprocess retained nutrition**
-recomputes every Phoenix day from the food records already stored, and reports
-the dates rebuilt, rows written, records considered, records skipped and any
-errors.
+recomputes every instance-local day from the food records already stored, and
+reports the dates rebuilt, rows written, records considered, records skipped
+and any errors.
 
 It is safe to run repeatedly: the rebuild is a pure function of the retained
 raw state, so it cannot inflate a day. Reach for it when you approved a source

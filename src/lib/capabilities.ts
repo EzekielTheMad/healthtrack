@@ -1,7 +1,7 @@
 /**
  * Instance capabilities — which optional features this deployment has
- * configured. Everything is derived from env vars at call time (no caching)
- * so a container restart with new env is all it takes to flip a feature.
+ * configured. Integration flags are read from environment variables; AI readiness is supplied for the authenticated account
+ * so saving AI settings needs no restart.
  *
  * Server components / route handlers call getCapabilities() directly;
  * client components use the useCapabilities() hook, which fetches
@@ -9,7 +9,7 @@
  */
 
 export interface Capabilities {
-  /** Anthropic-backed features (summary, query, PDF parse, interactions). */
+  /** Account-configured AI (summary, query, document parse, interactions). */
   ai: boolean;
   /** "Sign in with Google" button. */
   googleAuth: boolean;
@@ -19,12 +19,10 @@ export interface Capabilities {
   signupsEnabled: boolean;
 }
 
-export function getCapabilities(): Capabilities {
+export function getCapabilities(aiConfigured = false): Capabilities {
   return {
-    ai: Boolean(process.env.ANTHROPIC_API_KEY),
-    googleAuth: Boolean(
-      process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
-    ),
+    ai: aiConfigured,
+    googleAuth: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
     oura: Boolean(process.env.OURA_CLIENT_ID && process.env.OURA_CLIENT_SECRET),
     // OPEN registration (operator opt-in). The default is invite-only — the
     // login page derives the full policy (open/invite/closed + first-user
@@ -35,7 +33,7 @@ export function getCapabilities(): Capabilities {
 
 /** 501 body/message for AI routes called on an unconfigured instance. */
 export const AI_NOT_CONFIGURED =
-  'AI features not configured. Set ANTHROPIC_API_KEY.';
+  'Choose and test an AI provider in Settings → AI before using this feature.';
 
 /** 501 body/message for Oura routes called on an unconfigured instance. */
 export const OURA_NOT_CONFIGURED =

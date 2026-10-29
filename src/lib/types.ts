@@ -246,6 +246,7 @@ export interface InteractionAlert {
 
 /** Latest interaction-check outcome for a scope (from GET /interaction-alerts). */
 export interface InteractionStatus {
+  ai?: import('@/lib/ai/types').AiProvenance;
   checked_at: string;
   has_interactions: boolean;
 }

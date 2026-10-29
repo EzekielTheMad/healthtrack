@@ -1,3 +1,4 @@
+import { seedAiConfiguration } from '@/lib/repos/repo-test-harness';
 // @vitest-environment node
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -37,6 +38,7 @@ let ctx: RepoTestDb;
 beforeEach(async () => {
   ctx = await setupRepoDb('healthtrack-import-routes-');
   insertUser(ctx.sqlite, OWNER);
+  seedAiConfiguration(ctx.sqlite, OWNER);
   insertUser(ctx.sqlite, STRANGER);
   identity.id = OWNER;
 });
@@ -70,7 +72,7 @@ describe('authoritative import entry points', () => {
         const body = await response.json();
         expect(body.parsed.visit_date).toBeNull();
         expect(body.batch.items[0].payload.visit_date).toBeNull();
-        const call = vi.mocked(createMessage).mock.calls.at(-1)![1];
+        const call = vi.mocked(createMessage).mock.calls.at(-1)![2];
         expect(
           (call.messages[0].content as { type: string; source: { media_type: string } }[])[0]
         ).toMatchObject({ type: 'image', source: { media_type: 'image/jpeg' } });

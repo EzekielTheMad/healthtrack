@@ -39,23 +39,24 @@ const ENV_KEYS = [
   'SIGNUPS_ENABLED',
 ] as const;
 
-const AI_MSG = 'AI features not configured. Set ANTHROPIC_API_KEY.';
-const OURA_MSG =
-  'Oura integration not configured. Set OURA_CLIENT_ID and OURA_CLIENT_SECRET.';
+const AI_MSG = 'Choose and test an AI provider in Settings → AI before using this feature.';
+const OURA_MSG = 'Oura integration not configured. Set OURA_CLIENT_ID and OURA_CLIENT_SECRET.';
 
 let saved: Record<string, string | undefined>;
 let tmpDir: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
   for (const k of ENV_KEYS) delete process.env[k];
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'healthtrack-gating-'));
   process.env.DATA_DIR = tmpDir;
   authState.userId = 'gating-test-user-000000000000000';
   vi.resetModules();
+  (await import('@/db/migrate')).runMigrations();
 });
 
-afterEach(() => {
+afterEach(async () => {
+  (await import('@/db')).getSqlite().close();
   for (const [k, v] of Object.entries(saved)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;

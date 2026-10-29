@@ -8,6 +8,29 @@ This checklist does not authorize publication, an outage, or a deployment.
 Use [RELEASE.md](RELEASE.md) for release gates and [UNRAID.md](UNRAID.md) for
 applied-template handling. Store instance-specific evidence outside Git.
 
+## Account AI candidate migrations
+
+The release-closure candidate adds migrations `0015_account_ai` and
+`0016_trusted_ai_context`. The first adds encrypted per-account settings and
+short-lived encrypted setup drafts. The second adds default-0 trust markers
+to legacy interaction alerts/checks and lab-warning dismissals. Existing rows
+are retained; only fresh exact-person outcomes become current. Rerun
+interaction checks after upgrade. Unsafe pre-context query history stays in
+storage but is excluded from app history and automatic reuse.
+
+AI no longer activates from environment credentials automatically. Configure
+each account through Settings → AI, or explicitly migrate the legacy Anthropic
+key into the administrator's own draft, then test/save. Model environment
+overrides are ignored. See [AI setup](AI.md). Saving itself makes no provider
+call. Real provider tests may incur charges and remain an operator action.
+
+Back up the complete matching database/uploads/keys volume before startup
+migrations. The encryption key is required to restore saved provider keys.
+Do not run mixed old/new writers: old interaction code cannot respect the new
+trust markers or app-owned credentials. A rollback uses the matching old
+image and stopped pre-upgrade volume; preserve and reconcile subsequent
+writes before replacing data. No candidate rollout or publication is implied.
+
 ## rc.5 inactivity correction recovery point
 
 The separately authorized correction deployed on 2026-10-26 at 18:50:58 UTC,

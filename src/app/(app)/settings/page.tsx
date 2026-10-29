@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useState } from 'react';
+import AiSettings from '@/components/settings/AiSettings';
 import { ProfileForm } from '@/components/settings/ProfileForm';
 import { ProviderManagement } from '@/components/settings/ProviderManagement';
 import DataExportSection from '@/components/settings/DataExportSection';
@@ -201,6 +202,7 @@ function SettingsContent() {
               <IntegrationOverview />
             </>
           ),
+          ai: <AiSettings />,
           people: (
             <>
               <SettingsSection

@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { extractionModel } from './model';
+import type { AiConfiguration, AiContent } from '@/lib/ai/types';
 import { createMessage } from './call';
 import { detectDocumentMime } from '@/lib/import/document-file';
 
@@ -69,20 +68,15 @@ Rules:
 - If a reference range is given as text like "4.5-11.0", parse it into reference_range_low and reference_range_high.
 - Do NOT include commentary or markdown. Return ONLY the JSON object.`;
 
-export async function parseLabPdf(pdfBuffer: Buffer): Promise<ParsedLabResult> {
+export async function parseLabPdf(
+  pdfBuffer: Buffer,
+  config: AiConfiguration
+): Promise<ParsedLabResult> {
   const mimeType = detectDocumentMime(pdfBuffer);
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
-  }
-
-  const client = new Anthropic({ apiKey });
 
   const base64Content = pdfBuffer.toString('base64');
 
-  const message = await createMessage(client, {
-    model: extractionModel(),
-    thinking: { type: 'disabled' },
+  const message = await createMessage(config, 'extraction', {
     max_tokens: 8192,
     system: SYSTEM_PROMPT,
     messages: [
@@ -101,7 +95,7 @@ export async function parseLabPdf(pdfBuffer: Buffer): Promise<ParsedLabResult> {
                     : 'image/jpeg',
               data: base64Content,
             },
-          } as Anthropic.Messages.ContentBlockParam,
+          } as AiContent,
           {
             type: 'text',
             text: 'Extract all lab results from this document into the specified JSON format.',
@@ -113,7 +107,7 @@ export async function parseLabPdf(pdfBuffer: Buffer): Promise<ParsedLabResult> {
 
   const textBlock = message.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
+    throw new Error('No text response from AI');
   }
 
   let jsonText = textBlock.text.trim();
@@ -128,7 +122,7 @@ export async function parseLabPdf(pdfBuffer: Buffer): Promise<ParsedLabResult> {
   try {
     parsed = JSON.parse(jsonText) as ParsedLabResult;
   } catch {
-    throw new Error('Failed to parse Claude response as JSON');
+    throw new Error('Failed to parse AI response as JSON');
   }
 
   // Validate structure

@@ -2,6 +2,7 @@
 export const SETTINGS_TABS = [
   { id: 'profile', label: 'Profile' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'ai', label: 'AI' },
   { id: 'people', label: 'People & sharing' },
   { id: 'data', label: 'Data & reports' },
   { id: 'advanced', label: 'Advanced & about' },
@@ -11,6 +12,7 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number]['id'];
 
 const anchorTabs: Record<string, SettingsTab> = {
   profile: 'profile',
+  'ai-settings': 'ai',
   'integration-health': 'integrations',
   oura: 'integrations',
   'health-connect': 'integrations',

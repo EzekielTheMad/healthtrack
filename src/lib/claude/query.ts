@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { reasoningModel } from './model';
+import type { AiConfiguration } from '@/lib/ai/types';
 import { createMessage } from './call';
 
 export interface HealthContext {
@@ -86,18 +85,14 @@ export function buildSystemPrompt(context: HealthContext): string {
   return prompt;
 }
 
-export async function queryHealthData(question: string, context: HealthContext): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
-  }
-
-  const client = new Anthropic({ apiKey });
+export async function queryHealthData(
+  question: string,
+  context: HealthContext,
+  config: AiConfiguration
+): Promise<string> {
   const systemPrompt = buildSystemPrompt(context);
 
-  const message = await createMessage(client, {
-    model: reasoningModel(),
-    thinking: { type: 'disabled' },
+  const message = await createMessage(config, 'primary', {
     max_tokens: 4096,
     system: systemPrompt,
     messages: [{ role: 'user', content: question }],
@@ -105,7 +100,7 @@ export async function queryHealthData(question: string, context: HealthContext):
 
   const textBlock = message.content.find((block) => block.type === 'text');
   if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Claude');
+    throw new Error('No text response from AI');
   }
 
   return textBlock.text;

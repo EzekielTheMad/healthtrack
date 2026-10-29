@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'crypto';
 import { z } from 'zod';
 import { getSqlite } from '@/db';
+import { assertCurrentAiConfiguration } from '@/lib/ai/settings';
+import type { AiConfiguration } from '@/lib/ai/types';
 import { requireAuthz, NotFoundError } from '@/lib/authz';
 import { FitnessConflictError, FitnessWriteError } from '@/lib/repos/_fitness';
 import { invalidateInteractionCheck } from '@/lib/repos/interaction-alerts';
@@ -259,6 +261,7 @@ function stableClaim(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableClaim).join(',')}]`;
   if (value && typeof value === 'object')
     return `{${Object.entries(value)
+      .filter(([key]) => key !== 'ai_provenance')
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, entry]) => `${JSON.stringify(key)}:${stableClaim(entry)}`)
       .join(',')}}`;
@@ -269,12 +272,13 @@ export async function stageImportBatch(
   dependentId: string | null,
   input: {
     hash: string;
-    kind: 'labs' | 'medical_history';
+    kind: 'labs' | 'medical_history' | 'vaccines';
     name: string;
     sourcePath?: string | null;
     warnings?: string[];
     items: StagedClaim[];
     retryExtraction?: boolean;
+    aiConfiguration?: AiConfiguration;
   }
 ): Promise<ImportBatchReview> {
   await authorize(userId, dependentId);
@@ -283,6 +287,7 @@ export async function stageImportBatch(
   const sqlite = getSqlite();
   const id = sqlite
     .transaction(() => {
+      if (input.aiConfiguration) assertCurrentAiConfiguration(input.aiConfiguration);
       const existing = sqlite
         .prepare(
           'SELECT id FROM import_batches WHERE user_id=? AND dependent_id IS ? AND file_hash=? AND kind=?'

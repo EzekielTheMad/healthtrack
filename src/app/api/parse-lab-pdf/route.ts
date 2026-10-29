@@ -1,7 +1,10 @@
+import { AiError } from '@/lib/ai/errors';
+import { aiProvenance } from '@/lib/ai/types';
+import { hasAiConfiguration, resolveAiConfiguration } from '@/lib/ai/settings';
 import { NextRequest, NextResponse } from 'next/server';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
-import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
+import { AI_NOT_CONFIGURED } from '@/lib/capabilities';
 import { checkRateLimit, HOUR_MS } from '@/lib/api/rate-limit';
 import { safeError } from '@/lib/safe-log';
 import { parseLabPdf } from '@/lib/claude/parse-lab';
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Gated after auth so unauthenticated callers can't probe instance config.
-  if (!getCapabilities().ai) {
+  if (!hasAiConfiguration(userId)) {
     return apiError(501, AI_NOT_CONFIGURED, AI_NOT_CONFIGURED);
   }
 
@@ -87,12 +90,14 @@ export async function POST(request: NextRequest) {
       return apiError(500, 'upload_failed', 'Failed to upload file to storage');
     }
 
-    // Parse with Claude
+    const config = resolveAiConfiguration(userId);
+    // Parse with the selected account configuration
     let parsedResults;
     try {
-      parsedResults = await parseLabPdf(buffer);
+      parsedResults = await parseLabPdf(buffer, config);
     } catch (parseError) {
-      safeError('Claude parsing error', parseError);
+      if (parseError instanceof AiError) return errorResponse(parseError);
+      safeError('AI parsing error', parseError);
       const message =
         parseError instanceof Error ? parseError.message : 'Failed to parse lab document';
       return apiError(422, 'parse_failed', message);
@@ -103,7 +108,11 @@ export async function POST(request: NextRequest) {
       kind: 'labs',
       name: file.name,
       sourcePath: storagePath,
-      items: labClaims(parsedResults),
+      items: labClaims(parsedResults).map((item) => ({
+        ...item,
+        payload: { ...item.payload, ai_provenance: aiProvenance(config, 'extraction') },
+      })),
+      aiConfiguration: config,
       warnings: parsedResults.warnings ?? [],
     });
     return NextResponse.json({

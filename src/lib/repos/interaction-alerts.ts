@@ -18,6 +18,8 @@
  */
 import { and, desc, eq, gt, inArray, isNull, lte, or } from 'drizzle-orm';
 import { db, type DB } from '@/db';
+import { assertCurrentAiConfiguration, readAiSettings } from '@/lib/ai/settings';
+import { aiProvenance, type AiProvenance } from '@/lib/ai/types';
 import { interactionAlerts, interactionChecks, medications } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
 import { dependentFilter, type ListScope } from './_scope';
@@ -71,6 +73,7 @@ export async function listActiveInteractionAlerts(
     .where(
       and(
         eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, 1),
         dependentFilter(interactionAlerts.dependentId, scope.dependentId),
         or(isNull(interactionAlerts.snoozedUntil), lte(interactionAlerts.snoozedUntil, now))
       )
@@ -92,6 +95,7 @@ export async function countSnoozedInteractionAlerts(
     .where(
       and(
         eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, 1),
         dependentFilter(interactionAlerts.dependentId, scope.dependentId),
         gt(interactionAlerts.snoozedUntil, now)
       )
@@ -120,7 +124,13 @@ export async function snoozeInteractionAlert(
   const [row] = await db
     .select({ severity: interactionAlerts.severity })
     .from(interactionAlerts)
-    .where(and(eq(interactionAlerts.id, id), eq(interactionAlerts.userId, actorId)))
+    .where(
+      and(
+        eq(interactionAlerts.id, id),
+        eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, 1)
+      )
+    )
     .limit(1);
   if (!row) return null;
   const cap = SNOOZE_MAX_DAYS[row.severity] ?? 7;
@@ -129,7 +139,13 @@ export async function snoozeInteractionAlert(
   await db
     .update(interactionAlerts)
     .set({ snoozedUntil: until })
-    .where(and(eq(interactionAlerts.id, id), eq(interactionAlerts.userId, actorId)));
+    .where(
+      and(
+        eq(interactionAlerts.id, id),
+        eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, 1)
+      )
+    );
   return until;
 }
 
@@ -146,6 +162,7 @@ export async function createInteractionAlerts(
     .values(
       alerts.map((a) => ({
         userId: actorId,
+        contextVersion: 1,
         triggerMedicationId: a.triggerMedicationId,
         alertText: a.alertText,
         severity: a.severity,
@@ -192,6 +209,7 @@ function reconcileAlerts(
     .where(
       and(
         eq(interactionAlerts.userId, actorId),
+        eq(interactionAlerts.contextVersion, 1),
         dependentFilter(interactionAlerts.dependentId, dependentId)
       )
     )
@@ -221,6 +239,7 @@ function reconcileAlerts(
         .insert(interactionAlerts)
         .values({
           userId: actorId,
+          contextVersion: 1,
           dependentId,
           triggerMedicationId: d.triggerMedicationId,
           alertText: d.alertText,
@@ -239,7 +258,13 @@ function reconcileAlerts(
   if (toDelete.length > 0) {
     connection
       .delete(interactionAlerts)
-      .where(and(eq(interactionAlerts.userId, actorId), inArray(interactionAlerts.id, toDelete)))
+      .where(
+        and(
+          eq(interactionAlerts.userId, actorId),
+          eq(interactionAlerts.contextVersion, 1),
+          inArray(interactionAlerts.id, toDelete)
+        )
+      )
       .run();
   }
 }
@@ -249,6 +274,7 @@ function reconcileAlerts(
 export interface InteractionCheckStatus {
   checkedAt: string;
   hasInteractions: boolean;
+  aiProvenance?: AiProvenance | null;
 }
 
 /** A medication change makes the prior outcome stale, while prior warnings stay visible. */
@@ -281,12 +307,24 @@ export async function getInteractionCheck(
     .where(
       and(
         eq(interactionChecks.userId, actorId),
+        eq(interactionChecks.contextVersion, 1),
         dependentFilter(interactionChecks.dependentId, scope.dependentId)
       )
     )
     .orderBy(desc(interactionChecks.checkedAt))
     .limit(1);
-  return row ? { checkedAt: row.checkedAt, hasInteractions: row.hasInteractions } : null;
+  if (
+    row?.aiProvenance &&
+    row.aiProvenance.configuration_revision !== readAiSettings(actorId).revision
+  )
+    return null;
+  return row
+    ? {
+        checkedAt: row.checkedAt,
+        hasInteractions: row.hasInteractions,
+        ...(row.aiProvenance ? { aiProvenance: row.aiProvenance } : {}),
+      }
+    : null;
 }
 
 /** Upsert the latest check outcome for a scope (one row per scope). */
@@ -303,7 +341,8 @@ function recordCheck(
   connection: InteractionConnection,
   actorId: string,
   dependentId: string | null,
-  hasInteractions: boolean
+  hasInteractions: boolean,
+  provenance: AiProvenance | null = null
 ): void {
   const now = new Date().toISOString();
   const [existing] = connection
@@ -312,6 +351,7 @@ function recordCheck(
     .where(
       and(
         eq(interactionChecks.userId, actorId),
+        eq(interactionChecks.contextVersion, 1),
         dependentFilter(interactionChecks.dependentId, dependentId)
       )
     )
@@ -320,13 +360,20 @@ function recordCheck(
   if (existing) {
     connection
       .update(interactionChecks)
-      .set({ hasInteractions, checkedAt: now })
+      .set({ hasInteractions, checkedAt: now, aiProvenance: provenance })
       .where(eq(interactionChecks.id, existing.id))
       .run();
   } else {
     connection
       .insert(interactionChecks)
-      .values({ userId: actorId, dependentId, hasInteractions, checkedAt: now })
+      .values({
+        userId: actorId,
+        contextVersion: 1,
+        dependentId,
+        hasInteractions,
+        checkedAt: now,
+        aiProvenance: provenance,
+      })
       .run();
   }
 }
@@ -337,10 +384,12 @@ export function commitInteractionCheck(
   dependentId: string | null,
   expectedMedications: CheckedMedication[],
   detected: DetectedInteraction[],
-  hasInteractions: boolean
+  hasInteractions: boolean,
+  aiConfiguration?: import('@/lib/ai/types').AiConfiguration
 ): boolean {
   if (!actorId) throw new NotFoundError();
   return db.transaction((tx) => {
+    if (aiConfiguration) assertCurrentAiConfiguration(aiConfiguration);
     const current = tx
       .select()
       .from(medications)
@@ -354,7 +403,13 @@ export function commitInteractionCheck(
       .all();
     if (medicationSnapshot(expectedMedications) !== medicationSnapshot(current)) return false;
     reconcileAlerts(tx, actorId, dependentId, detected);
-    recordCheck(tx, actorId, dependentId, hasInteractions);
+    recordCheck(
+      tx,
+      actorId,
+      dependentId,
+      hasInteractions,
+      aiConfiguration ? aiProvenance(aiConfiguration) : null
+    );
     return true;
   });
 }

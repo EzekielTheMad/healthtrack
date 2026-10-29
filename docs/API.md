@@ -91,7 +91,9 @@ curl -H "Authorization: Bearer ohts_pat_..." "https://your-instance/api/v1/nutri
 ]
 ```
 
-- One row per (America/Phoenix calendar date, exact source package).
+- One row per (instance-local calendar date, exact source package). Dates use
+  the configured IANA `TZ`, defaulting to `Etc/UTC`; `America/Phoenix` is one
+  supported instance configuration.
 - Date filters are **inclusive**; `source_package` matches by exact equality.
 - A `null` nutrient is **unknown**, never zero — `0` means the source reported
   zero. Nullable fields stay nullable in every response.

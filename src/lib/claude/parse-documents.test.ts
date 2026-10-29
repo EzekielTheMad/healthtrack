@@ -6,6 +6,14 @@ import { parseMedicalHistory } from './parse-medical-history';
 import { labClaims, historyClaims } from '@/lib/import/claims';
 vi.mock('./call', () => ({ createMessage: vi.fn() }));
 vi.mock('@anthropic-ai/sdk', () => ({ default: class SyntheticClient {} }));
+const config = {
+  userId: 'synthetic',
+  revision: 'r1',
+  provider: 'anthropic' as const,
+  primaryModel: 'claude-synthetic',
+  extractionModel: null,
+  apiKey: 'synthetic-key',
+};
 const call = vi.mocked(createMessage);
 let saved: string | undefined;
 beforeEach(() => {
@@ -46,7 +54,7 @@ describe('document extraction preserves date precision and file modality', () =>
         { test_name: 'Ambiguous marker', value: 8, unit: 'mg' },
       ],
     });
-    const parsed = await parseLabPdf(Buffer.from('%PDF-1.4 synthetic'));
+    const parsed = await parseLabPdf(Buffer.from('%PDF-1.4 synthetic'), config);
     const claims = labClaims(parsed);
     expect(claims.map((claim) => claim.payload.visit_date)).toEqual([
       '2026-01-02',
@@ -66,7 +74,7 @@ describe('document extraction preserves date precision and file modality', () =>
         { test_name: 'Undated marker', value: 7, unit: 'mg' },
       ],
     });
-    const parsed = await parseLabPdf(Buffer.from('%PDF-1.4 synthetic'));
+    const parsed = await parseLabPdf(Buffer.from('%PDF-1.4 synthetic'), config);
     expect(parsed.multiple_collection_dates).toBe(true);
     expect(labClaims(parsed)[1].payload.visit_date).toBeNull();
   });
@@ -79,8 +87,8 @@ describe('document extraction preserves date precision and file modality', () =>
             ? Buffer.from([0x89, 0x50, 0x4e, 0x47])
             : Buffer.from([0xff, 0xd8, 0xff]);
       response({ visit_date: null, provider_name: null, results: [] });
-      await parseLabPdf(bytes);
-      const body = call.mock.calls.at(-1)![1];
+      await parseLabPdf(bytes, config);
+      const body = call.mock.calls.at(-1)![2];
       const block = body.messages[0].content as { type: string; source: { media_type: string } }[];
       expect(block[0].type).toBe(mime === 'application/pdf' ? 'document' : 'image');
       expect(block[0].source.media_type).toBe(mime);
@@ -101,11 +109,11 @@ describe('document extraction preserves date precision and file modality', () =>
         },
       ],
     });
-    const lab = await parseLabPdf(Buffer.from('%PDF-1.4 synthetic'));
+    const lab = await parseLabPdf(Buffer.from('%PDF-1.4 synthetic'), config);
     expect(lab.visit_date).toBe('2026-02');
     expect(lab.results[0].source_page).toBe(2);
     expect(labClaims(lab)[0].payload.loinc_code).toBe('718-7');
-    expect(String(call.mock.calls.at(-1)![1].system)).toContain('Never infer or look up a code');
+    expect(String(call.mock.calls.at(-1)![2].system)).toContain('Never infer or look up a code');
     response({
       medications: [{ name: 'Synthetic medication', start_date: '2024', source_page: 1 }],
       lab_visits: [
@@ -124,7 +132,11 @@ describe('document extraction preserves date precision and file modality', () =>
         },
       ],
     });
-    const history = await parseMedicalHistory(Buffer.from([0xff, 0xd8, 0xff]), 'application/pdf');
+    const history = await parseMedicalHistory(
+      Buffer.from([0xff, 0xd8, 0xff]),
+      'application/pdf',
+      config
+    );
     expect(history.medications[0].start_date).toBe('2024');
     expect(history.medications[0].source_page).toBe(1);
     expect(history.lab_visits[0].visit_date).toBeNull();
@@ -132,7 +144,7 @@ describe('document extraction preserves date precision and file modality', () =>
     expect(
       historyClaims(history).find((claim) => claim.domain === 'lab_results')?.payload.loinc_code
     ).toBe('789-8');
-    const prompt = String(call.mock.calls.at(-1)![1].system);
+    const prompt = String(call.mock.calls.at(-1)![2].system);
     expect(prompt).toContain('Never invent a day or month');
     expect(prompt).not.toContain('use January 1st');
     expect(prompt).toContain('Never infer or look up a code');

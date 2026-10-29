@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg)](LICENSE)
 [![CI](https://github.com/EzekielTheMad/healthtrack/actions/workflows/ci.yml/badge.svg)](https://github.com/EzekielTheMad/healthtrack/actions/workflows/ci.yml)
 
-**Self-hosted personal & family health tracker.** Medications, conditions, allergies, labs, vitals, procedures, vaccines, appointments and notes — for you and your dependents — in a single Docker container. Core records and uploads are stored in SQLite and an uploads folder on **your** server. Core tracking works without cloud services. When optional AI features are configured, selected health context or uploaded documents are sent to Anthropic for processing; see [privacy and security](SECURITY.md).
+**Self-hosted personal & family health tracker.** Medications, conditions, allergies, labs, vitals, procedures, vaccines, appointments and notes — for you and your dependents — in a single Docker container. Core records and uploads are stored in SQLite and an uploads folder on **your** server. Core tracking works without cloud services. When optional AI features are configured, selected health context or uploaded documents are sent to your account’s chosen Anthropic, OpenAI or Gemini API for processing; see [privacy and security](SECURITY.md).
 
 ![HealthTrack dashboard — AI health overview, quick stats with trends, active medications and lab flags](docs/screenshots/dashboard.webp)
 
@@ -31,6 +31,13 @@ can be wrong and needs human review.
 
 ## Features
 
+Private v2 work includes [aligned metric comparisons](docs/V2.md#comparisons-and-oura-permission-review-200-rc3)
+and a [website-first Android companion](docs/ANDROID-ACCEPTANCE.md). The dated
+notes record private Unraid rollouts and bounded phone navigation checks; full
+phone sync/offline acceptance remains open. These notes do not announce a public
+GitHub or registry v2 release. See [current scope and continuation](docs/dashboard/CONTINUE.md)
+for reporting ownership and remaining verification limits.
+
 - **Medications** — dosages, schedules, editable start/end dates, active/inactive history, AI interaction checks\*
 - **Conditions, allergies, procedures, vaccines** — full clinical history
 - **Labs** — collection-dated visits and results, saved corrections with retained originals/audit, reference ranges, and AI-powered PDF parsing of lab and vaccine reports\*
@@ -51,7 +58,7 @@ can be wrong and needs human review.
 - **Oura Ring sync\*** — sleep, heart rate and activity data
 - **Sign in with Google\*** — alongside built-in email/password auth
 
-\* Optional. AI features need an `ANTHROPIC_API_KEY`, Google login needs a Google OAuth client, Oura sync needs an Oura OAuth client. Each feature is hidden in the UI until its keys are configured — the core tracker is fully functional without any of them.
+\* Optional. AI features use per-account keys and tested models in **Settings → AI** ([setup and migration](docs/AI.md)); Google login needs a Google OAuth client and Oura sync needs an Oura OAuth client. Core tracking works without them.
 
 ## Screenshots
 
@@ -137,9 +144,7 @@ All configuration is via environment variables (see [`.env.example`](.env.exampl
 | `AUTH_SECRET`                               | no       | auto-generated to `/data/keys` | Session signing secret                                                                                                                                                      |
 | `ENCRYPTION_KEY`                            | no       | auto-generated to `/data/keys` | Encrypts stored OAuth tokens                                                                                                                                                |
 | `SIGNUPS_ENABLED`                           | no       | invite-only                    | Unset: first account registers freely (becomes admin), everyone after needs a single-use invite link (Settings → People & sharing → Invites). `true`: open registration. `false`: fully closed |
-| `ANTHROPIC_API_KEY`                         | no       | —                              | Enables AI features (summaries, queries, PDF parsing, interaction checks)                                                                                                   |
-| `ANTHROPIC_MODEL`                           | no       | current Sonnet                 | Claude model for reasoning features (summaries, queries, interaction checks) — e.g. `claude-opus-4-8`                                                                       |
-| `ANTHROPIC_MODEL_EXTRACTION`                | no       | current Sonnet                 | Claude model for PDF extraction — a cheaper model like `claude-haiku-4-5` works well                                                                                        |
+| `ANTHROPIC_API_KEY` | no | — | Legacy migration source only: an admin can explicitly copy it into their own encrypted settings draft. Does not enable AI automatically. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no       | —                              | Enables "Sign in with Google"                                                                                                                                               |
 | `OURA_CLIENT_ID` / `OURA_CLIENT_SECRET`     | no       | —                              | Enables Oura Ring sync                                                                                                                                                      |
 | `OURA_SYNC_ENABLED`                         | no       | `true` when Oura is configured | Startup + recurring native Oura sync toggle                                                                                                                                 |

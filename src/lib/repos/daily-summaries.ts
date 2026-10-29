@@ -16,6 +16,8 @@ import { db } from '@/db';
 import { dailySummaries } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
 import type { HealthSummary } from '@/lib/claude/health-summary';
+import { assertCurrentAiConfiguration } from '@/lib/ai/settings';
+import type { AiConfiguration } from '@/lib/ai/types';
 
 export type DailySummaryRow = typeof dailySummaries.$inferSelect;
 
@@ -64,18 +66,22 @@ export async function upsertCachedSummary(
   userId: string,
   date: string,
   summary: HealthSummary,
-  model: string
+  model: string,
+  aiConfiguration?: AiConfiguration
 ): Promise<DailySummaryRow> {
   if (!userId) throw new NotFoundError();
   const generatedAt = new Date().toISOString();
   const summaryJson = JSON.stringify(summary);
-  const [row] = await db
-    .insert(dailySummaries)
-    .values({ userId, summaryDate: date, summaryJson, generatedAt, model })
-    .onConflictDoUpdate({
-      target: [dailySummaries.userId, dailySummaries.summaryDate],
-      set: { summaryJson, generatedAt, model },
-    })
-    .returning();
-  return row;
+  return db.transaction((tx) => {
+    if (aiConfiguration) assertCurrentAiConfiguration(aiConfiguration);
+    return tx
+      .insert(dailySummaries)
+      .values({ userId, summaryDate: date, summaryJson, generatedAt, model })
+      .onConflictDoUpdate({
+        target: [dailySummaries.userId, dailySummaries.summaryDate],
+        set: { summaryJson, generatedAt, model },
+      })
+      .returning()
+      .get();
+  });
 }

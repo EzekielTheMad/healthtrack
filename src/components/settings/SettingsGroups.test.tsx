@@ -53,6 +53,7 @@ const panels = {
     </details>
   ),
   data: <div>Saved document reviews</div>,
+  ai: <div>Account AI settings</div>,
   advanced: (
     <label>
       One-time token
@@ -73,7 +74,7 @@ describe('grouped Settings navigation', () => {
     render(<SettingsGroups panels={panels} />);
     const navigation = screen.getByRole('navigation', { name: 'Settings sections' });
     const links = within(navigation).getAllByRole('link');
-    expect(links).toHaveLength(5);
+    expect(links).toHaveLength(6);
     expect(within(navigation).getByRole('link', { name: 'Profile' })).toHaveAttribute(
       'aria-current',
       'page'

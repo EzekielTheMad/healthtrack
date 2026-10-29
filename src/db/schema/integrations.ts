@@ -62,6 +62,7 @@ export const interactionAlerts = sqliteTable(
     // when snoozedUntil IS NULL or has already passed; snoozing sets it to a
     // future instant. `dismissed` is retained (unused) to avoid a destructive
     // column drop.
+    contextVersion: integer('context_version').notNull().default(0),
     snoozedUntil: text('snoozed_until'),
     // 006 — stable key for one interaction (sorted, lowercased med names), so a
     // re-check preserves an existing alert's snooze instead of wiping/recreating.
@@ -87,7 +88,11 @@ export const interactionChecks = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     dependentId: text('dependent_id').references(() => dependents.id, { onDelete: 'cascade' }),
+    contextVersion: integer('context_version').notNull().default(0),
     hasInteractions: integer('has_interactions', { mode: 'boolean' }).notNull().default(false),
+    aiProvenance: text('ai_provenance', { mode: 'json' }).$type<
+      import('@/lib/ai/types').AiProvenance
+    >(),
     checkedAt: timestampNow('checked_at'),
   },
   (t) => [index('idx_interaction_checks_user').on(t.userId, t.dependentId)]

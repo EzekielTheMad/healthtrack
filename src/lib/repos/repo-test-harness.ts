@@ -11,6 +11,26 @@ import path from 'path';
 import crypto from 'crypto';
 import { vi } from 'vitest';
 import type Database from 'better-sqlite3';
+import { encrypt } from '@/lib/crypto/encrypt';
+
+/** Synthetic account configuration for workflows whose provider call is mocked. */
+export function seedAiConfiguration(sqlite: Database.Database, userId: string) {
+  sqlite
+    .prepare(
+      `INSERT OR REPLACE INTO ai_settings(user_id,revision,provider,encrypted_key,primary_model,models_json,tested_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?)`
+    )
+    .run(
+      userId,
+      'test-ai-v1',
+      'anthropic',
+      encrypt('synthetic-api-key'),
+      'claude-synthetic',
+      '[]',
+      new Date().toISOString(),
+      new Date().toISOString()
+    );
+}
 
 export const NOW = Date.now();
 export const T = new Date(NOW).toISOString();
@@ -33,10 +53,7 @@ export async function setupRepoDb(prefix: string): Promise<RepoTestDb> {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   process.env.DATA_DIR = tmpDir;
   vi.resetModules();
-  const [{ runMigrations }, dbMod] = await Promise.all([
-    import('@/db/migrate'),
-    import('@/db'),
-  ]);
+  const [{ runMigrations }, dbMod] = await Promise.all([import('@/db/migrate'), import('@/db')]);
   runMigrations();
   const sqlite = dbMod.getSqlite();
   return {
@@ -60,17 +77,13 @@ export async function setupRepoDb(prefix: string): Promise<RepoTestDb> {
  * (that contract is pinned by the vitals write tests); generating here keeps
  * the harness free of module-load-order coupling with api-auth.
  */
-export function mintApiToken(
-  sqlite: Database.Database,
-  userId: string,
-  scopes: string[],
-): string {
+export function mintApiToken(sqlite: Database.Database, userId: string, scopes: string[]): string {
   const token = `ohts_pat_${crypto.randomBytes(36).toString('base64url')}`;
   const hash = crypto.createHash('sha256').update(token).digest('hex');
   sqlite
     .prepare(
       `insert into api_keys (id, user_id, name, token_hash, prefix, scopes, created_at)
-       values (?, ?, 'test key', ?, ?, ?, ?)`,
+       values (?, ?, 'test key', ?, ?, ?, ?)`
     )
     .run(
       crypto.randomUUID(),
@@ -78,7 +91,7 @@ export function mintApiToken(
       hash,
       token.slice(0, 16),
       JSON.stringify(scopes),
-      new Date().toISOString(),
+      new Date().toISOString()
     );
   return token;
 }
@@ -87,21 +100,17 @@ export function insertUser(sqlite: Database.Database, id: string, email?: string
   sqlite
     .prepare(
       `insert into user (id, name, email, emailVerified, role, createdAt, updatedAt)
-       values (?, ?, ?, 0, 'user', ?, ?)`,
+       values (?, ?, ?, 0, 'user', ?, ?)`
     )
     .run(id, id, email ?? `${id.slice(0, 8)}@example.com`, NOW, NOW);
 }
 
-export function insertDependent(
-  sqlite: Database.Database,
-  id: string,
-  parentUserId: string,
-) {
+export function insertDependent(sqlite: Database.Database, id: string, parentUserId: string) {
   sqlite
     .prepare(
       `insert into dependents
          (id, parent_user_id, name, date_of_birth, relationship, transition_age, transitioned, created_at, updated_at)
-       values (?, ?, 'Dep', '2015-01-01', 'child', 18, 0, ?, ?)`,
+       values (?, ?, 'Dep', '2015-01-01', 'child', 18, 0, ?, ?)`
     )
     .run(id, parentUserId, T, T);
 }
@@ -115,14 +124,14 @@ export function insertShare(
     accepted?: boolean;
     expiresAt?: string | null;
     dependentId?: string | null;
-  },
+  }
 ) {
   sqlite
     .prepare(
       `insert into health_shares
          (id, owner_id, shared_with_email, shared_with_id, access_level,
           shared_sections, share_token, accepted, expires_at, dependent_id, created_at)
-       values (?, ?, 'viewer@example.com', ?, 'read', ?, ?, ?, ?, ?, ?)`,
+       values (?, ?, 'viewer@example.com', ?, 'read', ?, ?, ?, ?, ?, ?)`
     )
     .run(
       crypto.randomUUID(),
@@ -133,7 +142,7 @@ export function insertShare(
       opts.accepted === false ? 0 : 1,
       opts.expiresAt ?? null,
       opts.dependentId ?? null,
-      T,
+      T
     );
 }
 
@@ -145,14 +154,14 @@ export function insertDelegate(
     permissionLevel?: 'read_only' | 'read_write' | 'admin';
     status?: 'pending' | 'accepted' | 'rejected';
     expiresAt?: string | null;
-  },
+  }
 ) {
   sqlite
     .prepare(
       `insert into delegates
          (id, owner_id, delegate_user_id, delegate_email, permission_level,
           status, invited_at, accepted_at, expires_at, created_at, updated_at)
-       values (?, ?, ?, 'viewer@example.com', ?, ?, ?, ?, ?, ?, ?)`,
+       values (?, ?, ?, 'viewer@example.com', ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       crypto.randomUUID(),
@@ -164,6 +173,6 @@ export function insertDelegate(
       opts.status === 'accepted' || opts.status === undefined ? T : null,
       opts.expiresAt ?? null,
       T,
-      T,
+      T
     );
 }

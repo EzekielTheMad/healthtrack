@@ -1,3 +1,9 @@
+vi.mock('@/components/shared/ActiveProfileProvider', () => ({
+  useActiveProfile: () => ({ dependentId: null, delegateOwnerId: null }),
+}));
+vi.mock('@/lib/auth/client', () => ({
+  useSession: () => ({ data: { user: { id: 'synthetic-owner' } } }),
+}));
 /**
  * HealthSummaryCard — cache-aware rendering + per-day collapse.
  *
@@ -61,9 +67,7 @@ describe('HealthSummaryCard — rendering', () => {
     stubFetch(CACHED);
     render(<HealthSummaryCard />);
 
-    await waitFor(() =>
-      expect(screen.getByText(/doing well overall/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/doing well overall/i)).toBeInTheDocument());
     expect(screen.getByText('Blood pressure is stable.')).toBeInTheDocument();
     expect(screen.queryByText(/Generating your health overview/i)).not.toBeInTheDocument();
     expect(screen.queryByText('updating…')).not.toBeInTheDocument();
@@ -84,9 +88,7 @@ describe('HealthSummaryCard — collapse', () => {
   it('toggles collapsed: hides the body, shows a teaser, and persists for the day', async () => {
     stubFetch(CACHED);
     render(<HealthSummaryCard />);
-    await waitFor(() =>
-      expect(screen.getByText('Blood pressure is stable.')).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText('Blood pressure is stable.')).toBeInTheDocument());
 
     // The toggle's accessible name comes from its "Health Overview" heading.
     const toggle = screen.getByRole('button', { name: /health overview/i });
@@ -99,25 +101,25 @@ describe('HealthSummaryCard — collapse', () => {
     expect(screen.getByText('You are doing well overall.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /health overview/i })).toHaveAttribute(
       'aria-expanded',
-      'false',
+      'false'
     );
     // Persisted keyed by today.
     expect(localStorage.getItem(COLLAPSE_KEY)).toBe(todayLocal());
   });
 
-  it('restores the collapsed state from localStorage on mount (today\'s key)', async () => {
+  it("restores the collapsed state from localStorage on mount (today's key)", async () => {
     localStorage.setItem(COLLAPSE_KEY, todayLocal());
     stubFetch(CACHED);
     render(<HealthSummaryCard />);
 
     await waitFor(() =>
-      expect(screen.getByText('You are doing well overall.')).toBeInTheDocument(),
+      expect(screen.getByText('You are doing well overall.')).toBeInTheDocument()
     );
     // Starts collapsed: full highlight body is not shown.
     expect(screen.queryByText('Blood pressure is stable.')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /health overview/i })).toHaveAttribute(
       'aria-expanded',
-      'false',
+      'false'
     );
   });
 
@@ -126,13 +128,11 @@ describe('HealthSummaryCard — collapse', () => {
     stubFetch(CACHED);
     render(<HealthSummaryCard />);
 
-    await waitFor(() =>
-      expect(screen.getByText('Blood pressure is stable.')).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText('Blood pressure is stable.')).toBeInTheDocument());
     // Stale key ignored → expanded by default.
     expect(screen.getByRole('button', { name: /health overview/i })).toHaveAttribute(
       'aria-expanded',
-      'true',
+      'true'
     );
   });
 });

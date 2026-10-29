@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo, useLayoutEffect } from 'react';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
+import { useSession } from '@/lib/auth/client';
 import type { InteractionAlert, InteractionStatus } from '@/lib/types';
 
 interface InteractionPayload {
@@ -18,12 +19,20 @@ export function useInteractionAlerts() {
   const [error, setError] = useState<string | null>(null);
   // Distinct from `loading` (initial fetch): true while an interaction check
   // is running, so a manual "Check interactions" button can show progress.
-  const [checkingFor, setCheckingFor] = useState<string | null>(null);
-  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const [checkingFor, setCheckingFor] = useState<object | null>(null);
+  const [loadedScope, setLoadedScope] = useState<object | null>(null);
   const { dependentId, delegateOwnerId } = useActiveProfile();
-  const scopeKey = `${delegateOwnerId ?? 'self'}:${dependentId ?? 'self'}`;
-  const activeScope = useRef(scopeKey);
+  const { data: session } = useSession();
+  const scopeIdentity = JSON.stringify([session?.user.id, delegateOwnerId, dependentId]);
+  const scopeKey = useMemo(() => ({ identity: scopeIdentity }), [scopeIdentity]);
+  const activeScope = useRef<object | null>(scopeKey);
   const checkVersion = useRef(0);
+  useLayoutEffect(() => {
+    activeScope.current = scopeKey;
+    return () => {
+      if (activeScope.current === scopeKey) activeScope.current = null;
+    };
+  }, [scopeKey]);
 
   // Scope params mirror the old PostgREST query: delegate mode targets the
   // owner with no dependent filter (the API returns empty there — the data is
@@ -85,6 +94,7 @@ export function useInteractionAlerts() {
   /** Snooze an alert for `days`; the server clamps to the severity cap. */
   const snoozeAlert = useCallback(
     async (alertId: string, days: number) => {
+      if (activeScope.current !== scopeKey || delegateOwnerId) return;
       // Optimistic: drop it from the active list and bump the snoozed count.
       setAlerts((prev) => prev.filter((a) => a.id !== alertId));
       setSnoozedCount((n) => n + 1);
@@ -107,7 +117,7 @@ export function useInteractionAlerts() {
         }
       }
     },
-    [fetchStatus, applyPayload, scopeKey]
+    [fetchStatus, applyPayload, scopeKey, delegateOwnerId]
   );
 
   /**
@@ -117,6 +127,7 @@ export function useInteractionAlerts() {
    */
   const checkInteractions = useCallback(
     async (triggerMedId?: string): Promise<{ hasInteractions: boolean } | null> => {
+      if (activeScope.current !== scopeKey || delegateOwnerId) return null;
       const version = ++checkVersion.current;
       const startedScope = scopeKey;
       setError(null);
@@ -160,6 +171,7 @@ export function useInteractionAlerts() {
         const data = await fetchStatus();
         if (data && activeScope.current === startedScope && checkVersion.current === version)
           applyPayload(data);
+        if (activeScope.current !== startedScope || checkVersion.current !== version) return null;
         return { hasInteractions: Boolean(result.has_interactions) };
       } catch {
         if (activeScope.current === startedScope && checkVersion.current === version)

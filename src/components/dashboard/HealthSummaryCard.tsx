@@ -1,7 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import type { HealthSummary, HealthSummaryHighlight } from '@/lib/claude/health-summary';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
+import { useSession } from '@/lib/auth/client';
+import AiAnswerProvenance from '@/components/shared/AiAnswerProvenance';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import { AI_DISCLAIMER } from '@/lib/ai-disclaimer';
@@ -71,6 +74,19 @@ const HIGHLIGHT_STYLES: Record<string, { bg: string; border: string; icon: strin
 };
 
 export default function HealthSummaryCard() {
+  const { dependentId, delegateOwnerId } = useActiveProfile();
+  const { data: session } = useSession();
+  if (dependentId || delegateOwnerId || !session?.user.id) return null;
+  return <OwnerHealthSummaryCard key={session.user.id} />;
+}
+function OwnerHealthSummaryCard() {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const { capabilities } = useCapabilities();
   const [data, setData] = useState<SummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -111,6 +127,7 @@ export default function HealthSummaryCard() {
   // latest lab visit date) and drop the card locally. Failures are soft —
   // the card simply stays, matching the card's overall soft-fail posture.
   const dismissHighlight = useCallback(async (index: number, highlight: HealthSummaryHighlight) => {
+    if (!mounted.current) return;
     if (!highlight.labTests || highlight.labTests.length === 0) return;
     setDismissingIndex(index);
     try {
@@ -119,18 +136,19 @@ export default function HealthSummaryCard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tests: highlight.labTests }),
       });
-      if (!res.ok) throw new Error('Failed to dismiss');
+      if (!res.ok || !mounted.current) return;
       setData((prev) =>
         prev ? { ...prev, highlights: prev.highlights.filter((_, i) => i !== index) } : prev
       );
     } catch {
       // Leave the card in place; the user can retry.
     } finally {
-      setDismissingIndex(null);
+      if (mounted.current) setDismissingIndex(null);
     }
   }, []);
 
   const fetchSummary = useCallback(async (isRefresh: boolean) => {
+    if (!mounted.current) return;
     setError(null);
     // Only the very first load shows the full-card spinner; a manual refresh
     // keeps the existing summary visible and shows a subtle "updating…".
@@ -140,13 +158,16 @@ export default function HealthSummaryCard() {
       const res = await fetch(isRefresh ? '/api/health-summary?refresh=1' : '/api/health-summary');
       if (!res.ok) throw new Error('Failed to load summary');
       const json = (await res.json()) as SummaryResponse;
+      if (!mounted.current) return;
       setData(json);
       setHasLoaded(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong');
+      if (mounted.current) setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (mounted.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, []);
 
@@ -321,6 +342,7 @@ export default function HealthSummaryCard() {
             </div>
           )}
 
+          <AiAnswerProvenance evidence={data?.contextMetadata?.ai} />
           <p className="text-xs italic pt-1" style={{ color: 'var(--color-text-muted)' }}>
             {AI_DISCLAIMER}
           </p>

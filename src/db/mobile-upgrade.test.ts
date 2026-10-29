@@ -71,7 +71,9 @@ it('upgrades an rc3 schema without rewriting clinical dates and restores its com
       .prepare('SELECT value,native_record_id,last_received_at FROM vitals WHERE id=?')
       .get('vital')
   ).toEqual({ value: 5000, native_record_id: null, last_received_at: null });
-  expect(sql.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 15 });
+  expect(sql.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()).toEqual({
+    n: journal.entries.length,
+  });
   const restoredPath = path.join(folder, 'restored-rc3.db');
   fs.copyFileSync(backup, restoredPath, fs.constants.COPYFILE_EXCL);
   const restored = new Database(restoredPath, { readonly: true });

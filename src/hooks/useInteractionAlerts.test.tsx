@@ -1,3 +1,4 @@
+vi.mock('@/lib/auth/client', () => ({ useSession: () => ({ data: { user: { id: 'owner' } } }) }));
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { useInteractionAlerts } from './useInteractionAlerts';

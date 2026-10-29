@@ -17,6 +17,7 @@ const fieldStyle = {
   borderColor: 'var(--border-card)',
 };
 const hiddenKeys = new Set([
+  'ai_provenance',
   '_visit_key',
   'confidence',
   'source_page',
@@ -250,6 +251,9 @@ function ReviewContent({ batchId, onComplete, onCancel }: Props) {
           ...(decision?.values ?? {}),
         };
         const keys = [...Object.keys(item.payload)];
+        const extraction = item.payload.ai_provenance as
+          | import('@/lib/ai/types').AiProvenance
+          | undefined;
         // Required choices must remain visible even when not present in extraction.
         if (item.domain === 'allergies' && !keys.includes('severity')) keys.push('severity');
         return (
@@ -275,6 +279,12 @@ function ReviewContent({ batchId, onComplete, onCancel }: Props) {
               item.payload.source_pages !== undefined) && (
               <p className="text-xs">
                 Source page: {String(item.payload.source_page ?? item.payload.source_pages)}
+              </p>
+            )}
+            {extraction && (
+              <p className="text-xs break-words">
+                Extracted with {String(extraction.provider)} · {String(extraction.model)}. Review
+                the source before saving.
               </p>
             )}
             {item.payload.raw_text != null && (
