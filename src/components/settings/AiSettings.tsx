@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/lib/auth/client';
 import { AI_PROVIDERS, type AiModel, type AiProvider } from '@/lib/ai/types';
 
@@ -35,6 +35,9 @@ function AccountAiSettings() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const generation = useRef(0);
+  const invalidateRequests = useCallback(() => {
+    generation.current++;
+  }, []);
 
   function applySaved(value: SavedSettings) {
     setSaved(value);
@@ -57,10 +60,8 @@ function AccountAiSettings() {
       .catch((e) => {
         if (generation.current === id) setError(e.message);
       });
-    return () => {
-      generation.current = -1;
-    };
-  }, []);
+    return invalidateRequests;
+  }, [invalidateRequests]);
 
   async function action(
     type: 'discover' | 'test' | 'save' | 'remove' | 'migrate_legacy' | 'discard_draft'

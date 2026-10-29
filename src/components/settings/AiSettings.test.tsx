@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AiSettings from './AiSettings';
 vi.mock('@/lib/auth/client', () => ({
@@ -96,5 +97,30 @@ describe('AI settings user workflow', () => {
       target: { value: 'model-one' },
     });
     expect(screen.getByRole('button', { name: 'Save AI settings' })).toBeDisabled();
+  });
+  it('late initial settings cannot replace a draft after effect remount', async () => {
+    let initial!: (value: unknown) => void;
+    let reads = 0;
+    fetchMock.mockImplementation((_url, options) => {
+      if (options?.method === 'POST') return Promise.resolve(ok({ draft_id: 'draft', models }));
+      if (++reads === 1)
+        return new Promise((resolve) => {
+          initial = resolve;
+        });
+      return Promise.resolve(ok(saved));
+    });
+    render(
+      <StrictMode>
+        <AiSettings />
+      </StrictMode>
+    );
+    await waitFor(() => expect(screen.getByLabelText('Provider')).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'synthetic-key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh models' }));
+    await screen.findByText('Models refreshed. Choose models and test this draft before saving.');
+    await act(async () => {
+      initial(ok(saved));
+    });
+    expect(screen.getAllByRole('option', { name: 'One (model-one)' })).toHaveLength(2);
   });
 });
