@@ -151,7 +151,11 @@ describe('authenticated account AI API', () => {
         )
       ).status
     ).toBe(200);
-    expect(state.discover).toHaveBeenCalledWith('anthropic', 'synthetic-legacy-key');
+    expect(state.discover).toHaveBeenCalledWith(
+      'anthropic',
+      'synthetic-legacy-key',
+      expect.any(Function)
+    );
     expect((await (await route.GET()).json()).has_key).toBe(false);
   });
 });
