@@ -125,7 +125,7 @@ describe('fixed official provider transports', () => {
           has_more: false,
         })
       );
-    expect(await discoverModels('anthropic', 'synthetic-key')).toEqual(
+    expect(await discoverModels('anthropic', 'synthetic-key', () => {})).toEqual(
       [
         { id: 'claude-one', label: 'One', documents: 'supported' },
         { id: 'claude-two', label: 'claude-two', documents: 'unsupported' },
@@ -139,7 +139,7 @@ describe('fixed official provider transports', () => {
         data: [{ id: 'gpt-synthetic' }, { id: 'gpt-synthetic-realtime' }, { id: 'embedding-test' }],
       })
     );
-    expect(await discoverModels('openai', 'synthetic-key')).toEqual([
+    expect(await discoverModels('openai', 'synthetic-key', () => {})).toEqual([
       { id: 'gpt-synthetic', label: 'gpt-synthetic', documents: 'test_required' },
     ]);
     fetchMock.mockResolvedValueOnce(
@@ -150,6 +150,8 @@ describe('fixed official provider transports', () => {
         ],
       })
     );
-    expect((await discoverModels('gemini', 'synthetic-key'))[0].id).toBe('gemini-synthetic');
+    expect((await discoverModels('gemini', 'synthetic-key', () => {}))[0].id).toBe(
+      'gemini-synthetic'
+    );
   });
 });

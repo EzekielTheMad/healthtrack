@@ -33,7 +33,7 @@ All notable changes to HealthTrack are documented here for GitHub releases.
   totals are selected instead of added; missing CPAP nights remain unknown and
   recorded zeros remain zero. Instance timezone governs reporting windows.
 - Active browser pages share the existing 15-minute inactivity deadline.
-- Doctor PDF section headings stay with their first row. README screenshots
+- Doctor PDF section headings use orphan protection while large rows can span pages. README screenshots
   use a newly generated fictional account; native AMD64/ARM64 CI smoke checks
   can run before publication.
 - Next.js remains on 16.4.3; Better Auth is patched to 1.7.7. See release evidence

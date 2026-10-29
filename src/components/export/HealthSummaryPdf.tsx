@@ -234,13 +234,13 @@ function SectionBlock({ title, children }: { title: string; children: React.Reac
   const rows = Children.toArray(children);
   return (
     <View style={styles.section}>
-      <View wrap={false}>
+      <View wrap={false} minPresenceAhead={30}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>{title}</Text>
         </View>
-        <View style={styles.table}>{rows.slice(0, 2)}</View>
+        <View style={styles.table}>{rows.slice(0, 1)}</View>
       </View>
-      {rows.length > 2 && <View style={styles.table}>{rows.slice(2)}</View>}
+      {rows.length > 1 && <View style={styles.table}>{rows.slice(1)}</View>}
     </View>
   );
 }

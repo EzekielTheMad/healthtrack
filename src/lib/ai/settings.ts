@@ -131,7 +131,9 @@ export async function refreshAiModels(
       .run(userId, id, expected, provider, encrypt(key), Date.now() + 30 * 60_000);
   })();
   try {
-    const models = await discoverModels(provider, key);
+    const models = await discoverModels(provider, key, () => {
+      loadDraft(userId, id);
+    });
     loadDraft(userId, id);
     sqlite
       .prepare('UPDATE ai_setting_drafts SET models_json=? WHERE user_id=? AND id=?')

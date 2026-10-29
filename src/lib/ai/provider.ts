@@ -76,7 +76,11 @@ async function request(
 }
 
 /** Discovery never submits clinical data. All pages are bounded, never silently truncated. */
-export async function discoverModels(provider: AiProvider, apiKey: string): Promise<AiModel[]> {
+export async function discoverModels(
+  provider: AiProvider,
+  apiKey: string,
+  assertActive: () => void
+): Promise<AiModel[]> {
   const models = new Map<string, AiModel>();
   let cursor = '';
   const seen = new Set<string>();
@@ -87,6 +91,7 @@ export async function discoverModels(provider: AiProvider, apiKey: string): Prom
         : provider === 'gemini'
           ? `/models?pageSize=100${cursor ? `&pageToken=${encodeURIComponent(cursor)}` : ''}`
           : '/models';
+    assertActive();
     const result = await request(provider, apiKey, path);
     const entries = array(provider === 'gemini' ? result.models : result.data);
     for (const raw of entries) {

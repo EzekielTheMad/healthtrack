@@ -34,11 +34,14 @@ remained unchanged. This is a local synthetic rehearsal, not a new backup of
 the running installation or an off-host disaster-recovery test.
 
 The baseline application checkpoint `cbd062e` passed **184 files / 1,819 tests**,
-TypeScript and lint (0 errors, 15 advisories). Follow-up PDF pagination,
-fictional screenshot and native-CI changes require their own final source/image
-binding and review. Exact commands, results and immutable artifact identities
-are retained by the operator outside the public tree. Do not infer that this
-baseline result clears a later changed candidate.
+TypeScript and lint (0 errors, 15 advisories). Follow-up changes include PDF
+orphan protection with oversized-row wrapping and discovery fencing before
+every provider page request. Deferred-page tests cover draft removal,
+replacement and expiry. The oversized fictional PDF spans six pages without
+the prior unwrappable-row warning. Exact final commands, results, reviewer
+readback and immutable source/image identities are retained by the operator
+outside the public tree. Do not infer that a baseline result alone clears a
+later changed candidate.
 
 All six README screenshots were regenerated from the same disposable fictional
 account. AI text/model names shown there are fixtures. No real account keys,
