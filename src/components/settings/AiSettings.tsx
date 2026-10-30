@@ -17,6 +17,15 @@ interface SavedSettings {
 const names = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Google Gemini' };
 const fieldClass = 'block min-h-11 w-full rounded-lg border p-2 mt-1';
 const fieldStyle = { backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-card)' };
+type SettingsAction = 'discover' | 'test' | 'save' | 'remove' | 'migrate_legacy' | 'discard_draft';
+const progress: Record<SettingsAction, string> = {
+  discover: 'Refreshing models…',
+  test: 'Testing connection and documents…',
+  save: 'Saving AI settings…',
+  remove: 'Removing saved API key…',
+  migrate_legacy: 'Discovering legacy models…',
+  discard_draft: 'Discarding setup draft…',
+};
 
 export default function AiSettings() {
   const { data: session } = useSession();
@@ -31,7 +40,7 @@ function AccountAiSettings() {
   const [extraction, setExtraction] = useState('');
   const [draft, setDraft] = useState<string | null>(null);
   const [tested, setTested] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<SettingsAction | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const generation = useRef(0);
@@ -63,14 +72,15 @@ function AccountAiSettings() {
     return invalidateRequests;
   }, [invalidateRequests]);
 
-  async function action(
-    type: 'discover' | 'test' | 'save' | 'remove' | 'migrate_legacy' | 'discard_draft'
-  ) {
-    if (!saved || busy) return;
-    const id = ++generation.current;
-    setBusy(true);
+  function clearFeedback() {
     setError(null);
     setNotice(null);
+  }
+  async function action(type: SettingsAction) {
+    if (!saved || busy) return;
+    const id = ++generation.current;
+    setBusy(type);
+    clearFeedback();
     const body =
       type === 'discover'
         ? {
@@ -143,7 +153,7 @@ function AccountAiSettings() {
         if (type === 'test') setTested(false);
       }
     } finally {
-      if (generation.current === id) setBusy(false);
+      if (generation.current === id) setBusy(null);
     }
   }
   return (
@@ -169,17 +179,12 @@ function AccountAiSettings() {
         </p>
       )}
       {!saved && !error && <p role="status">Loading AI settings…</p>}
-      {error && (
+      {error && !saved && (
         <p role="alert" className="text-sm" style={{ color: 'var(--color-terracotta)' }}>
           {error}
         </p>
       )}
-      {notice && (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
-      )}
-      <fieldset disabled={!saved || busy} className="min-w-0 space-y-4 disabled:opacity-60">
+      <fieldset disabled={!saved || Boolean(busy)} className="min-w-0 space-y-4">
         <label className="block text-sm">
           Provider
           <select
@@ -187,6 +192,7 @@ function AccountAiSettings() {
             className={fieldClass}
             style={fieldStyle}
             onChange={(e) => {
+              clearFeedback();
               setProvider(e.target.value as AiProvider);
               setApiKey('');
               setDraft(null);
@@ -216,6 +222,7 @@ function AccountAiSettings() {
             className={fieldClass}
             style={fieldStyle}
             onChange={(e) => {
+              clearFeedback();
               setApiKey(e.target.value);
               setDraft(null);
               setTested(false);
@@ -228,7 +235,7 @@ function AccountAiSettings() {
           onClick={() => void action('discover')}
           disabled={!apiKey && !(saved?.has_key && provider === saved.provider)}
         >
-          Refresh models
+          {busy === 'discover' ? progress.discover : 'Refresh models'}
         </button>
         <label className="block text-sm">
           Primary model
@@ -237,6 +244,7 @@ function AccountAiSettings() {
             className={fieldClass}
             style={fieldStyle}
             onChange={(e) => {
+              clearFeedback();
               setPrimary(e.target.value);
               setTested(false);
             }}
@@ -256,6 +264,7 @@ function AccountAiSettings() {
             className={fieldClass}
             style={fieldStyle}
             onChange={(e) => {
+              clearFeedback();
               setExtraction(e.target.value);
               setTested(false);
             }}
@@ -274,6 +283,18 @@ function AccountAiSettings() {
           Model listings do not guarantee task support. Test confirms this exact key and model
           selection can accept text, PDF and image requests.
         </p>
+        <div id="ai-settings-feedback" className="space-y-2">
+          {error && saved && (
+            <p role="alert" className="text-sm" style={{ color: 'var(--color-terracotta)' }}>
+              {error}
+            </p>
+          )}
+          {(busy || notice) && (
+            <p role="status" aria-atomic="true" className="text-sm">
+              {busy ? progress[busy] : notice}
+            </p>
+          )}
+        </div>
         <div className="flex flex-wrap gap-3">
           <button
             type="button"
@@ -281,7 +302,7 @@ function AccountAiSettings() {
             disabled={!draft || !primary}
             onClick={() => void action('test')}
           >
-            Test connection and documents
+            {busy === 'test' ? progress.test : 'Test connection and documents'}
           </button>
           <button
             type="button"
@@ -289,7 +310,7 @@ function AccountAiSettings() {
             disabled={!draft || !tested}
             onClick={() => void action('save')}
           >
-            Save AI settings
+            {busy === 'save' ? progress.save : 'Save AI settings'}
           </button>
           {draft && (
             <button
@@ -297,7 +318,7 @@ function AccountAiSettings() {
               className="min-h-11 rounded-lg border px-3"
               onClick={() => void action('discard_draft')}
             >
-              Discard setup draft
+              {busy === 'discard_draft' ? progress.discard_draft : 'Discard setup draft'}
             </button>
           )}
           {saved?.has_key && (
@@ -306,7 +327,7 @@ function AccountAiSettings() {
               className="min-h-11 rounded-lg border px-3"
               onClick={() => void action('remove')}
             >
-              Remove saved API key
+              {busy === 'remove' ? progress.remove : 'Remove saved API key'}
             </button>
           )}
         </div>
@@ -325,12 +346,13 @@ function AccountAiSettings() {
               className="min-h-11 rounded-lg border px-3 mt-2"
               onClick={() => void action('migrate_legacy')}
             >
-              Copy legacy key and discover models
+              {busy === 'migrate_legacy'
+                ? progress.migrate_legacy
+                : 'Copy legacy key and discover models'}
             </button>
           </details>
         )}
       </fieldset>
-      {busy && <p role="status">Working…</p>}
     </section>
   );
 }
