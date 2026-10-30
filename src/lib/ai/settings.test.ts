@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
 import {
   setupRepoDb,
   insertUser,
@@ -39,6 +40,29 @@ async function configured(provider: 'anthropic' | 'openai' | 'gemini' = 'openai'
   return ai.saveAiDraft(OWNER, current.revision, draft.draft_id, 'primary', 'document');
 }
 describe('encrypted per-account settings', () => {
+  it('sends a genuinely decodable synthetic PNG in the two-request setup test', async () => {
+    const draft = await ai.refreshAiModels(OWNER, 'unconfigured', 'openai', 'synthetic-key');
+    await ai.testAiDraft(OWNER, draft.draft_id, 'primary', 'document');
+    expect(mocks.generate).toHaveBeenCalledTimes(2);
+    expect(mocks.generate.mock.calls.map((call) => call[3].max_tokens)).toEqual([1024, 1024]);
+    const input = mocks.generate.mock.calls[1][3] as import('./types').AiMessageInput;
+    const content = input.messages[0].content as import('./types').AiContent[];
+    expect(content.filter((item) => item.type === 'document')).toHaveLength(1);
+    const image = content.find((item) => item.type === 'image')!;
+    expect(image.source?.media_type).toBe('image/png');
+    const { data, info } = await sharp(Buffer.from(image.source!.data, 'base64'), {
+      failOn: 'error',
+    })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    expect({ width: info.width, height: info.height, channels: info.channels }).toEqual({
+      width: 1,
+      height: 1,
+      channels: 4,
+    });
+    expect([...data]).toEqual([255, 255, 255, 255]);
+  });
   it.each(['anthropic', 'openai', 'gemini'] as const)(
     'discovers, tests and saves %s without returning a key',
     async (provider) => {

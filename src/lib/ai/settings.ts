@@ -203,7 +203,7 @@ export async function testAiDraft(
             source: {
               type: 'base64',
               media_type: 'image/png',
-              data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aH9sAAAAASUVORK5CYII=',
+              data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWP4//8/AAX+Av5Y8msOAAAAAElFTkSuQmCC',
             },
           },
           { type: 'text', text: 'Confirm the test text in the attached fictional PDF.' },
