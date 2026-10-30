@@ -16,6 +16,8 @@ import { db } from '@/db';
 import { dailySummaries } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
 import type { HealthSummary } from '@/lib/claude/health-summary';
+import { assertCurrentAiConfiguration } from '@/lib/ai/settings';
+import type { AiConfiguration } from '@/lib/ai/types';
 
 export type DailySummaryRow = typeof dailySummaries.$inferSelect;
 
@@ -25,13 +27,14 @@ export function parseCachedSummary(row: DailySummaryRow): HealthSummary {
   return {
     summary: parsed.summary,
     highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
+    ...(parsed.contextMetadata ? { contextMetadata: parsed.contextMetadata } : {}),
   };
 }
 
 /** The cached summary row for a specific owner-local day, or null. */
 export async function getCachedSummary(
   userId: string,
-  date: string,
+  date: string
 ): Promise<DailySummaryRow | null> {
   if (!userId) throw new NotFoundError();
   const rows = await db
@@ -43,9 +46,7 @@ export async function getCachedSummary(
 }
 
 /** The most recent cached summary for the owner (any day), or null. */
-export async function getLatestCachedSummary(
-  userId: string,
-): Promise<DailySummaryRow | null> {
+export async function getLatestCachedSummary(userId: string): Promise<DailySummaryRow | null> {
   if (!userId) throw new NotFoundError();
   const rows = await db
     .select()
@@ -66,17 +67,21 @@ export async function upsertCachedSummary(
   date: string,
   summary: HealthSummary,
   model: string,
+  aiConfiguration?: AiConfiguration
 ): Promise<DailySummaryRow> {
   if (!userId) throw new NotFoundError();
   const generatedAt = new Date().toISOString();
   const summaryJson = JSON.stringify(summary);
-  const [row] = await db
-    .insert(dailySummaries)
-    .values({ userId, summaryDate: date, summaryJson, generatedAt, model })
-    .onConflictDoUpdate({
-      target: [dailySummaries.userId, dailySummaries.summaryDate],
-      set: { summaryJson, generatedAt, model },
-    })
-    .returning();
-  return row;
+  return db.transaction((tx) => {
+    if (aiConfiguration) assertCurrentAiConfiguration(aiConfiguration);
+    return tx
+      .insert(dailySummaries)
+      .values({ userId, summaryDate: date, summaryJson, generatedAt, model })
+      .onConflictDoUpdate({
+        target: [dailySummaries.userId, dailySummaries.summaryDate],
+        set: { summaryJson, generatedAt, model },
+      })
+      .returning()
+      .get();
+  });
 }

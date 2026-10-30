@@ -2,6 +2,7 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { ParsedVaccinePdfResult } from '@/lib/claude/parse-vaccine-pdf';
 
 interface VaccineImportProps {
@@ -17,13 +18,18 @@ export default function VaccineImport({ onParsed, onCancel }: VaccineImportProps
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const { dependentId, delegateOwnerId } = useActiveProfile();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback(
     async (file: File) => {
       setError(null);
 
-      if (!ACCEPTED_TYPES.includes(file.type)) {
+      if (delegateOwnerId) {
+        setError('Import vaccines for your own record or dependent.');
+        return;
+      }
+      if (file.type && !ACCEPTED_TYPES.includes(file.type)) {
         setError('Only PDF, PNG, and JPG files are accepted.');
         return;
       }
@@ -39,6 +45,7 @@ export default function VaccineImport({ onParsed, onCancel }: VaccineImportProps
       try {
         const formData = new FormData();
         formData.append('file', file);
+        if (dependentId) formData.append('dependent_id', dependentId);
 
         const res = await fetch('/api/parse-vaccine-pdf', {
           method: 'POST',
@@ -53,17 +60,19 @@ export default function VaccineImport({ onParsed, onCancel }: VaccineImportProps
 
         const { parsed } = (await res.json()) as { parsed: ParsedVaccinePdfResult };
         onParsed(parsed);
-      } catch {
+      } catch (error) {
         // Parsing runs through the AI extractor; if it fails, keep it friendly
         // and point the user at manual entry rather than surfacing a raw error.
         setError(
-          "Couldn't read this PDF automatically — you can add the vaccine manually.",
+          error instanceof Error
+            ? error.message
+            : "Couldn't read this document automatically — you can add the vaccine manually."
         );
       } finally {
         setProcessing(false);
       }
     },
-    [onParsed],
+    [onParsed, dependentId, delegateOwnerId]
   );
 
   const handleDrop = useCallback(
@@ -73,7 +82,7 @@ export default function VaccineImport({ onParsed, onCancel }: VaccineImportProps
       const file = e.dataTransfer.files[0];
       if (file) processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   const handleFileChange = useCallback(
@@ -81,7 +90,7 @@ export default function VaccineImport({ onParsed, onCancel }: VaccineImportProps
       const file = e.target.files?.[0];
       if (file) processFile(file);
     },
-    [processFile],
+    [processFile]
   );
 
   return (

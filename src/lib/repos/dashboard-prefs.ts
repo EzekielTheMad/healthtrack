@@ -53,7 +53,7 @@ async function requireOwnedScope(actorId: string, dependentId: string | null) {
 
 export async function listDashboardPrefs(
   actorId: string,
-  dependentId: string | null,
+  dependentId: string | null
 ): Promise<DashboardPrefRow[]> {
   await requireOwnedScope(actorId, dependentId);
   return db
@@ -62,8 +62,8 @@ export async function listDashboardPrefs(
     .where(
       and(
         eq(dashboardStatPreferences.userId, actorId),
-        dependentFilter(dashboardStatPreferences.dependentId, dependentId),
-      ),
+        dependentFilter(dashboardStatPreferences.dependentId, dependentId)
+      )
     )
     .orderBy(asc(dashboardStatPreferences.position));
 }
@@ -71,7 +71,7 @@ export async function listDashboardPrefs(
 export async function createDashboardPrefs(
   actorId: string,
   dependentId: string | null,
-  items: unknown,
+  items: unknown
 ): Promise<DashboardPrefRow[]> {
   await requireOwnedScope(actorId, dependentId);
   const parsed = z.array(prefInputSchema).min(1).parse(items);
@@ -95,7 +95,7 @@ async function loadOwnedPref(actorId: string, id: string): Promise<DashboardPref
 export async function updateDashboardPref(
   actorId: string,
   id: string,
-  patch: unknown,
+  patch: unknown
 ): Promise<DashboardPrefRow> {
   await loadOwnedPref(actorId, id);
   const values = prefUpdateSchema.parse(patch);
@@ -124,8 +124,12 @@ export interface DashboardExtras {
   availableLabTests: AvailableLabTest[];
 }
 
-export async function getDashboardExtras(actorId: string): Promise<DashboardExtras> {
+export async function getDashboardExtras(
+  actorId: string,
+  dependentId: string | null = null
+): Promise<DashboardExtras> {
   if (!actorId) throw new NotFoundError();
+  await requireOwnedScope(actorId, dependentId);
   const [{ n }] = await db
     .select({ n: count() })
     .from(connectedSources)
@@ -133,7 +137,9 @@ export async function getDashboardExtras(actorId: string): Promise<DashboardExtr
 
   // Latest value per test name (hook parity: ordered by created_at desc,
   // deduped keeping the most recent, no dependent filter).
-  const rows = await listLabResults(actorId, { ownerId: actorId, dependentId: 'all' });
+  const rows = (await listLabResults(actorId, { ownerId: actorId, dependentId })).sort(
+    (a, b) => b.visitDate.localeCompare(a.visitDate) || b.createdAt.localeCompare(a.createdAt)
+  );
 
   const seen = new Map<string, AvailableLabTest>();
   for (const row of rows) {
@@ -147,5 +153,5 @@ export async function getDashboardExtras(actorId: string): Promise<DashboardExtr
     }
   }
 
-  return { sourceCount: n, availableLabTests: Array.from(seen.values()) };
+  return { sourceCount: dependentId ? 0 : n, availableLabTests: Array.from(seen.values()) };
 }

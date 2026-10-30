@@ -23,6 +23,7 @@ function toWire(v: VitalRow) {
     unit: v.unit,
     source: v.source,
     recorded_at: v.recordedAt,
+    last_received_at: v.lastReceivedAt,
   };
 }
 
@@ -45,14 +46,17 @@ export async function GET(request: NextRequest) {
     .filter((m) => m.length > 0);
   if (metrics.length === 0) {
     return Response.json(
-      { error: 'metrics is required — a comma-separated list of metric keys, e.g. ?metrics=weight,hrv_rmssd' },
-      { status: 400, headers: corsHeaders },
+      {
+        error:
+          'metrics is required — a comma-separated list of metric keys, e.g. ?metrics=weight,hrv_rmssd',
+      },
+      { status: 400, headers: corsHeaders }
     );
   }
   if (metrics.length > MAX_METRICS) {
     return Response.json(
       { error: `At most ${MAX_METRICS} metrics per request (got ${metrics.length}).` },
-      { status: 400, headers: corsHeaders },
+      { status: 400, headers: corsHeaders }
     );
   }
   const unknown = metrics.filter((m) => !getMetric(m));
@@ -61,7 +65,7 @@ export async function GET(request: NextRequest) {
       {
         error: `Unknown metric key${unknown.length > 1 ? 's' : ''} '${unknown.join("', '")}'. The metric registry is closed — see /docs/api for the list of supported metrics.`,
       },
-      { status: 400, headers: corsHeaders },
+      { status: 400, headers: corsHeaders }
     );
   }
 
@@ -71,7 +75,7 @@ export async function GET(request: NextRequest) {
       const rows = await listVitals(
         ctx.userId,
         { ownerId: ctx.userId, dependentId: null },
-        { metricKey, limit: 1 },
+        { metricKey, limit: 1 }
       );
       out[metricKey] = rows[0] ? toWire(rows[0]) : null;
     }

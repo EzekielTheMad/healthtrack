@@ -8,6 +8,14 @@
  * only ever affected the NEXT webhook delivery. The 16-record MacroFactor
  * fixture must produce both expected daily rows from RETAINED state alone.
  */
+import {
+  beforeEach as beforeCalendarFixture,
+  afterEach as afterCalendarFixture,
+  vi as calendarFixtureVi,
+} from 'vitest';
+beforeCalendarFixture(() => calendarFixtureVi.stubEnv('TZ', 'America/Phoenix'));
+afterCalendarFixture(() => calendarFixtureVi.unstubAllEnvs());
+
 import crypto from 'crypto';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
@@ -17,10 +25,7 @@ import {
   VIEWER,
   type RepoTestDb,
 } from '@/lib/repos/repo-test-harness';
-import {
-  MACROFACTOR_ITEMS,
-  EXPECTED_DAILY_TOTALS,
-} from './fixtures/macrofactor';
+import { MACROFACTOR_ITEMS, EXPECTED_DAILY_TOTALS } from './fixtures/macrofactor';
 import { MACROFACTOR_PACKAGE } from './fixtures/payloads';
 
 type Rebuild = typeof import('./rebuild-nutrition');
@@ -57,7 +62,7 @@ afterEach(() => ctx.restore());
 /** Insert a retained raw nutrition record exactly as ingestion would. */
 function seedRecord(
   payload: Record<string, unknown>,
-  opts: { userId?: string; sourcePackage?: string; uuid?: string; integrationId?: string } = {},
+  opts: { userId?: string; sourcePackage?: string; uuid?: string; integrationId?: string } = {}
 ) {
   const start = String(payload.start_time);
   ctx.sqlite
@@ -66,7 +71,7 @@ function seedRecord(
         (id, integration_id, user_id, record_type, source_package, source_uuid,
          identity_kind, recorded_start_at, recorded_end_at, source_last_modified_at,
          payload_json, first_seen_at, last_seen_at, last_ingest_id)
-       values (?, ?, ?, 'nutrition', ?, ?, 'uuid', ?, ?, null, ?, ?, ?, 'ingest-1')`,
+       values (?, ?, ?, 'nutrition', ?, ?, 'uuid', ?, ?, null, ?, ?, ?, 'ingest-1')`
     )
     .run(
       crypto.randomUUID(),
@@ -78,7 +83,7 @@ function seedRecord(
       payload.end_time ? new Date(String(payload.end_time)).toISOString() : null,
       JSON.stringify(payload),
       new Date().toISOString(),
-      new Date().toISOString(),
+      new Date().toISOString()
     );
 }
 
@@ -182,7 +187,7 @@ describe('source package matching', () => {
     for (const pkg of ['com.sbs.diet.free', 'com.sbs.dietary', 'sbs.diet', 'com.sbs']) {
       seedRecord(
         { calories: 9999, start_time: '2026-08-31T15:00:00Z', uuid: `x-${pkg}` },
-        { sourcePackage: pkg },
+        { sourcePackage: pkg }
       );
     }
     run();
@@ -197,16 +202,13 @@ describe('source package matching', () => {
     seedMacroFactor();
     seedRecord(
       { calories: 300, protein_grams: 12, start_time: '2026-08-31T15:00:00Z', uuid: 'other-1' },
-      { sourcePackage: 'com.other.tracker' },
+      { sourcePackage: 'com.other.tracker' }
     );
     run({ allowedPackages: [MACROFACTOR_PACKAGE, 'com.other.tracker'] });
 
     const aug31 = canonicalRows().filter((r) => r.date === '2026-08-31');
     // One row per package, ordered by package name (list order, not merged).
-    expect(aug31.map((r) => r.source_package)).toEqual([
-      'com.other.tracker',
-      MACROFACTOR_PACKAGE,
-    ]);
+    expect(aug31.map((r) => r.source_package)).toEqual(['com.other.tracker', MACROFACTOR_PACKAGE]);
     expect(aug31[0].calories).toBe(300);
     expect(aug31[1].calories as number).toBeCloseTo(EXPECTED_DAILY_TOTALS[0].calories, 6);
   });
@@ -279,7 +281,7 @@ describe('day assignment and nutrient semantics', () => {
     // No start_time in the payload — not a valid nutrition record.
     seedRecord(
       { calories: 5000, uuid: 'bad', start_time: '2026-08-31T19:00:00Z' },
-      { uuid: 'bad' },
+      { uuid: 'bad' }
     );
     ctx.sqlite
       .prepare("update health_connect_raw_records set payload_json = ? where source_uuid = 'bad'")
@@ -307,10 +309,7 @@ describe('reprocessRetainedNutrition', () => {
     expect(report.datesRebuilt).toEqual(['2026-08-31', '2026-09-01']);
     expect(report.recordsConsidered).toBe(16);
     expect(canonicalRows()).toHaveLength(2);
-    expect(canonicalRows()[1].calories as number).toBeCloseTo(
-      EXPECTED_DAILY_TOTALS[1].calories,
-      6,
-    );
+    expect(canonicalRows()[1].calories as number).toBeCloseTo(EXPECTED_DAILY_TOTALS[1].calories, 6);
   });
 
   it('discovers every retained date without being told which', async () => {
@@ -320,12 +319,7 @@ describe('reprocessRetainedNutrition', () => {
     await approve();
 
     const report = rebuild.reprocessRetainedNutrition(OWNER, integrationId);
-    expect(report.datesRebuilt).toEqual([
-      '2026-06-01',
-      '2026-07-15',
-      '2026-08-31',
-      '2026-09-01',
-    ]);
+    expect(report.datesRebuilt).toEqual(['2026-06-01', '2026-07-15', '2026-08-31', '2026-09-01']);
   });
 
   it('clears a canonical row whose raw records are gone', async () => {
@@ -334,7 +328,9 @@ describe('reprocessRetainedNutrition', () => {
     expect(canonicalRows()).toHaveLength(2);
 
     ctx.sqlite
-      .prepare("delete from health_connect_raw_records where recorded_start_at < '2026-09-01T07:00:00.000Z'")
+      .prepare(
+        "delete from health_connect_raw_records where recorded_start_at < '2026-09-01T07:00:00.000Z'"
+      )
       .run();
     const report = rebuild.reprocessRetainedNutrition(OWNER, integrationId);
 

@@ -18,9 +18,9 @@ import fs from 'fs';
 import path from 'path';
 
 export function getDataDir(): string {
-  const dir =
-    process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data');
-  return path.resolve(dir);
+  const dir = process.env.DATA_DIR ?? (process.env.NODE_ENV === 'production' ? '/data' : './data');
+  // External runtime storage must never be bundled by static file tracing.
+  return path.resolve(/* turbopackIgnore: true */ dir);
 }
 
 export function getDbPath(): string {

@@ -15,6 +15,9 @@ import type { Vital } from '@/lib/types';
 
 vi.mock('@/hooks/useVitals', () => ({ useVitals: vi.fn() }));
 vi.mock('@/hooks/useRecentWorkouts', () => ({ useRecentWorkouts: vi.fn() }));
+vi.mock('@/components/shared/DateRangeContext', () => ({
+  useDateRangeContext: () => ({ reportingTimeZone: 'Etc/UTC', calendarLoading: false }),
+}));
 
 const NOW = new Date('2026-07-10T12:00:00Z');
 
@@ -50,11 +53,7 @@ function fixture(): Vital[] {
   ];
 }
 
-function renderPanels(
-  vitals: Vital[],
-  onAddManual?: () => void,
-  goals?: FocusGoalContext,
-) {
+function renderPanels(vitals: Vital[], onAddManual?: () => void, goals?: FocusGoalContext) {
   const panels = buildFocusPanels(vitals, NOW, goals);
   render(
     <FocusPanelList
@@ -63,7 +62,7 @@ function renderPanels(
       userAge={35}
       userSex="male"
       onAddManual={onAddManual}
-    />,
+    />
   );
   return panels;
 }
@@ -85,10 +84,12 @@ describe('FocusPanelList', () => {
     renderPanels(fixture());
     expect(screen.getByText('AHI (30d avg)')).toBeInTheDocument();
     expect(screen.getByText('goal <5')).toBeInTheDocument();
-    expect(screen.getByText('Adherence')).toBeInTheDocument();
+    expect(screen.getByText('Recorded nights ≥4h')).toBeInTheDocument();
     expect(
-      screen.getByRole('img', { name: 'Nightly AHI, last 14 nights' }),
+      screen.getByText('6/6 reported nights ≥4h · 6/10 nights reported · 4 missing')
     ).toBeInTheDocument();
+    expect(screen.getByText('2026-07-02: no AHI reading · no data received')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Nightly AHI, last 14 nights' })).toBeInTheDocument();
   });
 
   it('expands charts inline, one panel at a time, and collapses again', () => {
@@ -97,18 +98,14 @@ describe('FocusPanelList', () => {
     expect(buttons.length).toBeGreaterThanOrEqual(2);
 
     fireEvent.click(buttons[0]); // apnea
-    expect(
-      screen.getByRole('region', { name: 'Sleep apnea therapy charts' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Sleep apnea therapy charts' })).toBeInTheDocument();
 
     // Expanding another panel closes the first.
     fireEvent.click(screen.getAllByRole('button', { name: 'View charts' })[1]);
     expect(
-      screen.queryByRole('region', { name: 'Sleep apnea therapy charts' }),
+      screen.queryByRole('region', { name: 'Sleep apnea therapy charts' })
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('region', { name: 'Activity charts' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Activity charts' })).toBeInTheDocument();
 
     // Hide affordance collapses the open panel.
     fireEvent.click(screen.getByRole('button', { name: 'Hide charts' }));
@@ -133,10 +130,7 @@ describe('FocusPanelList', () => {
   });
 
   it('renders the body target-progress stat for a weight goal with a target', () => {
-    const weights = [
-      vital('weight', 210, '2026-07-08'),
-      vital('weight', 210, '2026-07-01'),
-    ];
+    const weights = [vital('weight', 210, '2026-07-08'), vital('weight', 210, '2026-07-01')];
     renderPanels(weights, undefined, {
       metricGoals: [{ metricKey: 'weight', direction: 'decrease', targetValue: 200 }],
     });
@@ -172,14 +166,14 @@ describe('FocusPanelList', () => {
         userAge={35}
         userSex="male"
         frequencyGoals={[{ sessionType: 'strength', perWeek: 3 }]}
-      />,
+      />
     );
     // Today's session always lands in the current week, whatever the runner
     // timezone — the badge shows real progress instead of the static label.
     expect(screen.getByText('1/3 lifts this week')).toBeInTheDocument();
     // The workouts fetch was enabled by the active frequency goal.
     expect(vi.mocked(useRecentWorkouts)).toHaveBeenCalledWith(
-      expect.objectContaining({ enabled: true }),
+      expect.objectContaining({ enabled: true })
     );
   });
 
@@ -191,7 +185,7 @@ describe('FocusPanelList', () => {
     expect(screen.getByText('No device data yet')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'HealthTrack API' })).toHaveAttribute(
       'href',
-      '/docs/api',
+      '/docs/api'
     );
     fireEvent.click(screen.getByRole('button', { name: 'Add Vital' }));
     expect(added).toBe(true);

@@ -82,9 +82,7 @@ describe('Oura token refresh', () => {
       )
     );
 
-    await expect(getOuraAccessToken('user-1')).rejects.toThrow(
-      /temporarily_unavailable: try later/
-    );
+    await expect(getOuraAccessToken('user-1')).rejects.toThrow(/Oura is temporarily unavailable/);
     expect(mocks.setConnectedSourceStatus).not.toHaveBeenCalled();
     expect(mocks.updateConnectedSourceTokens).not.toHaveBeenCalled();
   });

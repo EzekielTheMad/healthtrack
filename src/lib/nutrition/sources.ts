@@ -20,10 +20,10 @@ const FRIENDLY_LABELS: Record<string, string> = {
 
 /** Display name for an exact package, or the package itself when unmapped. */
 export function nutritionSourceLabel(sourcePackage: string): string {
-  return FRIENDLY_LABELS[sourcePackage] ?? sourcePackage;
+  return Object.hasOwn(FRIENDLY_LABELS, sourcePackage) ? FRIENDLY_LABELS[sourcePackage] : sourcePackage;
 }
 
 /** Whether the label differs from the package (so the UI can show both). */
 export function hasFriendlyLabel(sourcePackage: string): boolean {
-  return sourcePackage in FRIENDLY_LABELS;
+  return Object.hasOwn(FRIENDLY_LABELS, sourcePackage);
 }

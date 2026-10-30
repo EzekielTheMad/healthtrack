@@ -24,6 +24,7 @@ import type { Vital } from '@/lib/types';
 import BarChart from './BarChart';
 import VitalTrendChart from './VitalTrendChart';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
+import { useDateRangeContext } from '@/components/shared/DateRangeContext';
 
 // ---------------------------------------------------------------------------
 // Focus view — the goal-oriented default: up to four data-gated panels
@@ -123,8 +124,7 @@ function ApneaStrip({ nights }: { nights: ApneaNight[] }) {
     >
       {nights.map((night, i) => {
         const x = i * (barW + gap);
-        const h =
-          night.ahi !== null ? Math.max(2, (night.ahi / scale) * maxH) : 3;
+        const h = night.ahi !== null ? Math.max(2, (night.ahi / scale) * maxH) : 3;
         return (
           <rect
             key={night.dayKey}
@@ -133,11 +133,18 @@ function ApneaStrip({ nights }: { nights: ApneaNight[] }) {
             width={barW}
             height={h}
             rx={2}
-            fill={night.used ? 'var(--color-sage)' : 'var(--color-text-muted)'}
-            opacity={night.used ? 0.85 : 0.45}
+            fill={
+              night.used === null
+                ? 'transparent'
+                : night.used
+                  ? 'var(--color-sage)'
+                  : 'var(--color-text-muted)'
+            }
+            stroke={night.used === null ? 'var(--color-text-muted)' : 'none'}
+            opacity={night.used ? 0.85 : 0.6}
           >
             <title>
-              {`${night.dayKey}: ${night.ahi !== null ? `AHI ${formatMetricValue(night.ahi, 1)}` : 'no AHI reading'}${night.used ? '' : ' · no CPAP use'}`}
+              {`${night.dayKey}: ${night.ahi !== null ? `AHI ${formatMetricValue(night.ahi, 1)}` : 'no AHI reading'}${night.used === null ? ' · no data received' : night.used ? '' : ' · reported zero CPAP use'}`}
             </title>
           </rect>
         );
@@ -152,10 +159,18 @@ interface PanelChartsProps {
   userAge: number;
   userSex: 'male' | 'female' | 'prefer_not_to_say';
   weeklyBars: boolean;
+  timeZone?: string;
 }
 
 /** Expanded inline charts — same rendering rules as the All-metrics view. */
-function PanelCharts({ panel, byMetric, userAge, userSex, weeklyBars }: PanelChartsProps) {
+function PanelCharts({
+  panel,
+  byMetric,
+  userAge,
+  userSex,
+  weeklyBars,
+  timeZone,
+}: PanelChartsProps) {
   return (
     <div
       className="mt-4 pt-4 space-y-6 border-t"
@@ -195,9 +210,7 @@ function PanelCharts({ panel, byMetric, userAge, userSex, weeklyBars }: PanelCha
                 data={points.map((p) => ({ ...p, label }))}
                 height={200}
                 refLow={
-                  weeklyBars && metric!.aggregate === 'sum'
-                    ? undefined
-                    : (range?.low ?? undefined)
+                  weeklyBars && metric!.aggregate === 'sum' ? undefined : (range?.low ?? undefined)
                 }
                 refHigh={weeklyBars && metric!.aggregate === 'sum' ? undefined : range?.high}
                 decimals={metric!.decimals ?? 0}
@@ -213,6 +226,7 @@ function PanelCharts({ panel, byMetric, userAge, userSex, weeklyBars }: PanelCha
             data={data.map((v) => ({ value: v.value, recorded_at: v.recorded_at }))}
             metricKey={key}
             label={label}
+            timeZone={timeZone}
             refLow={range?.low ?? undefined}
             refHigh={range?.high}
             unit={data[0]?.unit ?? metric?.unit ?? ''}
@@ -230,20 +244,13 @@ function FocusEmptyState({ onAddManual }: { onAddManual?: () => void }) {
       className="rounded-xl border p-8 flex flex-col items-center text-center"
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
     >
-      <h3
-        className="text-lg font-semibold mb-2"
-        style={{ color: 'var(--color-text-primary)' }}
-      >
+      <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--color-text-primary)' }}>
         No device data yet
       </h3>
       <p className="text-sm max-w-md mb-6" style={{ color: 'var(--color-text-muted)' }}>
-        Focus panels appear automatically as your devices start reporting — CPAP,
-        sleep tracker, scale, or step counter. Push readings through the{' '}
-        <Link
-          href="/docs/api"
-          className="underline"
-          style={{ color: 'var(--color-sage)' }}
-        >
+        Focus panels appear automatically as your devices start reporting — CPAP, sleep tracker,
+        scale, or step counter. Push readings through the{' '}
+        <Link href="/docs/api" className="underline" style={{ color: 'var(--color-sage)' }}>
           HealthTrack API
         </Link>{' '}
         or enter them manually.
@@ -270,6 +277,7 @@ export interface FocusPanelListProps {
   userSex: 'male' | 'female' | 'prefer_not_to_say';
   /** True when the chart window is long enough for weekly bar buckets. */
   weeklyBars?: boolean;
+  timeZone?: string;
   onAddManual?: () => void;
 }
 
@@ -280,6 +288,7 @@ export function FocusPanelList({
   userAge,
   userSex,
   weeklyBars = true,
+  timeZone,
   onAddManual,
 }: FocusPanelListProps) {
   /** Id of the single panel with its charts expanded, or null. */
@@ -347,9 +356,7 @@ export function FocusPanelList({
               <>
                 <button
                   type="button"
-                  onClick={() =>
-                    setExpandedId((prev) => (prev === panel.id ? null : panel.id))
-                  }
+                  onClick={() => setExpandedId((prev) => (prev === panel.id ? null : panel.id))}
                   aria-expanded={expanded}
                   className="mt-4 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
                   style={{
@@ -366,6 +373,7 @@ export function FocusPanelList({
                     userAge={userAge}
                     userSex={userSex}
                     weeklyBars={weeklyBars}
+                    timeZone={timeZone}
                   />
                 )}
               </>
@@ -404,15 +412,14 @@ export default function FocusView({
   frequencyGoals = NO_FREQUENCY_GOALS,
   onAddManual,
 }: FocusViewProps) {
+  const { reportingTimeZone, calendarLoading } = useDateRangeContext();
   // Captured once per mount so the fetch effect doesn't re-run every render.
   const [startDate] = useState(() =>
-    new Date(Date.now() - FOCUS_WINDOW_DAYS * DAY_MS).toISOString(),
+    new Date(Date.now() - FOCUS_WINDOW_DAYS * DAY_MS).toISOString()
   );
   const { vitals, loading, error } = useVitals({ startDate });
 
-  const [workoutsFrom] = useState(() =>
-    new Date(Date.now() - 8 * DAY_MS).toISOString(),
-  );
+  const [workoutsFrom] = useState(() => new Date(Date.now() - 8 * DAY_MS).toISOString());
   const { sessions } = useRecentWorkouts({
     from: workoutsFrom,
     enabled: frequencyGoals.length > 0,
@@ -424,15 +431,13 @@ export default function FocusView({
         metricGoals,
         frequencyGoals,
         weekSessions: sessions,
-        // The viewer's timezone — for the owner this is the owner-local
-        // Monday week the fitness spec's weekly convention describes.
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        timeZone: reportingTimeZone ?? 'Etc/UTC',
       }),
-    [vitals, metricGoals, frequencyGoals, sessions],
+    [vitals, metricGoals, frequencyGoals, sessions, reportingTimeZone]
   );
   const weeklyBars = shouldBucketWeekly(new Date(startDate), new Date());
 
-  if (loading) {
+  if (loading || calendarLoading) {
     return (
       <div className="flex justify-center py-12">
         <LoadingSpinner size="lg" />
@@ -459,13 +464,19 @@ export default function FocusView({
   }
 
   return (
-    <FocusPanelList
-      panels={panels}
-      vitals={vitals}
-      userAge={userAge}
-      userSex={userSex}
-      weeklyBars={weeklyBars}
-      onAddManual={onAddManual}
-    />
+    <div className="space-y-4">
+      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+        Calendar days: {reportingTimeZone}
+      </p>
+      <FocusPanelList
+        panels={panels}
+        vitals={vitals}
+        userAge={userAge}
+        userSex={userSex}
+        weeklyBars={weeklyBars}
+        timeZone={reportingTimeZone ?? 'Etc/UTC'}
+        onAddManual={onAddManual}
+      />
+    </div>
   );
 }

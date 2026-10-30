@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** Wire values for `nutrition_strategy` (src/db/schema/health-connect.ts). */
 export type NutritionStrategy = 'sum_items' | 'latest_summary';
@@ -78,6 +78,11 @@ export interface HealthConnectPatch {
 }
 
 const BASE = '/api/integrations/health-connect';
+function changed() {
+  window.dispatchEvent(
+    new CustomEvent('integration-health-changed', { detail: { source: 'health_connect' } })
+  );
+}
 
 /**
  * Health Connect integration state for Settings. The HMAC secret is returned
@@ -94,55 +99,100 @@ export function useHealthConnect() {
   } | null>(null);
   const [rebuild, setRebuild] = useState<RebuildReport | null>(null);
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestVersion = useRef(0);
+  const mounted = useRef(true);
+  const readController = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
+    readController.current?.abort();
+    const controller = new AbortController();
+    readController.current = controller;
+    const timeoutSignal = AbortSignal.timeout(10_000);
+    const version = ++requestVersion.current;
     setLoading(true);
-    setError(null);
     try {
-      const res = await fetch(BASE);
+      const res = await fetch(BASE, {
+        signal: AbortSignal.any([controller.signal, timeoutSignal]),
+        cache: 'no-store',
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? 'Failed to load the Health Connect integration');
       }
       const data = (await res.json()) as StatusResponse;
+      if (!mounted.current || controller.signal.aborted || version !== requestVersion.current)
+        return;
       setIntegration(data.integration);
       setInventory(data.inventory ?? []);
       setRuns(data.runs ?? []);
       setLastBackfill(data.last_backfill_window ?? null);
+      setReadError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load the integration');
+      if (mounted.current && !controller.signal.aborted && version === requestVersion.current)
+        setReadError(
+          timeoutSignal.aborted ||
+            (err instanceof Error && ['TimeoutError', 'AbortError'].includes(err.name))
+            ? 'Health Connect status check timed out. Retry loading status.'
+            : err instanceof Error
+              ? err.message
+              : 'Failed to load the integration'
+        );
     } finally {
-      setLoading(false);
+      if (mounted.current && !controller.signal.aborted && version === requestVersion.current) {
+        setLoading(false);
+        readController.current = null;
+      }
     }
   }, []);
 
   useEffect(() => {
-    refresh();
+    mounted.current = true;
+    // Initialize the server-backed integration snapshot through the same action as manual refresh.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refresh();
+    const update = () => {
+      void refresh();
+    };
+    window.addEventListener('focus', update);
+    window.addEventListener('integration-health-changed', update);
+    return () => {
+      mounted.current = false;
+      readController.current?.abort();
+      readController.current = null;
+      window.removeEventListener('focus', update);
+      window.removeEventListener('integration-health-changed', update);
+    };
   }, [refresh]);
 
   /** Create the integration. Returns the one-time HMAC secret. */
-  const create = useCallback(async (name?: string): Promise<string | null> => {
-    setError(null);
-    try {
-      const res = await fetch(BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(name ? { name } : {}),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? 'Failed to create the integration');
-      setIntegration(data.integration);
-      return data.secret as string;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create the integration');
-      return null;
-    }
-  }, []);
+  const create = useCallback(
+    async (name?: string): Promise<string | null> => {
+      if (loading || readError || !mounted.current) return null;
+      setError(null);
+      try {
+        const res = await fetch(BASE, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(name ? { name } : {}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? 'Failed to create the integration');
+        setIntegration(data.integration);
+        changed();
+        return data.secret as string;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create the integration');
+        return null;
+      }
+    },
+    [loading, readError]
+  );
 
   const update = useCallback(
     async (patch: HealthConnectPatch): Promise<boolean> => {
-      if (!integration) return false;
+      if (!integration || loading || readError || !mounted.current) return false;
       setError(null);
       try {
         const res = await fetch(`${BASE}/${integration.id}`, {
@@ -157,18 +207,19 @@ export function useHealthConnect() {
         // the retained records server-side; surface what that produced so the
         // user does not have to guess whether the change was retroactive.
         if (data.rebuild) setRebuild(data.rebuild as RebuildReport);
+        changed();
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update the integration');
         return false;
       }
     },
-    [integration],
+    [integration, loading, readError]
   );
 
   /** Rebuild canonical nutrition from the retained raw records. */
   const reprocessNutrition = useCallback(async (): Promise<RebuildReport | null> => {
-    if (!integration) return null;
+    if (!integration || loading || readError || !mounted.current) return null;
     setError(null);
     setRebuild(null);
     try {
@@ -180,31 +231,33 @@ export function useHealthConnect() {
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? 'Failed to reprocess retained nutrition');
       setRebuild(data as RebuildReport);
+      changed();
       return data as RebuildReport;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to reprocess retained nutrition');
       return null;
     }
-  }, [integration]);
+  }, [integration, loading, readError]);
 
   /** Rotate the secret. The previous one stops working immediately. */
   const rotate = useCallback(async (): Promise<string | null> => {
-    if (!integration) return null;
+    if (!integration || loading || readError || !mounted.current) return null;
     setError(null);
     try {
       const res = await fetch(`${BASE}/${integration.id}/rotate-secret`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? 'Failed to rotate the secret');
+      changed();
       return data.secret as string;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to rotate the secret');
       return null;
     }
-  }, [integration]);
+  }, [integration, loading, readError]);
 
   const remove = useCallback(
     async (deleteRaw: boolean): Promise<boolean> => {
-      if (!integration) return false;
+      if (!integration || loading || readError || !mounted.current) return false;
       setError(null);
       try {
         const res = await fetch(`${BASE}/${integration.id}?delete_raw=${deleteRaw}`, {
@@ -217,14 +270,40 @@ export function useHealthConnect() {
         setIntegration(null);
         setInventory([]);
         setRuns([]);
+        setLastBackfill(null);
+        setRebuild(null);
+        changed();
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to delete the integration');
         return false;
       }
     },
-    [integration],
+    [integration, loading, readError]
   );
+
+  /** Explicit least-privilege creation; the token is never kept in hook/shared state. */
+  const createDeliveryToken = useCallback(async (): Promise<string | null> => {
+    if (loading || readError || !mounted.current) return null;
+    setError(null);
+    try {
+      const res = await fetch('/api/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Health Connect phone delivery',
+          scopes: ['write:health_connect'],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? 'Failed to create the delivery token');
+      changed();
+      return data.token as string;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create the delivery token');
+      return null;
+    }
+  }, [loading, readError]);
 
   return {
     integration,
@@ -234,11 +313,14 @@ export function useHealthConnect() {
     rebuild,
     loading,
     error,
+    actionError: error,
+    readError,
     refresh,
     create,
     update,
     rotate,
     remove,
     reprocessNutrition,
+    createDeliveryToken,
   };
 }

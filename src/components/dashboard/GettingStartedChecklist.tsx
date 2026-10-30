@@ -96,7 +96,7 @@ export default function GettingStartedChecklist({
     {
       id: 'profile',
       label: 'Complete your profile',
-      href: '/settings',
+      href: '/settings?tab=profile',
       complete: !!(profile?.display_name && profile?.date_of_birth),
     },
     {
@@ -126,7 +126,7 @@ export default function GettingStartedChecklist({
     {
       id: 'provider',
       label: 'Add a healthcare provider',
-      href: '/settings',
+      href: '/settings?tab=people#providers',
       complete: providerCount > 0,
     },
   ];

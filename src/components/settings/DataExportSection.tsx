@@ -37,15 +37,16 @@ export default function DataExportSection() {
   const lastExport = useSyncExternalStore(
     subscribeToStorage,
     getLastExportSnapshot,
-    getLastExportServerSnapshot,
+    getLastExportServerSnapshot
   );
 
   return (
     <div className="space-y-4">
       <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-        Download a copy of all your health data as a structured JSON file.
-        This export includes everything stored in your account so you always
-        have a personal backup.
+        Download the clinical sections listed below as a structured JSON file. Vitals cover the last
+        90 days. This export omits uploaded files, fitness, nutrition, and integration history. For
+        a complete backup and restore, preserve the stopped container&apos;s entire data volume and
+        configuration.
       </p>
 
       <div className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
@@ -75,11 +76,7 @@ export default function DataExportSection() {
         >
           {exporting ? (
             <span className="flex items-center gap-2">
-              <svg
-                className="animate-spin h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
                 <circle
                   className="opacity-25"
                   cx="12"
@@ -111,7 +108,11 @@ export default function DataExportSection() {
       {error && (
         <div
           className="rounded-lg px-4 py-3 text-sm"
-          style={{ backgroundColor: '#2D1215', color: 'var(--color-terracotta)', border: '1px solid #991B1B' }}
+          style={{
+            backgroundColor: '#2D1215',
+            color: 'var(--color-terracotta)',
+            border: '1px solid #991B1B',
+          }}
         >
           {error}
         </div>

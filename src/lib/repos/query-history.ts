@@ -8,10 +8,15 @@
 import { desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { queryHistory } from '@/db/schema';
+import { queryHistory, queryContexts } from '@/db/schema';
 import { NotFoundError } from '@/lib/authz';
+import type { QueryContextMetadata } from '@/lib/health-context-types';
+import { assertCurrentAiConfiguration } from '@/lib/ai/settings';
+import type { AiConfiguration } from '@/lib/ai/types';
 
-export type QueryHistoryRow = typeof queryHistory.$inferSelect;
+export type QueryHistoryRow = typeof queryHistory.$inferSelect & {
+  contextMetadata?: QueryContextMetadata;
+};
 
 const entrySchema = z
   .object({
@@ -24,27 +29,47 @@ const entrySchema = z
 /** The actor's own history, newest first. */
 export async function listQueryHistory(actorId: string): Promise<QueryHistoryRow[]> {
   if (!actorId) throw new NotFoundError();
-  return db
-    .select()
+  const rows = await db
+    .select({ entry: queryHistory, metadata: queryContexts.metadataJson })
     .from(queryHistory)
+    .leftJoin(queryContexts, eq(queryContexts.queryId, queryHistory.id))
     .where(eq(queryHistory.userId, actorId))
     .orderBy(desc(queryHistory.createdAt));
+  return rows.map(({ entry, metadata }) => ({
+    ...entry,
+    ...(metadata ? { contextMetadata: JSON.parse(metadata) as QueryContextMetadata } : {}),
+  }));
 }
 
 export async function createQueryHistoryEntry(
   actorId: string,
-  input: { queryText: string; responseText: string; dependentId?: string | null },
+  input: {
+    queryText: string;
+    responseText: string;
+    dependentId?: string | null;
+    contextMetadata?: QueryContextMetadata;
+    aiConfiguration?: AiConfiguration;
+  }
 ): Promise<QueryHistoryRow> {
   if (!actorId) throw new NotFoundError();
   const values = entrySchema.parse(input);
-  const [row] = await db
-    .insert(queryHistory)
-    .values({
-      userId: actorId,
-      queryText: values.queryText,
-      responseText: values.responseText,
-      dependentId: values.dependentId ?? null,
-    })
-    .returning();
-  return row;
+  const row = db.transaction((tx) => {
+    if (input.aiConfiguration) assertCurrentAiConfiguration(input.aiConfiguration);
+    const [entry] = tx
+      .insert(queryHistory)
+      .values({
+        userId: actorId,
+        queryText: values.queryText,
+        responseText: values.responseText,
+        dependentId: values.dependentId ?? null,
+      })
+      .returning()
+      .all();
+    if (input.contextMetadata)
+      tx.insert(queryContexts)
+        .values({ queryId: entry.id, metadataJson: JSON.stringify(input.contextMetadata) })
+        .run();
+    return entry;
+  });
+  return { ...row, ...(input.contextMetadata ? { contextMetadata: input.contextMetadata } : {}) };
 }

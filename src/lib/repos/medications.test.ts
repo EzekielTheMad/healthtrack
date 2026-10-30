@@ -37,6 +37,55 @@ beforeEach(async () => {
 afterEach(() => ctx.restore());
 
 describe('medications repo', () => {
+  it('invalidates only this patient after meaningful active-medication changes, preserving stale alerts', async () => {
+    const dependentId = crypto.randomUUID();
+    insertDependent(ctx.sqlite, dependentId, OWNER);
+    const med = await repo.createMedication(OWNER, ownScope, {
+      name: 'Synthetic A',
+      dosage: '5 mg',
+      frequency: 'once_daily',
+    });
+    const interaction = await import('./interaction-alerts');
+    await interaction.reconcileInteractionAlerts(OWNER, null, [
+      {
+        signature: 'synthetic',
+        triggerMedicationId: med.id,
+        alertText: 'Previous warning',
+        severity: 'warning',
+        medicationSnapshot: {},
+      },
+    ]);
+    await interaction.recordInteractionCheck(OWNER, null, true);
+    await interaction.recordInteractionCheck(OWNER, dependentId, false);
+    await repo.updateMedication(OWNER, med.id, {
+      startDate: '2026-01-01',
+      notes: 'Corrected date',
+    });
+    expect(await interaction.getInteractionCheck(OWNER, ownScope)).not.toBeNull();
+    await repo.updateMedication(OWNER, med.id, { dosage: '10 mg' });
+    expect(await interaction.getInteractionCheck(OWNER, ownScope)).toBeNull();
+    expect(
+      await interaction.getInteractionCheck(OWNER, { ownerId: OWNER, dependentId })
+    ).not.toBeNull();
+    expect(await interaction.listActiveInteractionAlerts(OWNER, ownScope)).toHaveLength(1);
+    for (const patch of [
+      { name: 'Synthetic B' },
+      { frequency: 'twice_daily' },
+      { active: false },
+      { active: true },
+    ]) {
+      await interaction.recordInteractionCheck(OWNER, null, false);
+      await repo.updateMedication(OWNER, med.id, patch);
+      expect(await interaction.getInteractionCheck(OWNER, ownScope)).toBeNull();
+    }
+    await interaction.recordInteractionCheck(OWNER, null, false);
+    await repo.createMedication(OWNER, ownScope, { name: 'Synthetic C' });
+    expect(await interaction.getInteractionCheck(OWNER, ownScope)).toBeNull();
+    await interaction.recordInteractionCheck(OWNER, null, false);
+    await repo.deleteMedication(OWNER, med.id);
+    expect(await interaction.getInteractionCheck(OWNER, ownScope)).toBeNull();
+  });
+
   it('owner CRUD round-trip with active filter and orderings', async () => {
     const active = await repo.createMedication(OWNER, ownScope, {
       name: 'Zolpidem',
@@ -44,9 +93,7 @@ describe('medications repo', () => {
       frequency: 'once_daily',
     });
     // deterministic created_at ordering (both inserts can share a millisecond)
-    ctx.sqlite
-      .prepare(`update medications set created_at=? where id=?`)
-      .run(PAST, active.id);
+    ctx.sqlite.prepare(`update medications set created_at=? where id=?`).run(PAST, active.id);
     await repo.createMedication(OWNER, ownScope, { name: 'Aspirin', active: false });
 
     const all = await repo.listMedications(OWNER, ownScope);
@@ -76,9 +123,13 @@ describe('medications repo', () => {
     const depId = crypto.randomUUID();
     insertDependent(ctx.sqlite, depId, OWNER);
     const row = await repo.createMedication(OWNER, ownScope, { name: 'OwnerMed' });
-    await repo.createMedication(OWNER, { ownerId: OWNER, dependentId: depId }, {
-      name: 'DepMed',
-    });
+    await repo.createMedication(
+      OWNER,
+      { ownerId: OWNER, dependentId: depId },
+      {
+        name: 'DepMed',
+      }
+    );
 
     insertShare(ctx.sqlite, {
       ownerId: OWNER,
@@ -93,21 +144,21 @@ describe('medications repo', () => {
 
     // wrong dependent scope → denied (014 exact matching)
     await expect(
-      repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: depId }),
+      repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: depId })
     ).rejects.toMatchObject({ status: 404 });
 
     // shares are dependent-exact → never an unfiltered 'all' listing
     await expect(
-      repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: 'all' }),
+      repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: 'all' })
     ).rejects.toMatchObject({ status: 404 });
 
     // shares never write/delete
-    await expect(
-      repo.createMedication(VIEWER, ownScope, { name: 'X' }),
-    ).rejects.toMatchObject({ status: 404 });
-    await expect(
-      repo.updateMedication(VIEWER, row.id, { name: 'X' }),
-    ).rejects.toMatchObject({ status: 404 });
+    await expect(repo.createMedication(VIEWER, ownScope, { name: 'X' })).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(repo.updateMedication(VIEWER, row.id, { name: 'X' })).rejects.toMatchObject({
+      status: 404,
+    });
     await expect(repo.deleteMedication(VIEWER, row.id)).rejects.toMatchObject({
       status: 404,
     });
@@ -121,12 +172,12 @@ describe('medications repo', () => {
       permissionLevel: 'read_only',
     });
 
-    expect(
-      await repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: 'all' }),
-    ).toHaveLength(1);
-    await expect(
-      repo.updateMedication(VIEWER, row.id, { name: 'X' }),
-    ).rejects.toMatchObject({ status: 404 });
+    expect(await repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: 'all' })).toHaveLength(
+      1
+    );
+    await expect(repo.updateMedication(VIEWER, row.id, { name: 'X' })).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it("expired delegate is denied the unfiltered 'all' listing", async () => {
@@ -139,7 +190,7 @@ describe('medications repo', () => {
     });
 
     await expect(
-      repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: 'all' }),
+      repo.listMedications(VIEWER, { ownerId: OWNER, dependentId: 'all' })
     ).rejects.toMatchObject({ status: 404 });
   });
 
@@ -163,15 +214,13 @@ describe('medications repo', () => {
     await expect(repo.listMedications(STRANGER, ownScope)).rejects.toMatchObject({
       status: 404,
     });
-    await expect(
-      repo.updateMedication(STRANGER, row.id, { name: 'X' }),
-    ).rejects.toMatchObject({ status: 404 });
+    await expect(repo.updateMedication(STRANGER, row.id, { name: 'X' })).rejects.toMatchObject({
+      status: 404,
+    });
   });
 
   it('requires a name and strips scope-tampering keys on update', async () => {
-    await expect(
-      repo.createMedication(OWNER, ownScope, { dosage: '5mg' }),
-    ).rejects.toThrow();
+    await expect(repo.createMedication(OWNER, ownScope, { dosage: '5mg' })).rejects.toThrow();
 
     const row = await repo.createMedication(OWNER, ownScope, { name: 'Med' });
     const updated = await repo.updateMedication(OWNER, row.id, {

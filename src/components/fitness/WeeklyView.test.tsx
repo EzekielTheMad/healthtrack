@@ -4,7 +4,7 @@
  * and full-replacement PUT bodies (neck/waist only when entered).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { WeekSummary } from './WeeklyView';
 import CheckinForm from './CheckinForm';
 import type { CheckinWire, WeekRollupWire } from '@/lib/fitness/api-types';
@@ -96,39 +96,160 @@ describe('WeekSummary', () => {
     expect(screen.getByText('7.2 hrs')).toBeInTheDocument();
     // sleep_score_avg is null → em dash
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-    // Latest circumference carries its as-of date
+    // Latest circumference carries its measurement date
     expect(screen.getByText(/Neck 16.5 in/)).toBeInTheDocument();
     expect(screen.getByText('Jul 1')).toBeInTheDocument();
   });
 
-  it('renders a full circumference set grouped by measurement day', () => {
+  it('summarizes a full circumference set compactly with a link to details', () => {
     render(
       <WeekSummary
         rollup={makeRollup({
           body: {
             ...makeRollup().body,
-            waist_latest: { value: 38.1, recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
+            waist_latest: {
+              value: 38.1,
+              recorded_at: '2026-07-05T00:00:00Z',
+              source: 'example_tape',
+            },
             measurements_latest: {
-              waist: { value: 38.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
-              neck: { value: 16.5, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
-              left_bicep: { value: 14.1, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
-              right_bicep: { value: 14.3, unit: 'in', recorded_at: '2026-07-05T00:00:00Z', source: 'example_tape' },
-              // A stale reading from an earlier session keeps its own date.
-              chest: { value: 42, unit: 'in', recorded_at: '2026-06-01T00:00:00Z', source: 'manual_import' },
+              waist: {
+                value: 38.1,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              hips: {
+                value: 37.6,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              neck: {
+                value: 16.5,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              left_bicep: {
+                value: 14.1,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              right_bicep: {
+                value: 14.3,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              chest: {
+                value: 42,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
             },
           },
         })}
-      />,
+      />
     );
-    // Newest group first, one "as of" line per measurement day.
-    const days = screen.getAllByText(/^(Jul|Jun) \d+$/).map((el) => el.textContent);
-    expect(days).toEqual(['Jul 5', 'Jun 1']);
-    expect(screen.getByText(/Waist 38.1 in · Neck 16.5 in/)).toBeInTheDocument();
-    // Left and right are independent series, both shown, neither averaged.
-    expect(screen.getByText(/Left Bicep 14.1 in/)).toBeInTheDocument();
-    expect(screen.getByText(/Right Bicep 14.3 in/)).toBeInTheDocument();
-    // The stale chest reading is separated by its older date.
-    expect(screen.getByText('Chest 42 in')).toBeInTheDocument();
+
+    // Header date, three readings in registry order, then the overflow count.
+    expect(screen.getByText(/Measurements ·/)).toBeInTheDocument();
+    expect(screen.getByText('Jul 5')).toBeInTheDocument();
+    expect(screen.getByText('Waist 38.1 in')).toBeInTheDocument();
+    expect(screen.getByText('Hips 37.6 in')).toBeInTheDocument();
+    expect(screen.getByText('Neck 16.5 in')).toBeInTheDocument();
+    expect(screen.getByText(/3 more measurements/)).toBeInTheDocument();
+    // The dense inline dump is gone — the rest live behind the link.
+    expect(screen.queryByText('Left Bicep 14.1 in')).not.toBeInTheDocument();
+    expect(screen.queryByText('Right Bicep 14.3 in')).not.toBeInTheDocument();
+
+    expect(screen.getByRole('link', { name: 'View details' })).toHaveAttribute(
+      'href',
+      '/vitals?view=measurements'
+    );
+  });
+
+  it('shows a single measurement without an overflow count', () => {
+    render(<WeekSummary rollup={makeRollup()} />);
+    expect(screen.getByText('Neck 16.5 in')).toBeInTheDocument();
+    expect(screen.queryByText(/more measurement/)).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View details' })).toBeInTheDocument();
+  });
+
+  it('shows exactly three measurements without an overflow count', () => {
+    render(
+      <WeekSummary
+        rollup={makeRollup({
+          body: {
+            ...makeRollup().body,
+            measurements_latest: {
+              waist: {
+                value: 38.1,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              hips: {
+                value: 37.6,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              neck: {
+                value: 16.5,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+            },
+          },
+        })}
+      />
+    );
+    expect(screen.getByText('Waist 38.1 in')).toBeInTheDocument();
+    expect(screen.getByText('Neck 16.5 in')).toBeInTheDocument();
+    expect(screen.queryByText(/more measurement/)).not.toBeInTheDocument();
+  });
+
+  it('keeps a stale reading visibly dated rather than borrowing the header date', () => {
+    render(
+      <WeekSummary
+        rollup={makeRollup({
+          body: {
+            ...makeRollup().body,
+            measurements_latest: {
+              waist: {
+                value: 38.1,
+                unit: 'in',
+                recorded_at: '2026-07-05T00:00:00Z',
+                source: 'example_tape',
+              },
+              // Measured a month earlier — it keeps its own date inline.
+              chest: {
+                value: 42,
+                unit: 'in',
+                recorded_at: '2026-06-01T00:00:00Z',
+                source: 'manual_import',
+              },
+            },
+          },
+        })}
+      />
+    );
+    expect(screen.getByText('Jul 5')).toBeInTheDocument();
+    expect(screen.getByText('(Jun 1)')).toBeInTheDocument();
+  });
+
+  it('never compares a sparse measurement to the prior calendar week', () => {
+    render(<WeekSummary rollup={makeRollup()} />);
+    // Weight and the other weekly averages carry prior-week deltas; a
+    // point-in-time circumference must not.
+    expect(screen.getByText('-1.2 vs prior week')).toBeInTheDocument();
+    const measurementLine = screen.getByText('Neck 16.5 in').closest('p')!;
+    expect(measurementLine.textContent).not.toMatch(/prior week/);
   });
 
   it('renders nothing for the measurement block when no circumference exists', () => {
@@ -142,9 +263,10 @@ describe('WeekSummary', () => {
             measurements_latest: {},
           },
         })}
-      />,
+      />
     );
-    expect(screen.queryByText(/As of/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Measurements ·/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View details' })).not.toBeInTheDocument();
     // The rest of the Body card still renders.
     expect(screen.getByText('212.4 lb')).toBeInTheDocument();
   });
@@ -164,7 +286,7 @@ describe('WeekSummary', () => {
           },
           frequency_goals: [],
         })}
-      />,
+      />
     );
     expect(screen.getByText('No sessions logged this week.')).toBeInTheDocument();
   });
@@ -185,6 +307,37 @@ describe('CheckinForm', () => {
     avg_fiber_g: null,
   };
 
+  it('uses separate non-submit Continue nodes and never saves before explicit confirmation', async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(
+      <CheckinForm
+        weekStart="2026-07-06"
+        initial={null}
+        neckLatest={null}
+        waistLatest={null}
+        onSave={onSave}
+      />
+    );
+    const reviewContinue = screen.getByRole('button', { name: 'Continue' });
+    expect(reviewContinue).toHaveAttribute('type', 'button');
+    act(() => {
+      reviewContinue.click();
+    });
+    const draftContinue = screen.getByRole('button', { name: 'Continue' });
+    expect(draftContinue).toHaveAttribute('type', 'button');
+    act(() => {
+      draftContinue.click();
+    });
+    expect(onSave).not.toHaveBeenCalled();
+    const save = screen.getByRole('button', { name: 'Save check-in' });
+    expect(save).toHaveAttribute('type', 'submit');
+    expect(save).not.toBe(draftContinue);
+    expect(draftContinue).toHaveAttribute('type', 'button');
+    expect(draftContinue).not.toBeInTheDocument();
+    fireEvent.click(save);
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+  });
+
   it('prefills manual fields from the existing row but never neck/waist', () => {
     render(
       <CheckinForm
@@ -193,8 +346,9 @@ describe('CheckinForm', () => {
         neckLatest={{ value: 16.5, recorded_at: '2026-07-01T00:00:00Z', source: 'manual' }}
         waistLatest={null}
         onSave={async () => {}}
-      />,
+      />
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(screen.getByLabelText("What's working")).toHaveValue('progressive overload');
     expect(screen.getByLabelText('Days logged (0–7)')).toHaveValue(6);
     const neck = screen.getByLabelText('Neck (in) — recorded today');
@@ -211,14 +365,16 @@ describe('CheckinForm', () => {
         neckLatest={null}
         waistLatest={null}
         onSave={onSave}
-      />,
+      />
     );
 
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     // Clear a prefilled field — full replacement must null it server-side.
     fireEvent.change(screen.getByLabelText('Avg calories'), { target: { value: '' } });
     fireEvent.change(screen.getByLabelText('Neck (in) — recorded today'), {
       target: { value: '16.25' },
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Update check-in' }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
@@ -242,9 +398,108 @@ describe('CheckinForm', () => {
         neckLatest={null}
         waistLatest={null}
         onSave={onSave}
-      />,
+      />
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save check-in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('not a Monday');
+  });
+
+  it('reviews source-specific averages and dates without overwriting manual fields until selected', () => {
+    render(
+      <CheckinForm
+        weekStart="2026-07-06"
+        initial={existing}
+        neckLatest={null}
+        waistLatest={null}
+        bodySummary={makeRollup().body}
+        importedNutrition={[
+          {
+            source_package: 'com.sbs.diet',
+            days_recorded: 5,
+            calories_avg: 2100,
+            protein_grams_avg: 160,
+            carbs_grams_avg: null,
+            fat_grams_avg: 70,
+            fiber_grams_avg: null,
+            numeric_samples: {
+              calories: 5,
+              protein_grams: 4,
+              carbs_grams: 0,
+              fat_grams: 5,
+              fiber_grams: 0,
+            },
+          },
+          {
+            source_package: 'com.myfitnesspal.android',
+            days_recorded: 2,
+            calories_avg: 1900,
+            protein_grams_avg: 120,
+            carbs_grams_avg: 150,
+            fat_grams_avg: 60,
+            fiber_grams_avg: 20,
+            numeric_samples: {
+              calories: 2,
+              protein_grams: 2,
+              carbs_grams: 2,
+              fat_grams: 2,
+              fiber_grams: 2,
+            },
+          },
+        ]}
+        onSave={vi.fn()}
+      />
+    );
+    expect(screen.getByText('MacroFactor · 5/7 days recorded')).toBeInTheDocument();
+    expect(screen.getByText('MyFitnessPal · 2/7 days recorded')).toBeInTheDocument();
+    expect(screen.getAllByText('Unknown · 0/7 days')).toHaveLength(2);
+    expect(screen.getByText(/measured Jul 1, 2026/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByLabelText('Avg calories')).toHaveValue(2200);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use MacroFactor averages' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByLabelText('Avg calories')).toHaveValue(2100);
+    expect(screen.getByLabelText('Avg carbs (g)')).toHaveValue(null);
+    expect(screen.getByLabelText("What's working")).toHaveValue('progressive overload');
+    expect(screen.getByLabelText('Neck (in) — recorded today')).toHaveValue(null);
+  });
+
+  it('preserves a draft through back/next and failed confirmation, then retries the same manual body', async () => {
+    const onSave = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Temporarily unavailable'))
+      .mockResolvedValue(undefined);
+    render(
+      <CheckinForm
+        weekStart="2026-07-06"
+        initial={null}
+        neckLatest={null}
+        waistLatest={null}
+        onSave={onSave}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.change(screen.getByLabelText("What's working"), {
+      target: { value: 'Sleep schedule' },
+    });
+    fireEvent.change(screen.getByLabelText('Avg calories'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByText('Sleep schedule')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByLabelText("What's working")).toHaveValue('Sleep schedule');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save check-in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Temporarily unavailable');
+    fireEvent.click(screen.getByRole('button', { name: 'Save check-in' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    expect(onSave.mock.calls[0][0]).toEqual(onSave.mock.calls[1][0]);
+    expect(onSave.mock.calls[1][0]).toMatchObject({
+      working: 'Sleep schedule',
+      avg_calories: 0,
+      avg_protein_g: null,
+    });
+    expect(onSave.mock.calls[1][0]).not.toHaveProperty('neck_in');
   });
 });

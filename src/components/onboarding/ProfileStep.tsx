@@ -6,7 +6,12 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { profileSchema, type ProfileFormValues } from '@/lib/validations';
 import { apiFetch } from '@/lib/api/client';
 import type { UnitSystem } from '@/lib/units';
-import { heightToInches, weightToLbs } from '@/lib/units';
+import {
+  heightToInches,
+  weightToLbs,
+  inchesToDisplayHeight,
+  lbsToDisplayWeight,
+} from '@/lib/units';
 
 interface ProfileStepProps {
   onNext: () => void;
@@ -26,6 +31,7 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
     register,
     handleSubmit,
     setValue,
+    getValues,
     control,
     formState: { errors },
   } = useForm<ProfileFormValues>({
@@ -33,46 +39,50 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
     defaultValues: {
       display_name: '',
       date_of_birth: '',
-      biological_sex: undefined,
+      biological_sex: 'prefer_not_to_say',
       unit_system: 'imperial',
       height_inches: 0,
       weight_lbs: 0,
     },
   });
 
-  const unitSystem = useWatch({ control, name: 'unit_system' }) as UnitSystem ?? 'imperial';
+  const unitSystem = (useWatch({ control, name: 'unit_system' }) as UnitSystem) ?? 'imperial';
 
   const updateTotalInches = (feet: number, inches: number) => {
     const totalInches = (feet || 0) * 12 + (inches || 0);
     setValue('height_inches', totalInches, { shouldValidate: true });
   };
 
+  const handleUnitChange = (next: UnitSystem) => {
+    const inches = getValues('height_inches');
+    const pounds = getValues('weight_lbs');
+    setHeightFeet(Math.floor(inches / 12));
+    setHeightIn(inches % 12);
+    setHeightCm(inchesToDisplayHeight(inches, 'metric'));
+    setWeightDisplay(lbsToDisplayWeight(pounds, next));
+    setValue('unit_system', next);
+  };
+
   const onSubmit = async (data: ProfileFormValues) => {
     setSubmitting(true);
     setError(null);
     try {
-      // Convert to DB units (imperial)
-      const finalHeightInches = unitSystem === 'metric'
-        ? heightToInches(heightCm, 'metric')
-        : (heightFeet * 12 + heightIn);
-      const finalWeightLbs = weightToLbs(weightDisplay, unitSystem);
-
       await apiFetch('/api/profile', {
         method: 'PUT',
         body: JSON.stringify({
           display_name: data.display_name,
           date_of_birth: data.date_of_birth,
-          biological_sex: data.biological_sex,
+          biological_sex: data.biological_sex === 'prefer_not_to_say' ? null : data.biological_sex,
           unit_system: data.unit_system,
-          height_inches: finalHeightInches,
-          weight_lbs: finalWeightLbs,
+          height_inches: data.height_inches,
+          weight_lbs: data.weight_lbs,
         }),
       });
 
       onNext();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.',
+        err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.'
       );
     } finally {
       setSubmitting(false);
@@ -102,7 +112,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
       <form onSubmit={handleSubmit(onSubmit)} className="w-full space-y-5" noValidate>
         {/* Display name */}
         <div>
-          <label htmlFor="display_name" className="block text-sm font-medium mb-1.5" style={labelStyle}>
+          <label
+            htmlFor="display_name"
+            className="block text-sm font-medium mb-1.5"
+            style={labelStyle}
+          >
             Display Name
           </label>
           <input
@@ -122,7 +136,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
 
         {/* Date of birth */}
         <div>
-          <label htmlFor="date_of_birth" className="block text-sm font-medium mb-1.5" style={labelStyle}>
+          <label
+            htmlFor="date_of_birth"
+            className="block text-sm font-medium mb-1.5"
+            style={labelStyle}
+          >
             Date of Birth
           </label>
           <input
@@ -152,7 +170,9 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
                 className="accent-accent-green"
                 {...register('biological_sex')}
               />
-              <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>Male</span>
+              <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                Male
+              </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -161,7 +181,9 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
                 className="accent-accent-green"
                 {...register('biological_sex')}
               />
-              <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>Female</span>
+              <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                Female
+              </span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -170,7 +192,9 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
                 className="accent-accent-green"
                 {...register('biological_sex')}
               />
-              <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>Prefer not to say</span>
+              <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                Prefer not to say
+              </span>
             </label>
           </div>
           {errors.biological_sex && (
@@ -185,13 +209,17 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
           <span className="block text-sm font-medium mb-2" style={labelStyle}>
             Unit System
           </span>
-          <div className="inline-flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border-card)' }}>
+          <div
+            className="inline-flex rounded-lg overflow-hidden border"
+            style={{ borderColor: 'var(--border-card)' }}
+          >
             <button
               type="button"
-              onClick={() => setValue('unit_system', 'imperial')}
+              onClick={() => handleUnitChange('imperial')}
               className="px-4 py-2 text-sm font-medium transition-colors cursor-pointer"
               style={{
-                backgroundColor: unitSystem === 'imperial' ? 'var(--color-sage)' : 'var(--bg-primary)',
+                backgroundColor:
+                  unitSystem === 'imperial' ? 'var(--color-sage)' : 'var(--bg-primary)',
                 color: unitSystem === 'imperial' ? 'white' : 'var(--color-text-muted)',
               }}
             >
@@ -199,10 +227,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
             </button>
             <button
               type="button"
-              onClick={() => setValue('unit_system', 'metric')}
+              onClick={() => handleUnitChange('metric')}
               className="px-4 py-2 text-sm font-medium transition-colors cursor-pointer"
               style={{
-                backgroundColor: unitSystem === 'metric' ? 'var(--color-sage)' : 'var(--bg-primary)',
+                backgroundColor:
+                  unitSystem === 'metric' ? 'var(--color-sage)' : 'var(--bg-primary)',
                 color: unitSystem === 'metric' ? 'white' : 'var(--color-text-muted)',
               }}
             >
@@ -219,7 +248,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
           {unitSystem === 'imperial' ? (
             <div className="flex gap-3">
               <div className="flex-1">
-                <label htmlFor="height_feet" className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                <label
+                  htmlFor="height_feet"
+                  className="block text-xs mb-1"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
                   Feet
                 </label>
                 <input
@@ -238,7 +271,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
                 />
               </div>
               <div className="flex-1">
-                <label htmlFor="height_in" className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>
+                <label
+                  htmlFor="height_in"
+                  className="block text-xs mb-1"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
                   Inches
                 </label>
                 <input
@@ -259,7 +296,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
             </div>
           ) : (
             <div>
-              <label htmlFor="height_cm" className="block text-xs mb-1" style={{ color: 'var(--color-text-muted)' }}>
+              <label
+                htmlFor="height_cm"
+                className="block text-xs mb-1"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
                 Centimeters
               </label>
               <input
@@ -270,7 +311,13 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
                 className={inputClasses}
                 style={inputStyle}
                 value={heightCm}
-                onChange={(e) => setHeightCm(Number(e.target.value))}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  setHeightCm(value);
+                  setValue('height_inches', heightToInches(value, 'metric'), {
+                    shouldValidate: true,
+                  });
+                }}
                 placeholder="e.g. 178"
               />
             </div>
@@ -285,7 +332,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
 
         {/* Weight */}
         <div>
-          <label htmlFor="weight_input" className="block text-sm font-medium mb-1.5" style={labelStyle}>
+          <label
+            htmlFor="weight_input"
+            className="block text-sm font-medium mb-1.5"
+            style={labelStyle}
+          >
             Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})
           </label>
           <input
@@ -296,7 +347,11 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
             className={inputClasses}
             style={inputStyle}
             value={weightDisplay}
-            onChange={(e) => setWeightDisplay(Number(e.target.value))}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              setWeightDisplay(value);
+              setValue('weight_lbs', weightToLbs(value, unitSystem), { shouldValidate: true });
+            }}
             placeholder={unitSystem === 'metric' ? 'e.g. 75' : 'e.g. 165'}
           />
           {errors.weight_lbs && (
@@ -309,9 +364,15 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
         {/* Privacy note */}
         <div
           className="rounded-lg p-4 text-xs leading-relaxed"
-          style={{ backgroundColor: 'var(--bg-card)', color: 'var(--color-text-muted)', borderWidth: 1, borderColor: 'var(--border-card)' }}
+          style={{
+            backgroundColor: 'var(--bg-card)',
+            color: 'var(--color-text-muted)',
+            borderWidth: 1,
+            borderColor: 'var(--border-card)',
+          }}
         >
-          This information helps personalize your health reference ranges. It&apos;s stored securely and never shared.
+          This information helps personalize your health reference ranges. It&apos;s stored securely
+          and never shared.
         </div>
 
         {/* Error */}
@@ -326,7 +387,12 @@ export function ProfileStep({ onNext }: ProfileStepProps) {
           type="submit"
           disabled={submitting}
           className="w-full py-3 rounded-lg font-medium text-sm transition-colors hover:opacity-90 disabled:opacity-50"
-          style={{ background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))', color: 'white', boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)' }}
+          style={{
+            background:
+              'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+            color: 'white',
+            boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)',
+          }}
         >
           {submitting ? 'Saving...' : 'Save & Continue'}
         </button>

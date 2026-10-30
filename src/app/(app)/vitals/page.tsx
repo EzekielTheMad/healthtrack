@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { Suspense, useMemo, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useVitals } from '@/hooks/useVitals';
 import { useActiveGoals } from '@/hooks/useActiveGoals';
 import { useProfile } from '@/hooks/useProfile';
@@ -10,13 +11,23 @@ import ManualVitalEntry from '@/components/vitals/ManualVitalEntry';
 import TrendsView from '@/components/vitals/TrendsView';
 import DailyVitalsView from '@/components/vitals/DailyVitalsView';
 import FocusView from '@/components/vitals/FocusView';
+import MeasurementsPanel from '@/components/vitals/MeasurementsPanel';
+import ComparisonView from '@/components/vitals/ComparisonView';
+import SourcePreferencesPanel from '@/components/vitals/SourcePreferencesPanel';
 import { defaultDayKey } from '@/lib/metrics/vitals-view';
+import {
+  VITALS_VIEWS,
+  VITALS_VIEW_LABELS,
+  parseVitalsView,
+  vitalsViewHref,
+} from '@/lib/metrics/vitals-view-param';
 import { localDayKey } from '@/lib/dates';
 import SourceBadge from '@/components/shared/SourceBadge';
 import EmptyState from '@/components/shared/EmptyState';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import Skeleton from '@/components/shared/Skeleton';
 import DateRangeFilter from '@/components/shared/DateRangeFilter';
+import { vitalSourceLabel } from '@/lib/metrics/source-label';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -48,9 +59,22 @@ function dateToIso(d: Date): string {
 // Page component
 // ---------------------------------------------------------------------------
 
-export default function VitalsPage() {
-  const { dateRange, setDateRange } = useDateRangeContext();
-  const { vitals, loading, error, addVital } = useVitals({
+function VitalsPageContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { dateRange, setDateRange, reportingTimeZone, calendarLoading } = useDateRangeContext();
+  const {
+    vitals,
+    rawVitals,
+    sourcePreferences,
+    sourceConflicts,
+    chooseSource,
+    sourcePreferenceError,
+    canChooseSource,
+    loading,
+    error,
+    addVital,
+  } = useVitals({
     startDate: dateRange.start ?? undefined,
     endDate: dateRange.end ?? undefined,
   });
@@ -59,7 +83,15 @@ export default function VitalsPage() {
   // coloring; each view receives them as props.
   const { metricGoals, frequencyGoals, loading: goalsLoading } = useActiveGoals();
   const [showForm, setShowForm] = useState(false);
-  const [view, setView] = useState<'focus' | 'daily' | 'trends'>('focus');
+  const [comparisonRevision, setComparisonRevision] = useState(0);
+  // The selected view lives in `?view=` so it survives a refresh and can be
+  // linked to (the Fitness weekly card deep-links to Measurements). Anything
+  // unrecognized falls back to Focus.
+  const view = parseVitalsView(searchParams.get('view'));
+  const selectView = useCallback(
+    (next: typeof view) => router.replace(vitalsViewHref(next), { scroll: false }),
+    [router]
+  );
 
   // Bridge for DateRangeFilter
   const filterValue = useMemo(
@@ -67,7 +99,7 @@ export default function VitalsPage() {
       from: isoToDate(dateRange.start),
       to: dateRange.end ? new Date(dateRange.end) : new Date(),
     }),
-    [dateRange],
+    [dateRange]
   );
 
   const handleFilterChange = useCallback(
@@ -77,7 +109,7 @@ export default function VitalsPage() {
         end: dateToIso(range.to),
       });
     },
-    [setDateRange],
+    [setDateRange]
   );
 
   // User demographics for range lookup
@@ -93,20 +125,21 @@ export default function VitalsPage() {
     return Array.from(set).sort();
   }, [vitals]);
 
-  const hasAnyData = vitals.length > 0;
+  const hasAnyData = rawVitals.length > 0;
 
   // Daily view starts on the most recent day with data in the loaded range
   // (falling back to today). Captured per range load; DailyVitalsView owns
   // navigation from there.
   const initialDay = useMemo(
-    () => defaultDayKey(vitals) ?? localDayKey(),
-    [vitals],
+    () =>
+      defaultDayKey(vitals, reportingTimeZone ?? 'Etc/UTC') ??
+      localDayKey(new Date(), reportingTimeZone ?? 'Etc/UTC'),
+    [vitals, reportingTimeZone]
   );
 
-  async function handleAddVital(
-    vital: Omit<Vital, 'id' | 'user_id' | 'created_at'>,
-  ) {
+  async function handleAddVital(vital: Omit<Vital, 'id' | 'user_id' | 'created_at'>) {
     await addVital(vital);
+    setComparisonRevision((revision) => revision + 1);
     setShowForm(false);
   }
 
@@ -130,14 +163,14 @@ export default function VitalsPage() {
         </button>
       </div>
 
-      {/* View toggle: Focus (default) | Daily | All metrics */}
+      {/* View toggle: Focus (default) | Daily | All metrics | Measurements */}
       <div
-        className="inline-flex items-center gap-1 rounded-lg border p-1"
+        className="inline-flex flex-wrap items-center gap-1 rounded-lg border p-1"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
         role="tablist"
         aria-label="Vitals view"
       >
-        {(['focus', 'daily', 'trends'] as const).map((v) => {
+        {VITALS_VIEWS.map((v) => {
           const active = view === v;
           return (
             <button
@@ -145,15 +178,15 @@ export default function VitalsPage() {
               type="button"
               role="tab"
               aria-selected={active}
-              onClick={() => setView(v)}
-              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
+              onClick={() => selectView(v)}
+              className="min-h-11 px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer"
               style={{
                 // Sage tint convention (see FocusView verdict badges).
                 backgroundColor: active ? 'rgba(129, 178, 154, 0.15)' : 'transparent',
                 color: active ? 'var(--color-sage)' : 'var(--color-text-muted)',
               }}
             >
-              {v === 'focus' ? 'Focus' : v === 'daily' ? 'Daily' : 'All metrics'}
+              {VITALS_VIEW_LABELS[v]}
             </button>
           );
         })}
@@ -162,33 +195,37 @@ export default function VitalsPage() {
       {/* Date Range Filter — All metrics only; Focus uses a fixed 90d window
           and the daily view has its own day picker */}
       {view === 'trends' && (
-        <DateRangeFilter value={filterValue} onChange={handleFilterChange} />
+        <DateRangeFilter
+          value={filterValue}
+          onChange={handleFilterChange}
+          timeZone={reportingTimeZone ?? 'Etc/UTC'}
+        />
       )}
 
       {/* Connected Sources Bar */}
-      <div
-        className="rounded-xl border p-4 flex items-center gap-3 flex-wrap"
-        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-      >
-        <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
-          Connected Sources:
-        </span>
-        {connectedSources.length === 0 ? (
-          <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            None connected
+      {view !== 'compare' && (
+        <div
+          className="rounded-xl border p-4 flex items-center gap-3 flex-wrap"
+          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+        >
+          <span className="text-sm font-medium" style={{ color: 'var(--color-text-muted)' }}>
+            Connected Sources:
           </span>
-        ) : (
-          connectedSources.map((src) => (
-            <SourceBadge key={src} source={src} />
-          ))
-        )}
-      </div>
+          {connectedSources.length === 0 ? (
+            <span className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              None connected
+            </span>
+          ) : (
+            connectedSources.map((src) => <SourceBadge key={src} source={src} metadata={rawVitals.find((row) => row.source === src)?.metadata} />)
+          )}
+        </div>
+      )}
 
       {/* Manual entry form */}
       {showForm && <ManualVitalEntry onSubmit={handleAddVital} />}
 
       {/* Error */}
-      {error && (
+      {view !== 'compare' && error && (
         <div
           className="rounded-lg border px-4 py-3 text-sm"
           style={{
@@ -202,8 +239,20 @@ export default function VitalsPage() {
         </div>
       )}
 
+      {view !== 'compare' && (
+        <SourcePreferencesPanel
+          conflicts={sourceConflicts}
+          preferences={sourcePreferences}
+          labels={Object.fromEntries(rawVitals.map((row) => [row.source, vitalSourceLabel(row.source, row.metadata)]))}
+          onChoose={chooseSource}
+          error={sourcePreferenceError}
+          disabled={!canChooseSource}
+        />
+      )}
       {/* Loading state */}
-      {loading || profileLoading || goalsLoading ? (
+      {view === 'compare' ? (
+        <ComparisonView refreshRevision={comparisonRevision} />
+      ) : loading || profileLoading || goalsLoading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <Skeleton variant="card" />
@@ -227,7 +276,9 @@ export default function VitalsPage() {
           onAddManual={() => setShowForm(true)}
         />
       ) : view === 'daily' ? (
-        <DailyVitalsView initialDay={initialDay} metricGoals={metricGoals} />
+        !calendarLoading && <DailyVitalsView initialDay={initialDay} metricGoals={metricGoals} />
+      ) : view === 'measurements' ? (
+        <MeasurementsPanel metricGoals={metricGoals} onAddManual={() => setShowForm(true)} />
       ) : !hasAnyData ? (
         /* Empty state */
         <div
@@ -270,5 +321,30 @@ export default function VitalsPage() {
         />
       )}
     </div>
+  );
+}
+
+/**
+ * `useSearchParams` opts the tree below it into client-side rendering, so the
+ * page shell stays prerenderable behind a Suspense boundary (same pattern as
+ * the settings page). The fallback mirrors the in-page loading state rather
+ * than rendering nothing, so a slow client-side resolve never shows a blank
+ * page where the vitals used to be.
+ */
+export default function VitalsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="space-y-4">
+          <Skeleton variant="card" />
+          <Skeleton variant="card" />
+          <div className="flex justify-center py-8">
+            <LoadingSpinner size="lg" />
+          </div>
+        </div>
+      }
+    >
+      <VitalsPageContent />
+    </Suspense>
   );
 }

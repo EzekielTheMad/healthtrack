@@ -31,6 +31,8 @@ RUN npx esbuild scripts/db-migrate.ts --bundle --platform=node --format=cjs \
 # entrypoint; wget serves the HEALTHCHECK.
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS runner
+ARG VCS_REF=development
+ENV BUILD_REVISION=$VCS_REF
 RUN apk add --no-cache su-exec wget
 WORKDIR /app
 

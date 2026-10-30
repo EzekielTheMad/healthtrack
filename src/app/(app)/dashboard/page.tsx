@@ -27,6 +27,7 @@ import GettingStartedChecklist from '@/components/dashboard/GettingStartedCheckl
 import DashboardCustomizer from '@/components/dashboard/DashboardCustomizer';
 import HealthSummaryCard from '@/components/dashboard/HealthSummaryCard';
 import DailyActivityCard from '@/components/dashboard/DailyActivityCard';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,13 +114,23 @@ function LabFlagRowSkeleton() {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
+  const { dependentId, delegateOwnerId } = useActiveProfile();
   const { capabilities } = useCapabilities();
-  const { dateRange, setDateRange } = useDateRangeContext();
-  const { vitals, loading: vitalsLoading, error: vitalsError } = useVitals({
+  const { dateRange, setDateRange, reportingTimeZone } = useDateRangeContext();
+  const {
+    vitals,
+    sourceConflicts = [],
+    loading: vitalsLoading,
+    error: vitalsError,
+  } = useVitals({
     startDate: dateRange.start ?? undefined,
     endDate: dateRange.end ?? undefined,
   });
-  const { medications, loading: medsLoading, error: medsError } = useMedications({ activeOnly: true });
+  const {
+    medications,
+    loading: medsLoading,
+    error: medsError,
+  } = useMedications({ activeOnly: true });
   const { labVisits, loading: labsLoading, error: labsError } = useLabResults();
   const { profile, loading: profileLoading } = useProfile();
   const { conditions, loading: conditionsLoading } = useConditions();
@@ -153,13 +164,19 @@ export default function DashboardPage() {
   // Collect lab test names from visible lab_result stats for the useLabStatData hook
   const labTestNames = useMemo(
     () => visibleStats.filter((s) => s.widget_type === 'lab_result').map((s) => s.metric_key),
-    [visibleStats],
+    [visibleStats]
   );
   const { labStatData } = useLabStatData(labTestNames);
 
   // Bridge DateRangeFilter (Date objects) <-> context (ISO strings)
   const dateFilterValue = useMemo(() => {
-    const from = dateRange.start ? new Date(dateRange.start) : (() => { const d = new Date(); d.setMonth(d.getMonth() - 6); return d; })();
+    const from = dateRange.start
+      ? new Date(dateRange.start)
+      : (() => {
+          const d = new Date();
+          d.setMonth(d.getMonth() - 6);
+          return d;
+        })();
     const to = dateRange.end ? new Date(dateRange.end) : new Date();
     return { from, to };
   }, [dateRange]);
@@ -171,7 +188,7 @@ export default function DashboardPage() {
         end: range.to.toISOString(),
       });
     },
-    [setDateRange],
+    [setDateRange]
   );
 
   // User age & sex for reference ranges
@@ -187,7 +204,7 @@ export default function DashboardPage() {
     if (!labVisits.length) return [];
     const latest = labVisits[0];
     return latest.lab_results.filter(
-      (r) => r.flag === 'high' || r.flag === 'low' || r.flag === 'critical',
+      (r) => r.flag === 'high' || r.flag === 'low' || r.flag === 'critical'
     );
   }, [labVisits]);
 
@@ -201,27 +218,27 @@ export default function DashboardPage() {
           Dashboard
         </h1>
         {capabilities?.ai !== false && (
-        <Link
-          href="/query"
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors no-underline"
-          style={{ backgroundColor: 'var(--color-sage)', color: 'var(--color-bark)' }}
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
+          <Link
+            href="/query"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-colors no-underline"
+            style={{ backgroundColor: 'var(--color-sage)', color: 'var(--color-bark)' }}
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          Quick Query
-        </Link>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            Quick Query
+          </Link>
         )}
       </div>
 
@@ -233,14 +250,31 @@ export default function DashboardPage() {
         vitalCount={vitals.length}
         labVisitCount={labVisits.length}
         providerCount={providers.length}
-        loading={profileLoading || medsLoading || conditionsLoading || vitalsLoading || labsLoading || providersLoading}
+        loading={
+          profileLoading ||
+          medsLoading ||
+          conditionsLoading ||
+          vitalsLoading ||
+          labsLoading ||
+          providersLoading
+        }
       />
 
       {/* AI Health Overview */}
-      <HealthSummaryCard />
+      {!dependentId && !delegateOwnerId && <HealthSummaryCard />}
+      <Link
+        href="/doctor-summary"
+        className="inline-flex rounded-lg border px-4 py-3 text-sm font-medium"
+      >
+        Prepare doctor summary / PDF
+      </Link>
 
       {/* Sticky DateRangeFilter */}
-      <DateRangeFilter value={dateFilterValue} onChange={handleDateFilterChange} />
+      <DateRangeFilter
+        value={dateFilterValue}
+        onChange={handleDateFilterChange}
+        timeZone={reportingTimeZone ?? 'Etc/UTC'}
+      />
 
       {/* Error banner */}
       {(vitalsError || medsError || labsError) && (
@@ -261,26 +295,46 @@ export default function DashboardPage() {
 
       {/* Quick Stat Cards — dynamic based on user preferences */}
       <section>
+        {sourceConflicts.some((conflict) => conflict.needsChoice) && (
+          <p className="text-sm mb-3" style={{ color: 'var(--color-warning)' }}>
+            Some metrics have competing sources.{' '}
+            <Link href="/vitals" className="underline">
+              Choose measurement sources
+            </Link>{' '}
+            to include them in trends and summaries.
+          </p>
+        )}
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
             Quick Stats
           </h2>
-          <button
-            type="button"
-            onClick={() => setCustomizerOpen(!customizerOpen)}
-            className="inline-flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer"
-            style={{ color: 'var(--color-sage)' }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
-            </svg>
-            Customize
-          </button>
+          {!delegateOwnerId && (
+            <button
+              type="button"
+              onClick={() => setCustomizerOpen(!customizerOpen)}
+              className="inline-flex items-center gap-1.5 text-xs font-medium transition-colors cursor-pointer"
+              style={{ color: 'var(--color-sage)' }}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+              </svg>
+              Customize
+            </button>
+          )}
         </div>
 
         {/* Inline customizer panel */}
-        {customizerOpen && (
+        {customizerOpen && !delegateOwnerId && (
           <div className="mb-4">
             <DashboardCustomizer
               stats={dashboardStats}
@@ -308,9 +362,7 @@ export default function DashboardPage() {
                   const { latest, sparklineData } = getLatestVitalData(vitals, stat.metric_key);
                   const range = getVitalRange(stat.metric_key, userAge, userSex);
                   const hasData = latest !== null;
-                  const displayValue = hasData
-                    ? (def.formatValue(latest.value))
-                    : '\u2014';
+                  const displayValue = hasData ? def.formatValue(latest.value) : '\u2014';
 
                   return (
                     <div
@@ -322,14 +374,24 @@ export default function DashboardPage() {
                       }}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--color-text-muted)' }}>
-                          {stat.pinned && <span style={{ color: 'var(--color-terracotta)', fontSize: '10px' }}>★</span>}
+                        <span
+                          className="text-xs font-medium flex items-center gap-1"
+                          style={{ color: 'var(--color-text-muted)' }}
+                        >
+                          {stat.pinned && (
+                            <span style={{ color: 'var(--color-terracotta)', fontSize: '10px' }}>
+                              ★
+                            </span>
+                          )}
                           {def.label}
                         </span>
-                        {hasData && <SourceBadge source={latest.source} />}
+                        {hasData && <SourceBadge source={latest.source} metadata={latest.metadata} />}
                       </div>
                       <div className="flex items-baseline gap-1.5">
-                        <span className="text-2xl font-bold font-mono" style={{ color: 'var(--color-text-primary)' }}>
+                        <span
+                          className="text-2xl font-bold font-mono"
+                          style={{ color: 'var(--color-text-primary)' }}
+                        >
                           {displayValue}
                         </span>
                         {hasData && (
@@ -338,17 +400,43 @@ export default function DashboardPage() {
                           </span>
                         )}
                       </div>
+                      {hasData && (
+                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                          Measurement {latest.recorded_at.slice(0, 10)} ·{' '}
+                          {latest.last_received_at
+                            ? `Received ${new Date(latest.last_received_at).toLocaleString()}`
+                            : 'Receipt time unknown'}
+                        </p>
+                      )}
                       {sparklineData.length > 1 ? (
-                        <TrendLine data={sparklineData} refLow={range?.low ?? undefined} refHigh={range?.high} width={160} height={40} />
+                        <TrendLine
+                          data={sparklineData}
+                          refLow={range?.low ?? undefined}
+                          refHigh={range?.high}
+                          width={160}
+                          height={40}
+                        />
                       ) : (
-                        <div className="flex items-center justify-center h-10 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                        <div
+                          className="flex items-center justify-center h-10 text-[11px]"
+                          style={{ color: 'var(--color-text-muted)' }}
+                        >
                           {hasData ? 'Not enough data for trend' : 'No data'}
                         </div>
                       )}
                       {hasData && range ? (
-                        <RangeIndicator value={latest.value} displayValue={displayValue} low={range.low} high={range.high} unit={range.unit} label={range.label} />
+                        <RangeIndicator
+                          value={latest.value}
+                          displayValue={displayValue}
+                          low={range.low}
+                          high={range.high}
+                          unit={range.unit}
+                          label={range.label}
+                        />
                       ) : hasData ? (
-                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>Set up your profile for reference ranges</p>
+                        <p className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                          Set up your profile for reference ranges
+                        </p>
                       ) : null}
                     </div>
                   );
@@ -358,7 +446,9 @@ export default function DashboardPage() {
                 const labData = labStatData.find((d) => d.testName === stat.metric_key);
                 const labDef = buildLabResultDefinition(stat.metric_key, labData?.unit ?? null);
                 const hasLabData = labData != null;
-                const labDisplayValue = hasLabData ? labDef.formatValue(labData.latestValue) : '\u2014';
+                const labDisplayValue = hasLabData
+                  ? labDef.formatValue(labData.latestValue)
+                  : '\u2014';
 
                 return (
                   <div
@@ -370,16 +460,24 @@ export default function DashboardPage() {
                     }}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium flex items-center gap-1 truncate" style={{ color: 'var(--color-text-muted)' }}>
-                        {stat.pinned && <span style={{ color: 'var(--color-terracotta)', fontSize: '10px' }}>★</span>}
+                      <span
+                        className="text-xs font-medium flex items-center gap-1 truncate"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
+                        {stat.pinned && (
+                          <span style={{ color: 'var(--color-terracotta)', fontSize: '10px' }}>
+                            ★
+                          </span>
+                        )}
                         {labDef.label}
                       </span>
-                      {hasLabData && labData.flag && (
-                        <FlagBadge flag={labData.flag} />
-                      )}
+                      {hasLabData && labData.flag && <FlagBadge flag={labData.flag} />}
                     </div>
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-2xl font-bold font-mono" style={{ color: 'var(--color-text-primary)' }}>
+                      <span
+                        className="text-2xl font-bold font-mono"
+                        style={{ color: 'var(--color-text-primary)' }}
+                      >
                         {labDisplayValue}
                       </span>
                       {hasLabData && labDef.displayUnit && (
@@ -397,7 +495,10 @@ export default function DashboardPage() {
                         height={40}
                       />
                     ) : (
-                      <div className="flex items-center justify-center h-10 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                      <div
+                        className="flex items-center justify-center h-10 text-[11px]"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
                         {hasLabData ? 'Not enough data for trend' : 'No data'}
                       </div>
                     )}
@@ -410,7 +511,10 @@ export default function DashboardPage() {
                         label=""
                       />
                     ) : hasLabData ? (
-                      <p className="text-[11px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                      <p
+                        className="text-[11px] font-mono"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
                         ref: not available
                       </p>
                     ) : null}
@@ -427,8 +531,19 @@ export default function DashboardPage() {
           >
             <EmptyState
               icon={
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-10 w-10"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5"
+                  />
                 </svg>
               }
               title="No vitals recorded yet"
@@ -514,11 +629,20 @@ export default function DashboardPage() {
                       className="flex items-center justify-between py-3 px-4 transition-colors no-underline hover:opacity-80"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+                        <p
+                          className="text-sm font-medium truncate"
+                          style={{ color: 'var(--color-text-primary)' }}
+                        >
                           {med.name}
                         </p>
-                        <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>
-                          {[med.dosage, med.frequency ? (FREQ_LABELS[med.frequency] ?? med.frequency) : null]
+                        <p
+                          className="text-xs truncate"
+                          style={{ color: 'var(--color-text-muted)' }}
+                        >
+                          {[
+                            med.dosage,
+                            med.frequency ? (FREQ_LABELS[med.frequency] ?? med.frequency) : null,
+                          ]
                             .filter(Boolean)
                             .join(' · ') || 'No details'}
                         </p>
@@ -526,7 +650,10 @@ export default function DashboardPage() {
                       {med.category && (
                         <span
                           className="ml-3 shrink-0 inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium"
-                          style={{ color: 'var(--accent-purple)', backgroundColor: 'rgba(167, 139, 250, 0.12)' }}
+                          style={{
+                            color: 'var(--accent-purple)',
+                            backgroundColor: 'rgba(167, 139, 250, 0.12)',
+                          }}
                         >
                           {med.category}
                         </span>
@@ -604,22 +731,28 @@ export default function DashboardPage() {
                       className="flex items-center justify-between py-3 px-4 transition-colors no-underline hover:opacity-80"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+                        <p
+                          className="text-sm font-medium truncate"
+                          style={{ color: 'var(--color-text-primary)' }}
+                        >
                           {result.test_name}
                         </p>
-                        <p className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                        <p
+                          className="text-xs font-mono"
+                          style={{ color: 'var(--color-text-muted)' }}
+                        >
                           {result.value} {result.unit ?? ''}
-                          {result.reference_range_low != null && result.reference_range_high != null && (
-                            <span className="ml-2">
-                              (ref: {result.reference_range_low}&ndash;{result.reference_range_high})
-                            </span>
-                          )}
+                          {result.reference_range_low != null &&
+                            result.reference_range_high != null && (
+                              <span className="ml-2">
+                                (ref: {result.reference_range_low}&ndash;
+                                {result.reference_range_high})
+                              </span>
+                            )}
                         </p>
                       </div>
                       <div className="ml-3 shrink-0">
-                        {result.flag && (
-                          <FlagBadge flag={result.flag} />
-                        )}
+                        {result.flag && <FlagBadge flag={result.flag} />}
                       </div>
                     </Link>
                   </li>

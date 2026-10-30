@@ -48,7 +48,7 @@ export function LabsMedsStep({ onNext }: LabsMedsStepProps) {
           name: medName.trim(),
           dosage: medDosage.trim() || null,
           frequency: medFrequency,
-          start_date: new Date().toISOString().split('T')[0],
+          start_date: null,
         }),
       });
 
@@ -129,13 +129,29 @@ export function LabsMedsStep({ onNext }: LabsMedsStepProps) {
           role="region"
           aria-label="File upload drop zone"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} style={{ color: 'var(--color-text-muted)' }} aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="w-8 h-8 mb-3"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            style={{ color: 'var(--color-text-muted)' }}
+            aria-hidden="true"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+            />
           </svg>
           <p className="text-sm mb-1" style={{ color: 'var(--color-text-muted)' }}>
             Drag and drop PDF, PNG, or JPG files
           </p>
-          <p className="text-xs font-medium px-3 py-1 rounded-full" style={{ backgroundColor: 'var(--color-cream)', color: 'var(--color-sage)' }}>
+          <p
+            className="text-xs font-medium px-3 py-1 rounded-full"
+            style={{ backgroundColor: 'var(--color-cream)', color: 'var(--color-sage)' }}
+          >
             Coming in Phase 2
           </p>
         </div>
@@ -151,7 +167,11 @@ export function LabsMedsStep({ onNext }: LabsMedsStepProps) {
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
         >
           <div>
-            <label htmlFor="med_name" className="block text-sm font-medium mb-1.5" style={labelStyle}>
+            <label
+              htmlFor="med_name"
+              className="block text-sm font-medium mb-1.5"
+              style={labelStyle}
+            >
               Medication Name
             </label>
             <input
@@ -165,7 +185,11 @@ export function LabsMedsStep({ onNext }: LabsMedsStepProps) {
           </div>
 
           <div>
-            <label htmlFor="med_dosage" className="block text-sm font-medium mb-1.5" style={labelStyle}>
+            <label
+              htmlFor="med_dosage"
+              className="block text-sm font-medium mb-1.5"
+              style={labelStyle}
+            >
               Dosage
             </label>
             <input
@@ -180,7 +204,11 @@ export function LabsMedsStep({ onNext }: LabsMedsStepProps) {
           </div>
 
           <div>
-            <label htmlFor="med_frequency" className="block text-sm font-medium mb-1.5" style={labelStyle}>
+            <label
+              htmlFor="med_frequency"
+              className="block text-sm font-medium mb-1.5"
+              style={labelStyle}
+            >
               Frequency
             </label>
             <select
@@ -228,11 +256,23 @@ export function LabsMedsStep({ onNext }: LabsMedsStepProps) {
                   className="flex items-center gap-3 rounded-lg border px-4 py-3"
                   style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: 'var(--color-sage)' }} aria-hidden="true">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="w-4 h-4 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    style={{ color: 'var(--color-sage)' }}
+                    aria-hidden="true"
+                  >
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+                    <p
+                      className="text-sm font-medium truncate"
+                      style={{ color: 'var(--color-text-primary)' }}
+                    >
                       {med.name}
                       {med.dosage && (
                         <span className="font-normal" style={{ color: 'var(--color-text-muted)' }}>
@@ -258,7 +298,12 @@ export function LabsMedsStep({ onNext }: LabsMedsStepProps) {
         onClick={handleFinish}
         disabled={finishing}
         className="px-8 py-3 rounded-lg font-medium text-sm transition-colors hover:opacity-90 disabled:opacity-50"
-        style={{ background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))', color: 'white', boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)' }}
+        style={{
+          background:
+            'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+          color: 'white',
+          boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)',
+        }}
       >
         {finishing ? 'Finishing...' : 'Finish Setup'}
       </button>

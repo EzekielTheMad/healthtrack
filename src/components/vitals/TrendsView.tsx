@@ -8,16 +8,9 @@ import {
   CATEGORY_ORDER,
   type MetricCategory,
 } from '@/lib/metrics/registry';
-import {
-  bucketWeekly,
-  shouldBucketWeekly,
-  type ChartPoint,
-} from '@/lib/metrics/vitals-view';
+import { bucketWeekly, shouldBucketWeekly, type ChartPoint } from '@/lib/metrics/vitals-view';
 import { formatDuration, isDurationMetric } from '@/lib/metrics/format';
-import {
-  resolveGoalDirection,
-  type ActiveMetricGoal,
-} from '@/lib/fitness/goal-direction';
+import { resolveGoalDirection, type ActiveMetricGoal } from '@/lib/fitness/goal-direction';
 import { getVitalDayKey, shiftDayKey } from '@/lib/dates';
 import { getVitalRange } from '@/lib/reference-ranges';
 import type { Vital } from '@/lib/types';
@@ -25,6 +18,7 @@ import CategorySection from './CategorySection';
 import CompactStatCard from './CompactStatCard';
 import BarChart from './BarChart';
 import VitalTrendChart from './VitalTrendChart';
+import { useDateRangeContext } from '@/components/shared/DateRangeContext';
 
 // ---------------------------------------------------------------------------
 // Trends view — one compact stat card per metric (latest value + sparkline +
@@ -80,6 +74,7 @@ export default function TrendsView({
   rangeTo,
   metricGoals = [],
 }: TrendsViewProps) {
+  const { reportingTimeZone } = useDateRangeContext();
   /** Metric key of the single expanded card, or null. */
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
@@ -154,9 +149,7 @@ export default function TrendsView({
         <BarChart
           data={points.map((p) => ({ ...p, label: metricLabel(card.key) }))}
           height={240}
-          refLow={
-            weeklyBars && metric!.aggregate === 'sum' ? undefined : (range?.low ?? undefined)
-          }
+          refLow={weeklyBars && metric!.aggregate === 'sum' ? undefined : (range?.low ?? undefined)}
           refHigh={weeklyBars && metric!.aggregate === 'sum' ? undefined : range?.high}
           decimals={metric!.decimals ?? 0}
           formatValue={isDurationMetric(metric) ? formatDuration : undefined}
@@ -168,12 +161,11 @@ export default function TrendsView({
           data={card.data.map((v) => ({ value: v.value, recorded_at: v.recorded_at }))}
           metricKey={card.key}
           label={metricLabel(card.key)}
+          timeZone={reportingTimeZone ?? 'Etc/UTC'}
           refLow={range?.low ?? undefined}
           refHigh={range?.high}
           unit={card.latest.unit ?? ''}
-          ordinalLabels={
-            metric?.valueType === 'ordinal' ? metric.ordinalLabels : undefined
-          }
+          ordinalLabels={metric?.valueType === 'ordinal' ? metric.ordinalLabels : undefined}
         />
       );
     }
@@ -186,10 +178,7 @@ export default function TrendsView({
         aria-label={`${metricLabel(card.key)} chart`}
       >
         <div className="flex items-center justify-between mb-3">
-          <span
-            className="text-sm font-medium"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
+          <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
             {metricLabel(card.key)}
             {isBar && weeklyBars && (
               <span className="ml-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
@@ -235,20 +224,19 @@ export default function TrendsView({
                     goalDirection={resolveGoalDirection(
                       card.key,
                       getMetric(card.key)?.goalDirection,
-                      metricGoals,
+                      metricGoals
                     )}
                     label={metricLabel(card.key)}
                     value={card.latest.value}
                     displayValue={card.displayValue}
                     unit={card.latest.unit ?? ''}
                     source={card.latest.source}
+                    sourceMetadata={card.latest.metadata}
                     timestamp={card.latest.recorded_at}
                     sparklineData={card.sparkline}
                     rangeInfo={range ? { low: range.low, high: range.high } : undefined}
                     expanded={card.key === expandedKey}
-                    onClick={() =>
-                      setExpandedKey((prev) => (prev === card.key ? null : card.key))
-                    }
+                    onClick={() => setExpandedKey((prev) => (prev === card.key ? null : card.key))}
                   />
                 );
               })}

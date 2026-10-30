@@ -10,7 +10,6 @@ import {
   Tooltip,
   CartesianGrid,
   ReferenceArea,
-  Dot,
 } from 'recharts';
 import {
   CHART_COLORS,
@@ -19,11 +18,7 @@ import {
   getVitalDotColor,
 } from '@/lib/chart-config';
 import ChartTooltip from '@/components/shared/ChartTooltip';
-import {
-  formatUtcDay,
-  formatUtcMonthYear,
-  formatVitalDateLong,
-} from '@/lib/dates';
+import { formatUtcDay, formatUtcMonthYear, formatVitalDateLong } from '@/lib/dates';
 import {
   displayUnit,
   formatDuration,
@@ -31,6 +26,7 @@ import {
   isDurationMetric,
 } from '@/lib/metrics/format';
 import { getMetric } from '@/lib/metrics/registry';
+import { withDailyGaps } from '@/lib/metrics/daily-gaps';
 
 interface VitalDataPoint {
   value: number;
@@ -46,6 +42,8 @@ interface VitalTrendChartProps {
   unit?: string;
   /** Ordinal metrics: plot 1..N with Y-axis ticks showing the label text. */
   ordinalLabels?: readonly string[];
+  /** Instance reporting timezone for intraday axis and tooltip labels. */
+  timeZone?: string;
 }
 
 /**
@@ -54,12 +52,19 @@ interface VitalTrendChartProps {
  * from UTC date parts — local-TZ rendering shifted axis labels back a day
  * anywhere west of UTC. Intraday rows keep local dates.
  */
-function formatAxisDate(dateStr: string, useShort: boolean, intraday: boolean): string {
+function formatAxisDate(
+  dateStr: string,
+  useShort: boolean,
+  intraday: boolean,
+  timeZone?: string
+): string {
   if (intraday) {
     const d = new Date(dateStr);
     return d.toLocaleDateString(
       undefined,
-      useShort ? { month: 'short', day: 'numeric' } : { month: 'short', year: 'numeric' },
+      useShort
+        ? { month: 'short', day: 'numeric', timeZone }
+        : { month: 'short', year: 'numeric', timeZone }
     );
   }
   return useShort ? formatUtcDay(dateStr) : formatUtcMonthYear(dateStr);
@@ -74,7 +79,8 @@ function VitalDot(props: {
   refHigh?: number;
 }) {
   const { cx, cy, payload, refLow, refHigh } = props;
-  if (cx === undefined || cy === undefined || !payload) return null;
+  if (cx === undefined || cy === undefined || !payload || typeof payload.value !== 'number')
+    return null;
 
   const color = getVitalDotColor(payload.value, refLow, refHigh);
 
@@ -98,6 +104,7 @@ export default function VitalTrendChart({
   refHigh,
   unit,
   ordinalLabels,
+  timeZone,
 }: VitalTrendChartProps) {
   const labels = useMemo(() => ordinalLabels ?? [], [ordinalLabels]);
   const isOrdinal = labels.length > 0;
@@ -107,10 +114,9 @@ export default function VitalTrendChart({
   const sorted = useMemo(
     () =>
       [...data].sort(
-        (a, b) =>
-          new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
+        (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime()
       ),
-    [data],
+    [data]
   );
 
   const useShortDateFormat = useMemo(() => {
@@ -123,20 +129,22 @@ export default function VitalTrendChart({
 
   const chartData = useMemo(
     () =>
-      sorted.map((d) => ({
-        value: d.value,
-        date: d.recorded_at,
-        // Keep original for tooltip
-        recorded_at: d.recorded_at,
-      })),
-    [sorted],
+      (intraday || metric?.category === 'body_measurement' ? sorted : withDailyGaps(sorted)).map(
+        (d) => ({
+          value: d.value,
+          date: d.recorded_at,
+          // Keep original for tooltip
+          recorded_at: d.recorded_at,
+        })
+      ),
+    [sorted, intraday, metric?.category]
   );
 
   // Compute Y domain with padding around data + reference range
   const yDomain = useMemo(() => {
     if (isOrdinal) return [1, labels.length] as [number, number];
     if (chartData.length === 0) return [0, 100] as [number, number];
-    const values = chartData.map((d) => d.value);
+    const values = chartData.map((d) => d.value).filter((value): value is number => value !== null);
     let lo = Math.min(...values);
     let hi = Math.max(...values);
     if (refLow !== undefined && refLow < lo) lo = refLow;
@@ -177,19 +185,12 @@ export default function VitalTrendChart({
         {!duration && unit ? ` (${displayUnit(unit)})` : ''}
       </p>
       <ResponsiveContainer width="100%" height={CHART_DEFAULTS.height - 20}>
-        <LineChart
-          data={chartData}
-          margin={CHART_DEFAULTS.margin}
-        >
-          <CartesianGrid
-            strokeDasharray="3 3"
-            stroke={CHART_COLORS.grid}
-            vertical={false}
-          />
+        <LineChart data={chartData} margin={CHART_DEFAULTS.margin}>
+          <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} vertical={false} />
 
           <XAxis
             dataKey="date"
-            tickFormatter={(v) => formatAxisDate(v, useShortDateFormat, intraday)}
+            tickFormatter={(v) => formatAxisDate(v, useShortDateFormat, intraday, timeZone)}
             tick={{ fill: CHART_COLORS.muted, fontSize: 10 }}
             axisLine={{ stroke: CHART_COLORS.grid }}
             tickLine={false}
@@ -216,14 +217,12 @@ export default function VitalTrendChart({
                 unit={duration ? '' : displayUnit(unit ?? null)}
                 refLow={refLow}
                 refHigh={refHigh}
-                formatDate={(d) => formatVitalDateLong(d, metricKey)}
+                formatDate={(d) => formatVitalDateLong(d, metricKey, timeZone)}
                 formatValue={
                   isOrdinal
                     ? undefined
                     : (v) =>
-                        duration
-                          ? formatDuration(v)
-                          : formatMetricValue(v, metric?.decimals ?? 1)
+                        duration ? formatDuration(v) : formatMetricValue(v, metric?.decimals ?? 1)
                 }
               />
             }
@@ -244,6 +243,7 @@ export default function VitalTrendChart({
           <Line
             type="monotone"
             dataKey="value"
+            connectNulls={false}
             stroke={CHART_COLORS.sage}
             strokeWidth={CHART_DEFAULTS.strokeWidth}
             dot={(dotProps) => (

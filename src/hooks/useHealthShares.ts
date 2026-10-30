@@ -53,89 +53,80 @@ export function useHealthShares() {
   }, []);
 
   useEffect(() => {
+    // Initialize the external share lists; this reusable action also updates loading state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchShares();
   }, [fetchShares]);
 
-  const createShare = useCallback(
-    async (data: CreateShareData): Promise<HealthShare | null> => {
-      setError(null);
-      try {
-        const res = await fetch('/api/share', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
+  const createShare = useCallback(async (data: CreateShareData): Promise<HealthShare | null> => {
+    setError(null);
+    try {
+      const res = await fetch('/api/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.message || 'Failed to create share');
-        }
-
-        const created: HealthShare = await res.json();
-        setSentShares((prev) => [created, ...prev]);
-        return created;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to create share';
-        setError(msg);
-        return null;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to create share');
       }
-    },
-    [],
-  );
 
-  const acceptShare = useCallback(
-    async (id: string): Promise<boolean> => {
-      setError(null);
-      try {
-        const res = await fetch('/api/share', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, action: 'accept' }),
-        });
+      const created: HealthShare = await res.json();
+      setSentShares((prev) => [created, ...prev]);
+      return created;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create share';
+      setError(msg);
+      return null;
+    }
+  }, []);
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.message || 'Failed to accept share');
-        }
+  const acceptShare = useCallback(async (id: string): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await fetch('/api/share', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'accept' }),
+      });
 
-        const updated: HealthShare = await res.json();
-        setReceivedShares((prev) =>
-          prev.map((s) => (s.id === id ? updated : s)),
-        );
-        return true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to accept share');
-        return false;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to accept share');
       }
-    },
-    [],
-  );
 
-  const revokeShare = useCallback(
-    async (id: string): Promise<boolean> => {
-      setError(null);
-      try {
-        const res = await fetch('/api/share', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, action: 'revoke' }),
-        });
+      const updated: HealthShare = await res.json();
+      setReceivedShares((prev) => prev.map((s) => (s.id === id ? updated : s)));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to accept share');
+      return false;
+    }
+  }, []);
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.message || 'Failed to revoke share');
-        }
+  const revokeShare = useCallback(async (id: string): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await fetch('/api/share', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'revoke' }),
+      });
 
-        setSentShares((prev) => prev.filter((s) => s.id !== id));
-        setReceivedShares((prev) => prev.filter((s) => s.id !== id));
-        return true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to revoke share');
-        return false;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to revoke share');
       }
-    },
-    [],
-  );
+
+      setSentShares((prev) => prev.filter((s) => s.id !== id));
+      setReceivedShares((prev) => prev.filter((s) => s.id !== id));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to revoke share');
+      return false;
+    }
+  }, []);
 
   const updateShare = useCallback(
     async (id: string, updates: UpdateShareData): Promise<boolean> => {
@@ -153,16 +144,14 @@ export function useHealthShares() {
         }
 
         const updated: HealthShare = await res.json();
-        setSentShares((prev) =>
-          prev.map((s) => (s.id === id ? updated : s)),
-        );
+        setSentShares((prev) => prev.map((s) => (s.id === id ? updated : s)));
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update share');
         return false;
       }
     },
-    [],
+    []
   );
 
   return {

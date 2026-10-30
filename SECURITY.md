@@ -4,6 +4,23 @@
 
 Please report vulnerabilities privately via **GitHub Security Advisories**: go to the repository's *Security* tab → *Report a vulnerability*. Do not open a public issue for security problems.
 
+If private reporting is unavailable, ask the maintainer for a private reporting
+channel before sharing vulnerability details. Never include credentials or
+personal health data in a public issue.
+
+## Optional AI credentials
+
+Each account's direct Anthropic/OpenAI/Gemini API key is encrypted with the
+existing server-controlled key and is write-only after submission. Settings
+use authenticated, same-origin server routes; delegates and PATs cannot
+retrieve or change credentials. Fixed official API endpoints refuse redirects.
+No provider response bodies or keys are returned in errors or ordinary health
+exports. Full volume backups include encrypted credentials and require the
+matching encryption key; server administrators still control that volume.
+Removing a key prevents subsequent calls but cannot recall a request already
+received by a provider or erase retained backups. Provider/model changes fence
+late results and automatic cache reuse. See [setup, transfer and migration](docs/AI.md).
+
 You should get an initial response within a week. Please include reproduction steps and the affected version/commit.
 
 ## Scope & context

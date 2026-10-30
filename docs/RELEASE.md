@@ -2,11 +2,8 @@
 
 This document owns HealthTrack-specific container and release knowledge. It is
 not permission to publish an image, change package visibility, submit a CA
-listing or deploy an instance. For Rook's generic engineering workflow, use the
-[engineering SOP](obsidian://open?file=systems%2Fengineering-sops) (private
-operator vault entry); reusable procedures live in Rook's linked skills, not
-copies here. Other contributors follow the repository instructions and their
-maintainer's authorization.
+listing or deploy an instance. Contributors follow the repository instructions
+and their maintainer's authorization.
 
 ## Container implementation
 
@@ -43,6 +40,11 @@ release. If anonymous installation is intended, verify an unauthenticated pull;
 a workflow push does not prove package visibility. Visibility changes and
 release-tag pushes require separate publication authority.
 
+The non-publishing CI container smoke job uses the same native AMD64 and ARM64
+runner types, verifies the running Node architecture, and can also be dispatched
+manually. A passing build on one architecture does not clear the other. Running
+this workflow remotely still requires authorization to push or dispatch it.
+
 ## Release evidence requirements
 
 These are retained project checks, **not a claim that the current release or a
@@ -70,13 +72,17 @@ do not test account creation or imports against production health records.
    internal exception details. Verify PAT hash-only storage, scopes, expiry and
    revocation, and encrypted OAuth token storage. These checks do not assert
    universal coverage across current routes.
-5. Check application-supplied headers and production Secure session cookies
-   behind the actual TLS-terminating proxy. [next.config.ts](../next.config.ts)
+5. Check application-supplied headers and session cookies at the intended
+   `APP_URL`. The supported LAN HTTP installation uses non-Secure session
+   cookies so browser authentication works at that HTTP origin. HTTPS origins
+   require Secure cookies, including behind a proxy forwarding plain HTTP
+   internally. [next.config.ts](../next.config.ts)
    defines CSP (including Next's inline-script/style allowances), DENY framing,
    `nosniff`, Referrer/Permissions policies and production HSTS **without**
    `includeSubDomains`/preload. [Auth configuration](../src/lib/auth/index.ts)
-   forces Secure cookies in production. Inspect observed responses rather than
-   inferring safety from a proxy configuration. Retain the qualifications in
+   selects Secure cookies from `APP_URL`'s scheme, not `NODE_ENV`. Inspect
+   sign-in responses and an authenticated reload at the browser-facing URL
+   rather than inferring behavior from proxy configuration. Retain the qualifications in
    [SECURITY.md](../SECURITY.md), including unverified-email sharing and signed
    Health Connect ingestion.
 6. Keep health/legal wording visible: signup consent, legal links in the app
@@ -92,13 +98,20 @@ do not test account creation or imports against production health records.
    `501` behavior, cache/refresh and repeat-query deduplication where applicable,
    and review-before-write with partial-extraction warnings. Do not infer that
    every AI endpoint implements caching from this requirement.
-8. Before authorized promotion, preserve a consistent stopped-container backup
+8. Follow the [upgrade and rollback preflight](UPGRADING.md). Before authorized
+   promotion, preserve a consistent stopped-container backup
    of `/data` and the effective configuration, plus the prior immutable image
    identity. Test restore in isolation. Because startup applies migrations,
    reverting an image alone may be unsafe; use a compatible image/data pair or
    restore the pre-upgrade snapshot under operator authority. After promotion
    read back the running identity, health and affected security behavior. A
    backup's existence is not a successful restore drill.
+
+For v2, also complete the timezone/ingestion preflight and patient-scoped
+import, correction and restore checks in [V2.md](V2.md). Historical Health
+Connect days were normalized in `America/Phoenix`; changing configured `TZ`
+does not automatically migrate those saved days. Confirm the intended historical
+calendar before ingestion or reprocessing.
 
 ## Historical lessons (July 2026; not current deployment state)
 

@@ -10,8 +10,28 @@
 // ---------------------------------------------------------------------------
 
 import { getMetric } from './metrics/registry';
+import { calendarDayInTimeZone } from './oura/timezone';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Calendar dates are dates, not instants in the browser's timezone. */
+export function isValidDayKey(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function formatDateOnly(
+  value: string | null | undefined,
+  options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+): string {
+  if (!value) return '—';
+  if (!isValidDayKey(value)) return value;
+  return new Date(`${value}T00:00:00Z`).toLocaleDateString('en-US', {
+    ...options,
+    timeZone: 'UTC',
+  });
+}
 
 function isIntraday(metricKey: string): boolean {
   return getMetric(metricKey)?.intraday === true;
@@ -36,10 +56,11 @@ export function formatUtcMonthYear(iso: string): string {
 }
 
 /** Local time of day (`5:23 PM`) — intraday readings in the daily table. */
-export function formatLocalTime(iso: string): string {
+export function formatLocalTime(iso: string, timeZone?: string): string {
   return new Date(iso).toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
+    timeZone,
   });
 }
 
@@ -48,20 +69,25 @@ export function formatLocalTime(iso: string): string {
  * Intraday metrics → local datetime (`Jul 8, 5:23 PM`); everything else
  * (including registry-unknown keys) → UTC date only (`Jul 8`).
  */
-export function formatVitalDate(recordedAt: string, metricKey: string): string {
+export function formatVitalDate(recordedAt: string, metricKey: string, timeZone?: string): string {
   if (isIntraday(metricKey)) {
     return new Date(recordedAt).toLocaleString(undefined, {
       month: 'short',
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+      timeZone,
     });
   }
   return formatUtcDay(recordedAt);
 }
 
 /** Long display date with year (chart tooltips). Same UTC/local split. */
-export function formatVitalDateLong(recordedAt: string, metricKey: string): string {
+export function formatVitalDateLong(
+  recordedAt: string,
+  metricKey: string,
+  timeZone?: string
+): string {
   if (isIntraday(metricKey)) {
     return new Date(recordedAt).toLocaleString(undefined, {
       year: 'numeric',
@@ -69,6 +95,7 @@ export function formatVitalDateLong(recordedAt: string, metricKey: string): stri
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+      timeZone,
     });
   }
   return formatUtcDayYear(recordedAt);
@@ -77,11 +104,13 @@ export function formatVitalDateLong(recordedAt: string, metricKey: string): stri
 /**
  * Calendar-day bucket (`YYYY-MM-DD`) a reading belongs to: UTC date parts for
  * day-normalized non-intraday rows (their UTC date IS the intended day),
- * local date parts for intraday rows (readings group under the user's day).
+ * configured timezone for intraday rows. Omitted timezone preserves the
+ * browser-local behavior of existing callers.
  */
-export function getVitalDayKey(recordedAt: string, metricKey: string): string {
+export function getVitalDayKey(recordedAt: string, metricKey: string, timeZone?: string): string {
   const d = new Date(recordedAt);
   if (isIntraday(metricKey)) {
+    if (timeZone) return calendarDayInTimeZone(d, timeZone);
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
@@ -100,7 +129,8 @@ export function dayKeyToUtcIso(dayKey: string): string {
 }
 
 /** Today's (or `d`'s) calendar day in the user's local timezone. */
-export function localDayKey(d: Date = new Date()): string {
+export function localDayKey(d: Date = new Date(), timeZone?: string): string {
+  if (timeZone) return calendarDayInTimeZone(d, timeZone);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 

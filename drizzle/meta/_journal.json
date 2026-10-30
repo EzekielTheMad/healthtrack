@@ -71,6 +71,55 @@
       "when": 1788293333954,
       "tag": "0009_nutrition-strategy-rename",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792789400000,
+      "tag": "0010_import_reconciliation",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792789401000,
+      "tag": "0011_sync_freshness",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792789402000,
+      "tag": "0012_context_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792789403000,
+      "tag": "0013_mobile_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1792789404000,
+      "tag": "0014_native_health_records",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1793305800000,
+      "tag": "0015_account_ai",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1793305801000,
+      "tag": "0016_trusted_ai_context",
+      "breakpoints": true
     }
   ]
 }

@@ -4,7 +4,6 @@ import { apiError } from '@/lib/api-error';
 import { getCapabilities, OURA_NOT_CONFIGURED } from '@/lib/capabilities';
 import { syncOuraData } from '@/lib/oura/sync';
 import { getConnectedSource } from '@/lib/repos/connected-sources';
-import { getOuraAccessToken } from '@/lib/oura/tokens';
 
 export async function POST() {
   const user = await getUser();
@@ -24,10 +23,16 @@ export async function POST() {
     return apiError(404, 'not_found', 'Oura Ring is not connected');
   }
 
-  let accessToken: string;
-  try { accessToken = await getOuraAccessToken(user.id); }
-  catch (error) { return apiError(401, 'token_refresh_failed', error instanceof Error ? error.message : 'Unable to obtain Oura token'); }
-  const summary = await syncOuraData(user.id, accessToken);
+  if (source.nextRetryAt && Date.parse(source.nextRetryAt) > Date.now()) {
+    return NextResponse.json(
+      {
+        message: 'Oura is rate limited. Wait until the retry time.',
+        next_retry_at: source.nextRetryAt,
+      },
+      { status: 429 }
+    );
+  }
+  const summary = await syncOuraData(user.id);
 
   return NextResponse.json(summary);
 }

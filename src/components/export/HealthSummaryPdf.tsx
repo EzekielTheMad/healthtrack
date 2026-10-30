@@ -1,6 +1,6 @@
-'use client';
-
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
+import { Children } from 'react';
+import { formatDateOnly, formatVitalDateLong } from '@/lib/dates';
 
 const colors = {
   sage: '#81B29A',
@@ -155,22 +155,15 @@ const styles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 function formatDate(dateStr?: string | null): string {
-  if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  } catch {
-    return dateStr;
-  }
+  return formatDateOnly(dateStr);
 }
 
 function flagBadgeStyle(flag: string) {
   const f = flag?.toLowerCase();
   if (f === 'high' || f === 'critical' || f === 'low') return [styles.badge, styles.badgeDanger];
   if (f === 'moderate') return [styles.badge, styles.badgeWarning];
+  if (!f || f === 'unknown')
+    return [styles.badge, { backgroundColor: colors.lightGray, color: colors.gray }];
   return [styles.badge, styles.badgeNormal];
 }
 
@@ -185,7 +178,8 @@ function severityBadgeStyle(severity: string) {
 // Props
 // ---------------------------------------------------------------------------
 
-interface HealthSummaryPdfProps {
+export interface HealthSummaryPdfProps {
+  timezone?: string;
   profile: {
     display_name: string;
     date_of_birth?: string;
@@ -194,10 +188,25 @@ interface HealthSummaryPdfProps {
     weight_lbs?: number;
   };
   sections: string[];
-  medications?: Array<{ name: string; dosage?: string; frequency: string; active: boolean }>;
+  medications?: Array<{
+    name: string;
+    dosage?: string;
+    frequency: string;
+    active: boolean;
+    start_date?: string;
+    end_date?: string;
+  }>;
+  warnings?: string[];
   conditions?: Array<{ name: string; status: string; diagnosed_date?: string }>;
   allergies?: Array<{ name: string; severity: string; reaction?: string }>;
-  vitals?: Array<{ metric_key: string; value: number; unit?: string; recorded_at: string }>;
+  vitals?: Array<{
+    metric_key: string;
+    value: number;
+    unit?: string;
+    recorded_at: string;
+    source?: string;
+    source_label?: string;
+  }>;
   labResults?: Array<{
     test_name: string;
     value: number;
@@ -205,9 +214,16 @@ interface HealthSummaryPdfProps {
     reference_range_low?: number;
     reference_range_high?: number;
     flag: string;
+    visit_date?: string;
+    reference_range_text?: string;
   }>;
   providers?: Array<{ name: string; provider_type: string; specialty?: string; phone?: string }>;
-  vaccines?: Array<{ name: string; vaccine_date: string; dose_number?: number; series_doses?: number }>;
+  vaccines?: Array<{
+    name: string;
+    vaccine_date: string;
+    dose_number?: number | string;
+    series_doses?: number | string;
+  }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,17 +231,25 @@ interface HealthSummaryPdfProps {
 // ---------------------------------------------------------------------------
 
 function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
+  const rows = Children.toArray(children);
   return (
     <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
+      <View wrap={false} minPresenceAhead={30}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{title}</Text>
+        </View>
+        <View style={styles.table}>{rows.slice(0, 1)}</View>
       </View>
-      <View style={styles.table}>{children}</View>
+      {rows.length > 1 && <View style={styles.table}>{rows.slice(1)}</View>}
     </View>
   );
 }
 
-function MedicationsSection({ medications }: { medications: HealthSummaryPdfProps['medications'] }) {
+function MedicationsSection({
+  medications,
+}: {
+  medications: HealthSummaryPdfProps['medications'];
+}) {
   if (!medications?.length) {
     return (
       <SectionBlock title="Medications">
@@ -243,7 +267,13 @@ function MedicationsSection({ medications }: { medications: HealthSummaryPdfProp
       </View>
       {medications.map((med, i) => (
         <View key={i} style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]}>
-          <Text style={[styles.tableCell, { flex: 3 }]}>{med.name}</Text>
+          <View style={{ flex: 3 }}>
+            <Text style={styles.tableCell}>{med.name}</Text>
+            <Text style={styles.tableCell}>Started: {formatDate(med.start_date)}</Text>
+            {med.end_date && (
+              <Text style={styles.tableCell}>Ended: {formatDate(med.end_date)}</Text>
+            )}
+          </View>
           <Text style={[styles.tableCell, { flex: 2 }]}>{med.dosage ?? '—'}</Text>
           <Text style={[styles.tableCell, { flex: 2 }]}>{med.frequency}</Text>
           <View style={{ flex: 1 }}>
@@ -275,7 +305,9 @@ function ConditionsSection({ conditions }: { conditions: HealthSummaryPdfProps['
       {conditions.map((c, i) => (
         <View key={i} style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]}>
           <Text style={[styles.tableCell, { flex: 3 }]}>{c.name}</Text>
-          <Text style={[styles.tableCell, { flex: 2, textTransform: 'capitalize' }]}>{c.status}</Text>
+          <Text style={[styles.tableCell, { flex: 2, textTransform: 'capitalize' }]}>
+            {c.status}
+          </Text>
           <Text style={[styles.tableCell, { flex: 2 }]}>{formatDate(c.diagnosed_date)}</Text>
         </View>
       ))}
@@ -302,9 +334,7 @@ function AllergiesSection({ allergies }: { allergies: HealthSummaryPdfProps['all
         <View key={i} style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]}>
           <Text style={[styles.tableCell, { flex: 3 }]}>{a.name}</Text>
           <View style={{ flex: 2 }}>
-            <Text style={severityBadgeStyle(a.severity)}>
-              {a.severity.replace('_', ' ')}
-            </Text>
+            <Text style={severityBadgeStyle(a.severity)}>{a.severity.replace('_', ' ')}</Text>
           </View>
           <Text style={[styles.tableCell, { flex: 3 }]}>{a.reaction ?? '—'}</Text>
         </View>
@@ -313,7 +343,13 @@ function AllergiesSection({ allergies }: { allergies: HealthSummaryPdfProps['all
   );
 }
 
-function VitalsSection({ vitals }: { vitals: HealthSummaryPdfProps['vitals'] }) {
+function VitalsSection({
+  vitals,
+  timezone,
+}: {
+  vitals: HealthSummaryPdfProps['vitals'];
+  timezone?: string;
+}) {
   if (!vitals?.length) {
     return (
       <SectionBlock title="Vitals (Latest per metric)">
@@ -336,7 +372,10 @@ function VitalsSection({ vitals }: { vitals: HealthSummaryPdfProps['vitals'] }) 
           <Text style={[styles.tableCell, { flex: 2 }]}>
             {v.value} {v.unit ?? ''}
           </Text>
-          <Text style={[styles.tableCell, { flex: 3 }]}>{formatDate(v.recorded_at)}</Text>
+          <Text style={[styles.tableCell, { flex: 3 }]}>
+            {formatVitalDateLong(v.recorded_at, v.metric_key, timezone)}
+            {v.source_label ? `\n${v.source_label}` : ''}
+          </Text>
         </View>
       ))}
     </SectionBlock>
@@ -361,24 +400,30 @@ function LabResultsSection({ labResults }: { labResults: HealthSummaryPdfProps['
       </View>
       {labResults.map((lab, i) => {
         const ref =
-          lab.reference_range_low != null && lab.reference_range_high != null
+          lab.reference_range_text ||
+          (lab.reference_range_low != null && lab.reference_range_high != null
             ? `${lab.reference_range_low}–${lab.reference_range_high}`
             : lab.reference_range_low != null
-            ? `>${lab.reference_range_low}`
-            : lab.reference_range_high != null
-            ? `<${lab.reference_range_high}`
-            : '—';
+              ? `>${lab.reference_range_low}`
+              : lab.reference_range_high != null
+                ? `<${lab.reference_range_high}`
+                : '—');
         return (
-          <View key={i} style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]}>
-            <Text style={[styles.tableCell, { flex: 3 }]}>{lab.test_name}</Text>
+          <View
+            wrap={false}
+            key={i}
+            style={[styles.tableRow, i % 2 === 1 ? styles.tableRowAlt : {}]}
+          >
+            <View style={{ flex: 3 }}>
+              <Text style={styles.tableCell}>{lab.test_name}</Text>
+              <Text style={styles.tableCell}>Drawn: {formatDate(lab.visit_date)}</Text>
+            </View>
             <Text style={[styles.tableCell, { flex: 2 }]}>
               {lab.value} {lab.unit ?? ''}
             </Text>
             <Text style={[styles.tableCell, { flex: 3 }]}>{ref}</Text>
             <View style={{ flex: 1.5 }}>
-              <Text style={flagBadgeStyle(lab.flag ?? 'normal')}>
-                {lab.flag ?? 'Normal'}
-              </Text>
+              <Text style={flagBadgeStyle(lab.flag ?? 'unknown')}>{lab.flag ?? 'Unknown'}</Text>
             </View>
           </View>
         );
@@ -440,8 +485,8 @@ function VaccinesSection({ vaccines }: { vaccines: HealthSummaryPdfProps['vaccin
             {v.dose_number != null && v.series_doses != null
               ? `${v.dose_number} of ${v.series_doses}`
               : v.dose_number != null
-              ? `Dose ${v.dose_number}`
-              : '—'}
+                ? `Dose ${v.dose_number}`
+                : '—'}
           </Text>
         </View>
       ))}
@@ -463,8 +508,11 @@ export default function HealthSummaryPdf({
   labResults,
   providers,
   vaccines,
+  warnings,
+  timezone,
 }: HealthSummaryPdfProps) {
   const generatedDate = new Date().toLocaleDateString('en-US', {
+    timeZone: timezone,
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -510,10 +558,15 @@ export default function HealthSummaryPdf({
         </View>
 
         {/* Sections */}
+        {warnings?.map((warning) => (
+          <Text key={warning} style={styles.emptyText}>
+            {warning}
+          </Text>
+        ))}
         {has('medications') && <MedicationsSection medications={medications} />}
         {has('conditions') && <ConditionsSection conditions={conditions} />}
         {has('allergies') && <AllergiesSection allergies={allergies} />}
-        {has('vitals') && <VitalsSection vitals={vitals} />}
+        {has('vitals') && <VitalsSection vitals={vitals} timezone={timezone} />}
         {has('labs') && <LabResultsSection labResults={labResults} />}
         {has('providers') && <ProvidersSection providers={providers} />}
         {has('vaccines') && <VaccinesSection vaccines={vaccines} />}

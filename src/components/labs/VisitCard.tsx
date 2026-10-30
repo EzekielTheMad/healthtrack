@@ -3,33 +3,47 @@
 import React, { useState } from 'react';
 import type { LabVisit, LabResult, Flag } from '@/lib/types';
 import FlagBadge from '@/components/shared/FlagBadge';
+import LabPdfPreview from './LabPdfPreview';
+import LabVisitEditor from './LabVisitEditor';
+import type { LabVisitUpdates } from '@/hooks/useLabResults';
+import { formatDateOnly } from '@/lib/dates';
 
 interface VisitCardProps {
   visit: LabVisit & { results: LabResult[] };
+  onSave?: (id: string, updates: LabVisitUpdates) => Promise<void>;
 }
 
-export default function VisitCard({ visit }: VisitCardProps) {
+export default function VisitCard({ visit, onSave }: VisitCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
 
-  const flaggedCount = visit.results.filter(
-    (r) => r.flag && r.flag !== 'normal',
-  ).length;
+  const flaggedCount = visit.results.filter((r) => r.flag && r.flag !== 'normal').length;
 
   return (
     <div
+      id={`record-${visit.id}`}
       className="rounded-xl border overflow-hidden"
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
     >
       {/* Header */}
+      {visit.results.map((result) => (
+        <span
+          key={result.id}
+          id={`record-${result.id}`}
+          aria-hidden="true"
+          className="block scroll-mt-24"
+        />
+      ))}
       <button
         onClick={() => setExpanded((prev) => !prev)}
         className="w-full flex items-center justify-between px-4 py-3 cursor-pointer text-left"
         type="button"
+        aria-expanded={expanded}
       >
         <div className="space-y-1">
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-              {new Date(visit.visit_date).toLocaleDateString('en-US', {
+              {formatDateOnly(visit.visit_date, {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
@@ -52,12 +66,13 @@ export default function VisitCard({ visit }: VisitCardProps) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          <div
+            className="flex items-center gap-3 text-xs"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
             <span>{visit.results.length} results</span>
             {flaggedCount > 0 && (
-              <span style={{ color: 'var(--color-terracotta)' }}>
-                {flaggedCount} flagged
-              </span>
+              <span style={{ color: 'var(--color-terracotta)' }}>{flaggedCount} flagged</span>
             )}
           </div>
         </div>
@@ -76,14 +91,29 @@ export default function VisitCard({ visit }: VisitCardProps) {
         </svg>
       </button>
 
+      <div className="px-4 pb-3 flex flex-wrap gap-3 items-center">
+        {onSave && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="text-sm font-medium text-accent-green"
+          >
+            Edit lab visit
+          </button>
+        )}
+        {visit.source_pdf_path && <LabPdfPreview storagePath={visit.source_pdf_path} />}
+      </div>
+
       {/* Expanded results table */}
-      {expanded && (
-        <div style={{ borderTop: '1px solid var(--border-card)' }}>
-          <table className="w-full text-xs">
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border-card)' }}>
-                {['Panel', 'Test', 'Value', 'Unit', 'Range', 'Flag'].map(
-                  (h) => (
+      {editing && onSave ? (
+        <LabVisitEditor visit={visit} onSave={onSave} onCancel={() => setEditing(false)} />
+      ) : (
+        expanded && (
+          <div className="overflow-x-auto" style={{ borderTop: '1px solid var(--border-card)' }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-card)' }}>
+                  {['Panel', 'Test', 'Value', 'Unit', 'Range', 'Flag'].map((h) => (
                     <th
                       key={h}
                       className="text-left px-3 py-2 font-medium"
@@ -91,42 +121,41 @@ export default function VisitCard({ visit }: VisitCardProps) {
                     >
                       {h}
                     </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {visit.results.map((r) => (
-                <tr key={r.id} style={{ borderBottom: '1px solid var(--border-card)' }}>
-                  <td className="px-3 py-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                    {r.panel_name ?? '--'}
-                  </td>
-                  <td className="px-3 py-1.5" style={{ color: 'var(--color-text-primary)' }}>
-                    {r.test_name}
-                  </td>
-                  <td
-                    className="px-3 py-1.5 font-mono"
-                    style={{ color: 'var(--color-text-primary)' }}
-                  >
-                    {r.value}
-                  </td>
-                  <td className="px-3 py-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                    {r.unit ?? '--'}
-                  </td>
-                  <td className="px-3 py-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                    {r.reference_range_low !== null &&
-                    r.reference_range_high !== null
-                      ? `${r.reference_range_low} - ${r.reference_range_high}`
-                      : r.reference_range_text ?? '--'}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    {r.flag ? <FlagBadge flag={r.flag as Flag} /> : '--'}
-                  </td>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {visit.results.map((r) => (
+                  <tr key={r.id} style={{ borderBottom: '1px solid var(--border-card)' }}>
+                    <td className="px-3 py-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                      {r.panel_name ?? '--'}
+                    </td>
+                    <td className="px-3 py-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                      {r.test_name}
+                    </td>
+                    <td
+                      className="px-3 py-1.5 font-mono"
+                      style={{ color: 'var(--color-text-primary)' }}
+                    >
+                      {r.value}
+                    </td>
+                    <td className="px-3 py-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                      {r.unit ?? '--'}
+                    </td>
+                    <td className="px-3 py-1.5" style={{ color: 'var(--color-text-muted)' }}>
+                      {r.reference_range_low !== null && r.reference_range_high !== null
+                        ? `${r.reference_range_low} - ${r.reference_range_high}`
+                        : (r.reference_range_text ?? '--')}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {r.flag ? <FlagBadge flag={r.flag as Flag} /> : '--'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
     </div>
   );

@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const rows = await listVitals(
       ctx.userId,
       { ownerId: ctx.userId, dependentId: null },
-      { metricKey: metric ?? undefined, startDate, endDate, limit },
+      { metricKey: metric ?? undefined, startDate, endDate, limit }
     );
 
     // Response shape byte-identical to the legacy PostgREST select: same fields,
@@ -71,8 +71,9 @@ export async function GET(request: NextRequest) {
         unit: v.unit,
         source: v.source,
         recorded_at: v.recordedAt,
+        last_received_at: v.lastReceivedAt,
       })),
-      { headers: corsHeaders },
+      { headers: corsHeaders }
     );
   } catch (error) {
     // Never reflect internal error details to API clients (respond.ts policy).
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return Response.json(
       { error: 'Request body must be valid JSON' },
-      { status: 400, headers: corsHeaders },
+      { status: 400, headers: corsHeaders }
     );
   }
 
@@ -118,10 +119,11 @@ export async function POST(request: NextRequest) {
           unit: row.unit,
           source: row.source,
           recorded_at: row.recordedAt,
+          last_received_at: row.lastReceivedAt,
           metadata: row.metadata,
         },
       },
-      { status: 201, headers: corsHeaders },
+      { status: 201, headers: corsHeaders }
     );
   } catch (error) {
     if (error instanceof VitalWriteError) {

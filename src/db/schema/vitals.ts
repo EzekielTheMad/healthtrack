@@ -29,6 +29,11 @@ export const vitals = sqliteTable(
     unit: text('unit'),
     source: text('source').notNull(),
     recordedAt: text('recorded_at').notNull(),
+    // Server receipt time, independent of the device's observation day. Legacy rows stay unknown.
+    lastReceivedAt: text('last_received_at'),
+    /** Native Health Connect discrete observation identity (BP/glucose).
+     * Daily projections and legacy writers leave this NULL. */
+    nativeRecordId: text('native_record_id'),
     // jsonb not null default '{}'
     metadata: text('metadata', { mode: 'json' })
       .$type<Record<string, unknown>>()
@@ -48,9 +53,15 @@ export const vitals = sqliteTable(
       t.metricKey,
       t.recordedAt,
       t.source,
-      sql`coalesce(${t.dependentId}, '')`,
-    ),
-  ],
+      sql`coalesce(${t.dependentId}, '')`
+    ).where(sql`${t.nativeRecordId} is null`),
+    uniqueIndex('idx_vitals_native_identity').on(
+      t.userId, t.metricKey, t.source, t.nativeRecordId,
+    ).where(sql`${t.nativeRecordId} is not null`),
+    index('idx_vitals_native_day').on(
+      t.userId, t.source, sql`json_extract(${t.metadata}, '$.calendar_day')`,
+    ).where(sql`${t.nativeRecordId} is not null`),
+  ]
 );
 
 // 001
@@ -64,7 +75,7 @@ export const vitalSourcePreferences = sqliteTable(
     metricKey: text('metric_key').notNull(),
     preferredSource: text('preferred_source').notNull(),
   },
-  (t) => [unique('vital_source_preferences_user_metric_unique').on(t.userId, t.metricKey)],
+  (t) => [unique('vital_source_preferences_user_metric_unique').on(t.userId, t.metricKey)]
 );
 
 // 001 — global reference data (seeded, no user FK)

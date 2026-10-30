@@ -28,6 +28,7 @@ export const AVAILABLE_SCOPES = [
   { value: 'read:vaccines', label: 'Read Vaccines', description: 'Read vaccine records' },
   { value: 'read:providers', label: 'Read Providers', description: 'Read healthcare providers' },
   { value: 'read:profile', label: 'Read Profile', description: 'Read profile (DOB, height, weight)' },
+  { value: 'read:doctor_summary', label: 'Read Doctor Essentials', description: 'Paired Android device only: explicitly approved offline summaries' },
 ] as const;
 
 export type ScopeValue = typeof AVAILABLE_SCOPES[number]['value'];

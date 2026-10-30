@@ -9,6 +9,14 @@
  * the Oura/Renpho/myAir data paths and the existing vitals batch endpoint are
  * untouched.
  */
+import {
+  beforeEach as beforeCalendarFixture,
+  afterEach as afterCalendarFixture,
+  vi as calendarFixtureVi,
+} from 'vitest';
+beforeCalendarFixture(() => calendarFixtureVi.stubEnv('TZ', 'America/Phoenix'));
+afterCalendarFixture(() => calendarFixtureVi.unstubAllEnvs());
+
 import crypto from 'crypto';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -71,10 +79,13 @@ afterEach(() => ctx.restore());
 
 function post(
   body: unknown,
-  opts: { token?: string | null; signature?: string | null; raw?: string } = {},
+  opts: { token?: string | null; signature?: string | null; raw?: string } = {}
 ): NextRequest {
   const rawBody = opts.raw ?? JSON.stringify(body);
-  const token = opts.token === undefined ? mintApiToken(ctx.sqlite, OWNER, ['write:health_connect']) : opts.token;
+  const token =
+    opts.token === undefined
+      ? mintApiToken(ctx.sqlite, OWNER, ['write:health_connect'])
+      : opts.token;
   const signature =
     opts.signature === undefined ? sig.computeSignature(rawBody, secret) : opts.signature;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -178,16 +189,19 @@ describe('HMAC verification', () => {
 
   it('verifies the RAW bytes, not reserialized JSON', async () => {
     // Bytes the "phone" sent: key order and spacing differ from JSON.stringify.
-    const raw = '{ "source":"health_connect" ,  "timestamp":"2026-09-01T16:00:00Z","app_version":"1.8.0" }';
+    const raw =
+      '{ "source":"health_connect" ,  "timestamp":"2026-09-01T16:00:00Z","app_version":"1.8.0" }';
     const reserialized = JSON.stringify(JSON.parse(raw));
     expect(reserialized).not.toBe(raw);
 
     const wrong = await route.POST(
-      post(null, { raw, signature: sig.computeSignature(reserialized, secret) }),
+      post(null, { raw, signature: sig.computeSignature(reserialized, secret) })
     );
     expect(wrong.status).toBe(403);
 
-    const right = await route.POST(post(null, { raw, signature: sig.computeSignature(raw, secret) }));
+    const right = await route.POST(
+      post(null, { raw, signature: sig.computeSignature(raw, secret) })
+    );
     expect(right.status).toBe(200);
   });
 
@@ -201,7 +215,7 @@ describe('HMAC verification', () => {
     expect(before.status).toBe(403);
 
     const after = await route.POST(
-      post(null, { raw: stale, signature: sig.computeSignature(stale, rotated) }),
+      post(null, { raw: stale, signature: sig.computeSignature(stale, rotated) })
     );
     expect(after.status).toBe(200);
   });
@@ -338,7 +352,7 @@ describe('inventory mode', () => {
   it('gives uuid-less daily_totals a labelled derived identity keyed on the date', async () => {
     await send(PREVIEW_PAYLOAD);
     const totals = rows(
-      "select * from health_connect_raw_records where record_type = 'daily_totals' order by source_uuid",
+      "select * from health_connect_raw_records where record_type = 'daily_totals' order by source_uuid"
     );
     expect(totals).toHaveLength(2);
     expect(totals.map((t) => t.source_uuid)).toEqual(['date:2026-08-31', 'date:2026-09-01']);
@@ -370,13 +384,37 @@ describe('daily totals normalization', () => {
     expect(body.normalization.vitals_upserted).toBe(7); // 4 for Aug 31, 3 for Sep 1
 
     const vitals = rows(
-      "select metric_key, value, unit, source, recorded_at from vitals where recorded_at = '2026-08-31T00:00:00Z' order by metric_key",
+      "select metric_key, value, unit, source, recorded_at from vitals where recorded_at = '2026-08-31T00:00:00Z' order by metric_key"
     );
     expect(vitals).toEqual([
-      { metric_key: 'active_calories', value: 612.5, unit: 'kcal', source: 'health_connect_daily', recorded_at: '2026-08-31T00:00:00Z' },
-      { metric_key: 'distance', value: 5, unit: 'mi', source: 'health_connect_daily', recorded_at: '2026-08-31T00:00:00Z' },
-      { metric_key: 'steps', value: 11240, unit: 'steps', source: 'health_connect_daily', recorded_at: '2026-08-31T00:00:00Z' },
-      { metric_key: 'total_calories', value: 2430, unit: 'kcal', source: 'health_connect_daily', recorded_at: '2026-08-31T00:00:00Z' },
+      {
+        metric_key: 'active_calories',
+        value: 612.5,
+        unit: 'kcal',
+        source: 'health_connect_daily',
+        recorded_at: '2026-08-31T00:00:00Z',
+      },
+      {
+        metric_key: 'distance',
+        value: 5,
+        unit: 'mi',
+        source: 'health_connect_daily',
+        recorded_at: '2026-08-31T00:00:00Z',
+      },
+      {
+        metric_key: 'steps',
+        value: 11240,
+        unit: 'steps',
+        source: 'health_connect_daily',
+        recorded_at: '2026-08-31T00:00:00Z',
+      },
+      {
+        metric_key: 'total_calories',
+        value: 2430,
+        unit: 'kcal',
+        source: 'health_connect_daily',
+        recorded_at: '2026-08-31T00:00:00Z',
+      },
     ]);
   });
 
@@ -384,7 +422,7 @@ describe('daily totals normalization', () => {
     await activate();
     await send(PREVIEW_PAYLOAD);
     const sep1 = rows(
-      "select metric_key from vitals where recorded_at = '2026-09-01T00:00:00Z' order by metric_key",
+      "select metric_key from vitals where recorded_at = '2026-09-01T00:00:00Z' order by metric_key"
     ).map((r) => r.metric_key);
     // The Sep 1 entry carries no total_calories.
     expect(sep1).toEqual(['active_calories', 'distance', 'steps']);
@@ -401,7 +439,7 @@ describe('daily totals normalization', () => {
     };
     await send(revised);
     const steps = rows(
-      "select value from vitals where metric_key = 'steps' and recorded_at = '2026-08-31T00:00:00Z'",
+      "select value from vitals where metric_key = 'steps' and recorded_at = '2026-08-31T00:00:00Z'"
     );
     expect(steps).toHaveLength(1);
     expect(steps[0].value).toBe(12000); // not 11240 + 12000
@@ -544,7 +582,9 @@ describe('nutrition normalization', () => {
     });
     // Both impostors are retained raw…
     expect(
-      rows("select * from health_connect_raw_records where record_type = 'nutrition' and source_uuid like 'impostor%'"),
+      rows(
+        "select * from health_connect_raw_records where record_type = 'nutrition' and source_uuid like 'impostor%'"
+      )
     ).toHaveLength(2);
     // …and neither reached the canonical table.
     expect(rows("select * from nutrition_daily where date = '2026-09-04'")).toHaveLength(0);
@@ -592,7 +632,9 @@ describe('idempotency', () => {
     });
     expect(body.records.updated).toBe(1);
     expect(body.records.inserted).toBe(0);
-    const raw = rows("select * from health_connect_raw_records where source_uuid = 'mf-record-0001'");
+    const raw = rows(
+      "select * from health_connect_raw_records where source_uuid = 'mf-record-0001'"
+    );
     expect(raw).toHaveLength(1);
     expect(JSON.parse(String(raw[0].payload_json)).calories).toBe(555);
   });
@@ -625,7 +667,7 @@ describe('idempotency', () => {
 
     const day = rows('select * from nutrition_daily')[0];
     expect(day.calories).toBe(1260); // unchanged — not 1260 + 520
-    const run = rows("select * from health_connect_ingest_runs where is_backfill = 1")[0];
+    const run = rows('select * from health_connect_ingest_runs where is_backfill = 1')[0];
     expect(run.window_start).toBe('2026-08-25T00:00:00Z');
   });
 
@@ -636,14 +678,34 @@ describe('idempotency', () => {
       app_version: '1.8.0',
       source: 'health_connect',
       nutrition: [
-        { calories: 10, start_time: '2026-09-05T15:00:00Z', end_time: '2026-09-05T15:00:00Z', source: 'app.one', uuid: shared },
-        { calories: 20, start_time: '2026-09-05T15:00:00Z', end_time: '2026-09-05T15:00:00Z', source: 'app.two', uuid: shared },
+        {
+          calories: 10,
+          start_time: '2026-09-05T15:00:00Z',
+          end_time: '2026-09-05T15:00:00Z',
+          source: 'app.one',
+          uuid: shared,
+        },
+        {
+          calories: 20,
+          start_time: '2026-09-05T15:00:00Z',
+          end_time: '2026-09-05T15:00:00Z',
+          source: 'app.two',
+          uuid: shared,
+        },
       ],
       hydration: [
-        { liters: 0.5, start_time: '2026-09-05T15:00:00Z', end_time: '2026-09-05T15:00:00Z', source: 'app.one', uuid: shared },
+        {
+          liters: 0.5,
+          start_time: '2026-09-05T15:00:00Z',
+          end_time: '2026-09-05T15:00:00Z',
+          source: 'app.one',
+          uuid: shared,
+        },
       ],
     });
-    expect(rows('select * from health_connect_raw_records where source_uuid = ?', shared)).toHaveLength(3);
+    expect(
+      rows('select * from health_connect_raw_records where source_uuid = ?', shared)
+    ).toHaveLength(3);
   });
 });
 
@@ -690,7 +752,7 @@ describe('transaction integrity', () => {
       record_count integer default 0 not null, metadata_json text default '{}' not null,
       created_at text not null, updated_at text not null)`);
     ctx.sqlite.exec(
-      'create unique index idx_nutrition_daily_unique on nutrition_daily (user_id, date, source_package)',
+      'create unique index idx_nutrition_daily_unique on nutrition_daily (user_id, date, source_package)'
     );
 
     const { res, body } = await send(PREVIEW_PAYLOAD);
@@ -710,11 +772,38 @@ describe('source ownership protections', () => {
     // Pre-existing direct-bridge rows.
     const insert = ctx.sqlite.prepare(
       `insert into vitals (id, user_id, metric_key, value, unit, source, recorded_at, metadata, created_at)
-       values (?, ?, ?, ?, ?, ?, ?, '{}', ?)`,
+       values (?, ?, ?, ?, ?, ?, ?, '{}', ?)`
     );
-    insert.run(crypto.randomUUID(), OWNER, 'weight', 196.0, 'lbs', 'renpho', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z');
-    insert.run(crypto.randomUUID(), OWNER, 'sleep_duration', 7.4, 'hours', 'oura', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z');
-    insert.run(crypto.randomUUID(), OWNER, 'ahi', 1.2, 'events/hr', 'myair', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z');
+    insert.run(
+      crypto.randomUUID(),
+      OWNER,
+      'weight',
+      196.0,
+      'lbs',
+      'renpho',
+      '2026-09-01T00:00:00Z',
+      '2026-09-01T00:00:00Z'
+    );
+    insert.run(
+      crypto.randomUUID(),
+      OWNER,
+      'sleep_duration',
+      7.4,
+      'hours',
+      'oura',
+      '2026-09-01T00:00:00Z',
+      '2026-09-01T00:00:00Z'
+    );
+    insert.run(
+      crypto.randomUUID(),
+      OWNER,
+      'ahi',
+      1.2,
+      'events/hr',
+      'myair',
+      '2026-09-01T00:00:00Z',
+      '2026-09-01T00:00:00Z'
+    );
 
     await send(PREVIEW_PAYLOAD);
 
@@ -723,7 +812,11 @@ describe('source ownership protections', () => {
     expect(rows("select value from vitals where source = 'oura'")[0].value).toBe(7.4);
     expect(rows("select value from vitals where source = 'myair'")[0].value).toBe(1.2);
     // No competing rows were created from the Health Connect payload.
-    expect(rows("select * from vitals where source = 'health_connect_daily' and metric_key in ('weight','sleep_duration')")).toHaveLength(0);
+    expect(
+      rows(
+        "select * from vitals where source = 'health_connect_daily' and metric_key in ('weight','sleep_duration')"
+      )
+    ).toHaveLength(0);
     // And no workout was invented from the generic exercise session.
     expect(rows('select * from workout_sessions')).toHaveLength(0);
   });
@@ -752,10 +845,15 @@ describe('regressions', () => {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           records: [
-            { metric_key: 'steps', value: 8200, source: 'samsung_health', recorded_at: '2026-09-01T21:15:00Z' },
+            {
+              metric_key: 'steps',
+              value: 8200,
+              source: 'samsung_health',
+              recorded_at: '2026-09-01T21:15:00Z',
+            },
           ],
         }),
-      }),
+      })
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ inserted: 1, updated: 0, errors: [] });
@@ -763,7 +861,9 @@ describe('regressions', () => {
     await activate();
     await send(PREVIEW_PAYLOAD);
     expect(
-      rows("select source from vitals where metric_key = 'steps' and recorded_at = '2026-09-01T00:00:00Z' order by source"),
+      rows(
+        "select source from vitals where metric_key = 'steps' and recorded_at = '2026-09-01T00:00:00Z' order by source"
+      )
     ).toEqual([{ source: 'health_connect_daily' }, { source: 'samsung_health' }]);
   });
 
@@ -775,7 +875,7 @@ describe('regressions', () => {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ records: [] }),
-      }),
+      })
     );
     expect(res.status).toBe(403);
   });
@@ -796,10 +896,10 @@ describe('full relay contract', () => {
     // Every array in the pinned contract is present in the fixture, and every
     // record in it landed in the raw table.
     expect(FULL_RELAY_ARRAY_KEYS).toEqual(
-      [...RELAY_CONTRACT.recordArrays.map((a) => a.type)].sort(),
+      [...RELAY_CONTRACT.recordArrays.map((a) => a.type)].sort()
     );
     const retained = rows(
-      'select distinct record_type from health_connect_raw_records order by record_type',
+      'select distinct record_type from health_connect_raw_records order by record_type'
     ).map((r) => r.record_type);
     expect(retained).toEqual(FULL_RELAY_ARRAY_KEYS);
     expect(body.records.received).toBe(FULL_RELAY_ARRAY_KEYS.length);
@@ -816,7 +916,7 @@ describe('full relay contract', () => {
     await activate();
     await send(FULL_RELAY_PAYLOAD);
     const envelope = JSON.parse(
-      String(rows('select raw_envelope_json from health_connect_ingest_runs')[0].raw_envelope_json),
+      String(rows('select raw_envelope_json from health_connect_ingest_runs')[0].raw_envelope_json)
     );
     expect(envelope._diagnostics).toEqual({
       steps: 'ok',
@@ -884,7 +984,7 @@ describe('invalid records do not discard valid ones', () => {
     expect(days[1].calories as number).toBeCloseTo(EXPECTED_DAILY_TOTALS[1].calories, 6);
     // And the broken records were still RETAINED — the raw layer is lossless.
     expect(
-      rows("select * from health_connect_raw_records where record_type = 'heart_rate'"),
+      rows("select * from health_connect_raw_records where record_type = 'heart_rate'")
     ).toHaveLength(2);
   });
 

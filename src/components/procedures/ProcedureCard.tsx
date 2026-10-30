@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { formatDateOnly } from '@/lib/dates';
 import type { Procedure } from '@/lib/types';
 import AddProcedureForm, { type AddProcedureFormData } from './AddProcedureForm';
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatDateOnly(dateStr);
 }
 
 interface ProcedureCardProps {
@@ -31,8 +32,14 @@ export default function ProcedureCard({ procedure, onUpdate, onDelete }: Procedu
 
   if (editing) {
     return (
-      <div className="rounded-xl border p-5" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}>
-        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Edit Procedure</h3>
+      <div
+        id={`record-${procedure.id}`}
+        className="rounded-xl border p-5"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+      >
+        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>
+          Edit Procedure
+        </h3>
         <AddProcedureForm
           onSubmit={handleUpdate}
           onCancel={() => setEditing(false)}
@@ -50,25 +57,41 @@ export default function ProcedureCard({ procedure, onUpdate, onDelete }: Procedu
   }
 
   return (
-    <div className="rounded-xl border p-5" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}>
+    <div
+      id={`record-${procedure.id}`}
+      className="rounded-xl border p-5"
+      style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-base font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
+            <h3
+              className="text-base font-semibold truncate"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               {procedure.name}
             </h3>
             {procedure.cpt_code && (
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'var(--color-cream)', color: 'var(--accent-purple)' }}>
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{ backgroundColor: 'var(--color-cream)', color: 'var(--accent-purple)' }}
+              >
                 CPT: {procedure.cpt_code}
               </span>
             )}
           </div>
-          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{formatDate(procedure.procedure_date)}</p>
+          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+            {formatDate(procedure.procedure_date)}
+          </p>
           {procedure.provider_id && (
-            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>Provider on file</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+              Provider on file
+            </p>
           )}
           {procedure.notes && (
-            <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>{procedure.notes}</p>
+            <p className="text-sm mt-2" style={{ color: 'var(--color-text-muted)' }}>
+              {procedure.notes}
+            </p>
           )}
         </div>
         <div className="flex flex-col gap-2 flex-shrink-0">
@@ -104,7 +127,11 @@ export default function ProcedureCard({ procedure, onUpdate, onDelete }: Procedu
               type="button"
               onClick={() => setConfirmDelete(true)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
-              style={{ backgroundColor: 'transparent', color: 'var(--color-terracotta)', border: '1px solid #F87171' }}
+              style={{
+                backgroundColor: 'transparent',
+                color: 'var(--color-terracotta)',
+                border: '1px solid #F87171',
+              }}
             >
               Delete
             </button>

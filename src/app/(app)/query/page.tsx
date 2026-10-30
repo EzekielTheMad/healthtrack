@@ -8,7 +8,8 @@ import QueryHistory from '@/components/query/QueryHistory';
 
 export default function QueryPage() {
   const { capabilities } = useCapabilities();
-  const { queryHistory, loading, error, notice, submitQuery, refreshLast } = useHealthQuery();
+  const { queryHistory, loading, error, notice, submitQuery, refreshLast, days, setDays } =
+    useHealthQuery();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -55,9 +56,11 @@ export default function QueryPage() {
             color: 'var(--color-text-muted)',
           }}
         >
-          AI features are not configured on this instance. The administrator can
-          enable health queries by setting the <code>ANTHROPIC_API_KEY</code>{' '}
-          environment variable.
+          Choose and test your own provider in{' '}
+          <a href="/settings?tab=ai#ai-settings" className="underline">
+            Settings → AI
+          </a>{' '}
+          to enable health questions.
         </div>
       </div>
     );
@@ -70,13 +73,23 @@ export default function QueryPage() {
       </h1>
 
       {/* Desktop: two columns, Mobile: stacked */}
+      <label className="block text-sm">
+        Reporting window{' '}
+        <select
+          value={days}
+          onChange={(event) => setDays(Number(event.target.value) as 30 | 90 | 365)}
+          className="rounded border p-2"
+          style={{ backgroundColor: 'var(--bg-card)' }}
+        >
+          <option value={30}>30 days</option>
+          <option value={90}>90 days</option>
+          <option value={365}>365 days</option>
+        </select>
+      </label>
       <div className="flex flex-col lg:flex-row gap-6">
         {/* History - left on desktop, below on mobile */}
         <div className="order-2 lg:order-1 lg:flex-1 min-w-0">
-          <h2
-            className="text-lg font-semibold mb-4"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>
             Query History
           </h2>
           <QueryHistory history={queryHistory} loading={loading} />
@@ -84,21 +97,14 @@ export default function QueryPage() {
 
         {/* Input - right on desktop, top on mobile */}
         <div className="order-1 lg:order-2 lg:w-[400px] lg:flex-shrink-0">
-          <h2
-            className="text-lg font-semibold mb-4"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>
             Ask a Question
           </h2>
           <div
             className="rounded-xl border p-4 lg:sticky lg:top-4"
             style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
           >
-            <QueryInput
-              onSubmit={handleSubmit}
-              loading={submitting}
-              error={submitError}
-            />
+            <QueryInput onSubmit={handleSubmit} loading={submitting} error={submitError ?? error} />
 
             {/* Dedupe notice: the answer came from saved history (no AI call).
                 Offer a one-click fresh run in case the underlying data changed. */}

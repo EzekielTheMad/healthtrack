@@ -30,7 +30,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       alerts: rowsToSnake(rows),
       status: status
-        ? { checked_at: status.checkedAt, has_interactions: status.hasInteractions }
+        ? {
+            checked_at: status.checkedAt,
+            has_interactions: status.hasInteractions,
+            ...(status.aiProvenance ? { ai: status.aiProvenance } : {}),
+          }
         : null,
       snoozed_count: snoozedCount,
     });

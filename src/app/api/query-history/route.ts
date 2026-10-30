@@ -7,12 +7,18 @@ import { requireUser } from '@/lib/auth/session';
 import { errorResponse } from '@/lib/api/respond';
 import { rowsToSnake } from '@/lib/api/snake';
 import { listQueryHistory } from '@/lib/repos/query-history';
+import { CONTEXT_VERSION } from '@/lib/health-context';
 
 export async function GET() {
   try {
     const user = await requireUser();
     const rows = await listQueryHistory(user.id);
-    return NextResponse.json(rowsToSnake(rows));
+    const trusted = rows.filter(
+      (row) =>
+        row.contextMetadata?.context_version === CONTEXT_VERSION &&
+        row.contextMetadata.dependent_id === (row.dependentId ?? null)
+    );
+    return NextResponse.json(rowsToSnake(trusted));
   } catch (error) {
     return errorResponse(error);
   }

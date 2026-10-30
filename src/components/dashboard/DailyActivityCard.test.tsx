@@ -8,10 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import DailyActivityCard, {
-  buildDailyActivity,
-  DAILY_TOTALS_SOURCE,
-} from './DailyActivityCard';
+import DailyActivityCard, { buildDailyActivity, DAILY_TOTALS_SOURCE } from './DailyActivityCard';
 import type { Vital } from '@/lib/types';
 
 function vital(overrides: Partial<Vital> & Pick<Vital, 'metric_key' | 'value'>): Vital {
@@ -96,7 +93,7 @@ describe('DailyActivityCard', () => {
           vital({ metric_key: 'distance', value: 5 }),
           vital({ metric_key: 'active_calories', value: 612 }),
         ]}
-      />,
+      />
     );
     expect(screen.getByText('Daily activity')).toBeInTheDocument();
     expect(screen.getByText('11,240')).toBeInTheDocument();
@@ -107,15 +104,16 @@ describe('DailyActivityCard', () => {
     expect(screen.getByText('Not reported')).toBeInTheDocument();
   });
 
-  it('renders nothing while loading, or with no canonical rows at all', () => {
+  it('renders nothing while loading and accepts a single selected external source', () => {
     const { container: loadingBox } = render(
-      <DailyActivityCard vitals={[vital({ metric_key: 'steps', value: 1 })]} loading />,
+      <DailyActivityCard vitals={[vital({ metric_key: 'steps', value: 1 })]} loading />
     );
     expect(loadingBox).toBeEmptyDOMElement();
 
     const { container: otherSourcesOnly } = render(
-      <DailyActivityCard vitals={[vital({ metric_key: 'steps', value: 9800, source: 'fitbit' })]} />,
+      <DailyActivityCard vitals={[vital({ metric_key: 'steps', value: 9800, source: 'fitbit' })]} />
     );
-    expect(otherSourcesOnly).toBeEmptyDOMElement();
+    expect(otherSourcesOnly).toHaveTextContent('9,800');
+    expect(otherSourcesOnly).toHaveTextContent('fitbit');
   });
 });

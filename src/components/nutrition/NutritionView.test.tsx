@@ -10,6 +10,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import NutritionView, { formatNutrient, type NutritionDay } from './NutritionView';
 import { nutritionSourceLabel } from '@/lib/nutrition/sources';
+const scope = vi.hoisted(() => ({
+  dependentId: null as string | null,
+  delegateOwnerId: null as string | null,
+}));
+vi.mock('@/components/shared/ActiveProfileProvider', () => ({ useActiveProfile: () => scope }));
 
 function day(overrides: Partial<NutritionDay> = {}): NutritionDay {
   return {
@@ -31,19 +36,19 @@ function pendingFetch() {
 }
 
 function jsonFetch(body: unknown, init: { ok?: boolean; status?: number } = {}) {
-  return vi.fn(
-    async (...args: unknown[]): Promise<Response> => {
-      void args;
-      return {
-        ok: init.ok ?? true,
-        status: init.status ?? 200,
-        json: async () => body,
-      } as unknown as Response;
-    },
-  );
+  return vi.fn(async (...args: unknown[]): Promise<Response> => {
+    void args;
+    return {
+      ok: init.ok ?? true,
+      status: init.status ?? 200,
+      json: async () => body,
+    } as unknown as Response;
+  });
 }
 
 beforeEach(() => {
+  scope.dependentId = null;
+  scope.delegateOwnerId = null;
   vi.useFakeTimers({ now: new Date('2026-09-01T18:00:00Z'), shouldAdvanceTime: true });
 });
 
@@ -81,10 +86,13 @@ describe('error state', () => {
   it('never renders "No nutrition data yet" for a 403', async () => {
     vi.stubGlobal(
       'fetch',
-      jsonFetch({ error: 'Insufficient permissions. Required scope: read:nutrition' }, {
-        ok: false,
-        status: 403,
-      }),
+      jsonFetch(
+        { error: 'Insufficient permissions. Required scope: read:nutrition' },
+        {
+          ok: false,
+          status: 403,
+        }
+      )
     );
     render(<NutritionView />);
 
@@ -111,7 +119,7 @@ describe('error state', () => {
       'fetch',
       vi.fn(async () => {
         throw new Error('Failed to fetch');
-      }),
+      })
     );
     render(<NutritionView />);
 
@@ -134,6 +142,33 @@ describe('empty state', () => {
 });
 
 describe('populated state', () => {
+  it('requires a visible source choice before showing competing app totals or averages', async () => {
+    vi.stubGlobal(
+      'fetch',
+      jsonFetch([
+        day({ calories: 2000 }),
+        day({ calories: 9000, source_package: 'com.other.food' }),
+      ])
+    );
+    render(<NutritionView />);
+    expect(
+      await screen.findByText('Choose a nutrition source to see intake and averages.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Avg calories')).toBeNull();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Nutrition source' }), {
+      target: { value: 'com.sbs.diet' },
+    });
+    expect(screen.getAllByText('2000').length).toBeGreaterThan(0);
+    expect(screen.queryByText('9000')).toBeNull();
+  });
+  it('uses the configured calendar and inclusive window boundaries', async () => {
+    vi.setSystemTime(new Date('2026-09-02T03:00:00Z'));
+    const fetcher = jsonFetch([day({ date: '2026-09-01' })]);
+    vi.stubGlobal('fetch', fetcher);
+    render(<NutritionView timeZone="America/Phoenix" />);
+    await screen.findByText('Today');
+    expect(String(fetcher.mock.calls[0][0])).toContain('start_date=2026-08-03&end_date=2026-09-01');
+  });
   it('shows a Today card, the friendly source label, and the history table', async () => {
     vi.stubGlobal(
       'fetch',
@@ -147,7 +182,7 @@ describe('populated state', () => {
           fat_grams: 23.586,
           record_count: 6,
         }),
-      ]),
+      ])
     );
     render(<NutritionView />);
 
@@ -174,9 +209,7 @@ describe('populated state', () => {
   it('renders an unreported nutrient as a dash, not zero', async () => {
     vi.stubGlobal(
       'fetch',
-      jsonFetch([
-        day({ date: '2026-09-01', protein_grams: null, carbs_grams: null, fat_grams: 0 }),
-      ]),
+      jsonFetch([day({ date: '2026-09-01', protein_grams: null, carbs_grams: null, fat_grams: 0 })])
     );
     render(<NutritionView />);
 
@@ -201,6 +234,21 @@ describe('populated state', () => {
     await screen.findByText(/most recent day|today/i);
     fireEvent.click(screen.getByRole('tab', { name: '90 days' }));
     await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
-    expect(String(fetcher.mock.calls[1][0])).toContain('start_date=2026-06-03');
+    expect(String(fetcher.mock.calls[1][0])).toContain('start_date=2026-06-04');
   });
+});
+
+describe('nutrition subject isolation', () => {
+  it.each(['dependent', 'delegate'])(
+    'does not fetch or display owner nutrition in a %s view',
+    async (kind) => {
+      if (kind === 'dependent') scope.dependentId = 'synthetic-child';
+      else scope.delegateOwnerId = 'other-owner';
+      const fetcher = vi.fn();
+      vi.stubGlobal('fetch', fetcher);
+      render(<NutritionView />);
+      expect(screen.getByText('Nutrition unavailable for this person')).toBeInTheDocument();
+      expect(fetcher).not.toHaveBeenCalled();
+    }
+  );
 });

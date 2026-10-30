@@ -1,3 +1,4 @@
+import { seedAiConfiguration } from '@/lib/repos/repo-test-harness';
 // @vitest-environment node
 /**
  * POST /api/v1/health-summary/refresh — PAT-authenticated cache warm.
@@ -59,7 +60,7 @@ function seedCondition() {
   ctx.sqlite
     .prepare(
       `insert into conditions (id, user_id, name, status, created_at, updated_at)
-       values (?, ?, 'Hypertension', 'active', ?, ?)`,
+       values (?, ?, 'Hypertension', 'active', ?, ?)`
     )
     .run(crypto.randomUUID(), OWNER, now, now);
 }
@@ -72,6 +73,7 @@ beforeEach(async () => {
   cacheMod = await import('@/lib/claude/summary-cache');
   dailyRepo = await import('@/lib/repos/daily-summaries');
   insertUser(ctx.sqlite, OWNER);
+  seedAiConfiguration(ctx.sqlite, OWNER);
   captured.calls = 0;
   captured.result = { summary: 'Cron-warmed overview.', highlights: [] };
 });
@@ -108,7 +110,7 @@ describe('POST /api/v1/health-summary/refresh — auth', () => {
 });
 
 describe('POST /api/v1/health-summary/refresh — behavior', () => {
-  it('happy path: regenerates and caches today\'s owner-local row', async () => {
+  it("happy path: regenerates and caches today's owner-local row", async () => {
     seedCondition();
     const res = await route.POST(post(mintApiToken(ctx.sqlite, OWNER, ['write:all'])));
     expect(res.status).toBe(200);
@@ -131,7 +133,7 @@ describe('POST /api/v1/health-summary/refresh — behavior', () => {
   });
 
   it('501 when AI is not configured', async () => {
-    delete process.env.ANTHROPIC_API_KEY;
+    ctx.sqlite.prepare('DELETE FROM ai_settings').run();
     const res = await route.POST(post(mintApiToken(ctx.sqlite, OWNER, ['write:all'])));
     expect(res.status).toBe(501);
   });

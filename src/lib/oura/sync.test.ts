@@ -3,12 +3,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const repoMocks = vi.hoisted(() => ({
   listActiveConnectedSourceUserIds: vi.fn(),
   touchLastSync: vi.fn(),
+  getConnectedSource: vi.fn(),
+  recordConnectedSourceSync: vi.fn(),
+  setConnectedSourceStatus: vi.fn(),
   upsertOwnVital: vi.fn(),
 }));
 
 vi.mock('@/lib/repos/connected-sources', () => ({
   listActiveConnectedSourceUserIds: repoMocks.listActiveConnectedSourceUserIds,
   touchLastSync: repoMocks.touchLastSync,
+  getConnectedSource: repoMocks.getConnectedSource,
+  recordConnectedSourceSync: repoMocks.recordConnectedSourceSync,
+  setConnectedSourceStatus: repoMocks.setConnectedSourceStatus,
 }));
 vi.mock('@/lib/repos/vitals', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/repos/vitals')>();
@@ -19,6 +25,7 @@ import { validateVitalWrite, type UpsertVitalInput } from '@/lib/repos/vitals';
 import { OuraClient, type OuraSleepDoc } from './client';
 import { OURA_LOOKBACK_DAYS, selectLongestSleep, syncOuraData, syncWindow } from './sync';
 import { DEFAULT_HEALTHTRACK_TIMEZONE, getHealthTrackTimeZone } from './timezone';
+import { OuraApiError } from './errors';
 
 const NOW = new Date('2026-09-10T12:00:00Z');
 
@@ -55,6 +62,9 @@ beforeEach(() => {
   vi.restoreAllMocks();
   repoMocks.listActiveConnectedSourceUserIds.mockReset().mockResolvedValue([]);
   repoMocks.touchLastSync.mockReset().mockResolvedValue(undefined);
+  repoMocks.getConnectedSource.mockReset().mockResolvedValue(null);
+  repoMocks.recordConnectedSourceSync.mockReset().mockResolvedValue(undefined);
+  repoMocks.setConnectedSourceStatus.mockReset().mockResolvedValue(undefined);
   repoMocks.upsertOwnVital
     .mockReset()
     .mockImplementation((_database: unknown, _userId: string, input: UpsertVitalInput) => {
@@ -116,6 +126,88 @@ describe('Oura sync window', () => {
 });
 
 describe('Oura canonical mapping and persistence', () => {
+  it('saves available data and records partial permission failure without expiring authorization', async () => {
+    vi.mocked(OuraClient.prototype.getSleepData).mockResolvedValue([sleep()]);
+    vi.mocked(OuraClient.prototype.getDailyResilience).mockRejectedValue(
+      new OuraApiError(401, 'insufficient_scope')
+    );
+
+    const summary = await syncOuraData('user-1', 'valid-access-token', false, NOW);
+
+    expect(summary).toMatchObject({
+      outcome: 'partial',
+      errorCode: 'insufficient_scope',
+      nextRetryAt: null,
+    });
+    expect(summary.synced).toBeGreaterThan(0);
+    expect(summary.errors).toEqual([
+      'Resilience: Oura denied access to one or more data types. Available data can still sync; review the permissions granted to HealthTrack in Oura.',
+    ]);
+    expect(summary.collections).toEqual(
+      expect.arrayContaining([
+        { name: 'Sleep', status: 'success' },
+        { name: 'Resilience', status: 'failed', errorCode: 'insufficient_scope' },
+      ])
+    );
+    expect(repoMocks.upsertOwnVital).toHaveBeenCalledWith(
+      expect.anything(),
+      'user-1',
+      expect.objectContaining({ metricKey: 'sleep_duration', value: 7, source: 'oura' })
+    );
+    expect(repoMocks.setConnectedSourceStatus).not.toHaveBeenCalled();
+    expect(repoMocks.touchLastSync).not.toHaveBeenCalled();
+    expect(repoMocks.recordConnectedSourceSync).toHaveBeenLastCalledWith(
+      'user-1',
+      'oura',
+      expect.objectContaining({ outcome: 'partial', errorCode: 'insufficient_scope' })
+    );
+  });
+
+  it('persists partial failure without advancing full success', async () => {
+    vi.mocked(OuraClient.prototype.getDailySleep).mockRejectedValue(
+      new OuraApiError(503, 'provider_unavailable')
+    );
+    const summary = await syncOuraData('user-1', 'access-token', false, NOW);
+    expect(summary.outcome).toBe('partial');
+    expect(repoMocks.touchLastSync).not.toHaveBeenCalled();
+    expect(repoMocks.recordConnectedSourceSync).toHaveBeenLastCalledWith(
+      'user-1',
+      'oura',
+      expect.objectContaining({ outcome: 'partial', errorCode: 'provider_unavailable' })
+    );
+  });
+
+  it('marks repeated terminal authorization failures and retains rate-limit deadlines', async () => {
+    vi.mocked(OuraClient.prototype.getDailySleep).mockRejectedValue(
+      new OuraApiError(401, 'auth_required')
+    );
+    const auth = await syncOuraData('user-1', 'access-token', false, NOW);
+    expect(auth.errorCode).toBe('auth_required');
+    expect(repoMocks.setConnectedSourceStatus).toHaveBeenCalledWith('user-1', 'oura', 'expired');
+    vi.mocked(OuraClient.prototype.getDailySleep).mockRejectedValue(
+      new OuraApiError(429, 'rate_limited', '2026-10-24T00:00:00Z')
+    );
+    const limited = await syncOuraData('user-1', 'access-token', false, NOW);
+    expect(limited.nextRetryAt).toBe('2026-10-24T00:00:00Z');
+  });
+
+  it('coalesces manual and scheduled work for one user', async () => {
+    let resolve!: (rows: OuraSleepDoc[]) => void;
+    vi.mocked(OuraClient.prototype.getSleepData).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        })
+    );
+    const first = syncOuraData('same-user', 'access-token', false, NOW);
+    const second = syncOuraData('same-user', 'access-token', false, NOW);
+    expect(second).toBe(first);
+    await vi.waitFor(() => expect(resolve).toBeTypeOf('function'));
+    resolve([]);
+    await first;
+    expect(repoMocks.recordConnectedSourceSync).toHaveBeenCalledTimes(2); // start + finish, one run
+  });
+
   it('persists minute metrics with canonical units and ordinal resilience', async () => {
     vi.mocked(OuraClient.prototype.getSleepData).mockResolvedValue([
       sleep({ time_in_bed: 28_800, latency: 900 }),

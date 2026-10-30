@@ -12,6 +12,8 @@ import { upsertConnectedSource } from '@/lib/repos/connected-sources';
 import { getProfile, upsertProfile } from '@/lib/repos/profiles';
 
 const STATE_COOKIE = 'oura_oauth_state';
+const SETTINGS_URL = '/settings?tab=integrations';
+const settingsError = (reason: string) => `${SETTINGS_URL}&oura=error&reason=${reason}#oura`;
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
@@ -20,35 +22,47 @@ export async function GET(request: NextRequest) {
 
   // Clear the state cookie regardless of outcome so it can't be replayed.
   const cookieStore = await cookies();
-  const expectedState = cookieStore.get(STATE_COOKIE)?.value;
-  if (expectedState) {
-    cookieStore.delete(STATE_COOKIE);
+  const storedState = cookieStore.get(STATE_COOKIE)?.value;
+  const issuedState = parseIssuedState(storedState);
+  if (storedState !== undefined) {
+    // Cookie deletion must match the path used by /start. Deleting by name
+    // alone expires a different cookie at Path=/.
+    cookieStore.set(STATE_COOKIE, '', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/oura',
+      maxAge: 0,
+    });
   }
 
   // Navigation route: unconfigured Oura redirects with a readable reason
   // instead of the 501 JSON the fetch-based Oura routes return.
   if (!getCapabilities().oura) {
-    redirect('/settings?oura=error&reason=config_error');
+    redirect(settingsError('config_error'));
   }
 
   if (errorParam) {
-    redirect(`/settings?oura=error&reason=${encodeURIComponent(errorParam)}`);
+    redirect(settingsError(errorParam === 'access_denied' ? 'access_denied' : 'provider_error'));
   }
 
   if (!code) {
-    redirect('/settings?oura=error&reason=missing_code');
+    redirect(settingsError('missing_code'));
   }
 
   // CSRF check: state must match the value we set when starting the flow.
   // Use a constant-time compare to avoid timing attacks.
-  if (!state || !expectedState || !timingSafeEqualStr(state, expectedState)) {
-    redirect('/settings?oura=error&reason=invalid_state');
+  if (!state || !issuedState || !timingSafeEqualStr(state, issuedState.state)) {
+    redirect(settingsError('invalid_state'));
   }
 
   // Authenticate the current user
   const user = await getUser();
   if (!user) {
-    redirect('/login?redirect=/settings');
+    redirect(`/login?redirect=${encodeURIComponent(`${SETTINGS_URL}#oura`)}`);
+  }
+  if (user.id !== issuedState.userId) {
+    redirect(settingsError('invalid_state'));
   }
 
   // Exchange authorization code for tokens
@@ -63,30 +77,71 @@ export async function GET(request: NextRequest) {
     redirect_uri: getOuraRedirectUri(),
   });
 
-  const tokenRes = await fetch(tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: body.toString(),
-  });
+  let tokenRes: Response | undefined;
+  let exchangeError: string | null = null;
+  try {
+    tokenRes = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (error) {
+    exchangeError =
+      error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
+        ? 'timeout'
+        : 'network_error';
+    safeError('Oura token exchange request failed');
+  }
+  if (exchangeError) redirect(settingsError(exchangeError));
+  if (!tokenRes) redirect(settingsError('token_exchange_failed'));
 
   if (!tokenRes.ok) {
     safeError(`Oura token exchange failed: ${tokenRes.status}`);
-    redirect('/settings?oura=error&reason=token_exchange_failed');
+    redirect(settingsError('token_exchange_failed'));
   }
 
-  const tokenData = (await tokenRes.json()) as {
-    access_token: string;
-    refresh_token: string;
-    expires_in: number;
-    token_type: string;
-  };
+  let tokenBody: unknown;
+  try {
+    tokenBody = await tokenRes.json();
+  } catch (error) {
+    exchangeError =
+      error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
+        ? 'timeout'
+        : error instanceof TypeError
+          ? 'network_error'
+          : 'invalid_response';
+    safeError('Oura token exchange returned invalid JSON');
+  }
+  if (exchangeError) redirect(settingsError(exchangeError));
+  const tokenData = tokenBody as
+    | {
+        access_token: string;
+        refresh_token: string;
+        expires_in: number;
+      }
+    | null
+    | undefined;
+  const expiresAt =
+    typeof tokenData?.expires_in === 'number' ? Date.now() + tokenData.expires_in * 1000 : NaN;
+  if (
+    !tokenData ||
+    typeof tokenData.access_token !== 'string' ||
+    !tokenData.access_token.trim() ||
+    typeof tokenData.refresh_token !== 'string' ||
+    !tokenData.refresh_token.trim() ||
+    typeof tokenData.expires_in !== 'number' ||
+    !Number.isFinite(tokenData.expires_in) ||
+    tokenData.expires_in <= 0 ||
+    !Number.isFinite(new Date(expiresAt).getTime())
+  ) {
+    redirect(settingsError('invalid_response'));
+  }
 
   // Encrypt tokens before storage
   const accessTokenEncrypted = encrypt(tokenData.access_token);
   const refreshTokenEncrypted = encrypt(tokenData.refresh_token);
-  const tokenExpiresAt = new Date(
-    Date.now() + tokenData.expires_in * 1000,
-  ).toISOString();
+  const tokenExpiresAt = new Date(expiresAt).toISOString();
 
   // Upsert connected source (owner-only repo; resets status + last_sync_at)
   try {
@@ -97,7 +152,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     safeError('Failed to save Oura tokens', err);
-    redirect('/settings?oura=error&reason=save_failed');
+    redirect(settingsError('save_failed'));
   }
 
   // Auto-fill missing profile fields from Oura personal info
@@ -112,11 +167,7 @@ export async function GET(request: NextRequest) {
     if (profile) {
       const updates: Record<string, unknown> = {};
 
-      // Convert Oura age to approximate date_of_birth (Jan 1 of birth year)
-      if (!profile.dateOfBirth && personalInfo.age > 0) {
-        const birthYear = new Date().getFullYear() - personalInfo.age;
-        updates.dateOfBirth = `${birthYear}-01-01`;
-      }
+      // Age does not establish an exact birth date. Leave unknown DOB for manual entry.
 
       // Convert kg to lbs (1 kg = 2.20462 lbs)
       if (!profile.weightLbs && personalInfo.weight > 0) {
@@ -139,14 +190,45 @@ export async function GET(request: NextRequest) {
 
   // Run backfill sync before redirecting so the dashboard has data when the
   // user lands back on /settings.
+  let initialSync: 'success' | 'empty' | 'partial' | 'failed' = 'failed';
   try {
-    await syncOuraData(user.id, tokenData.access_token, true);
+    const summary = await syncOuraData(user.id, tokenData.access_token, true);
+    initialSync =
+      summary.outcome === 'success'
+        ? summary.synced === 0
+          ? 'empty'
+          : 'success'
+        : summary.outcome === 'partial'
+          ? 'partial'
+          : 'failed';
   } catch (err) {
     safeError('Oura backfill sync failed', err);
     // Connection succeeded even if backfill fails — user can "Sync Now" later
   }
 
-  redirect('/settings?oura=connected');
+  redirect(`${SETTINGS_URL}&oura=connected&initial_sync=${initialSync}#oura`);
+}
+
+function parseIssuedState(value: string | undefined): { state: string; userId: string } | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      'state' in parsed &&
+      typeof parsed.state === 'string' &&
+      parsed.state &&
+      'userId' in parsed &&
+      typeof parsed.userId === 'string' &&
+      parsed.userId
+    ) {
+      return { state: parsed.state, userId: parsed.userId };
+    }
+  } catch {
+    // Legacy bare-state and malformed cookies require a fresh authorization.
+  }
+  return null;
 }
 
 function timingSafeEqualStr(a: string, b: string): boolean {

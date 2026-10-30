@@ -32,8 +32,6 @@ export function useRecentWorkouts(options: {
 
   useEffect(() => {
     if (!enabled) {
-      setSessions(NO_SESSIONS);
-      setLoading(false);
       return;
     }
 
@@ -60,5 +58,5 @@ export function useRecentWorkouts(options: {
     };
   }, [enabled, from, dependentId, delegateOwnerId]);
 
-  return { sessions, loading };
+  return { sessions: enabled ? sessions : NO_SESSIONS, loading: enabled && loading };
 }

@@ -41,6 +41,8 @@ export function useDelegates() {
   }, []);
 
   useEffect(() => {
+    // Initialize the external delegate lists; this reusable action also updates loading state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchDelegates();
   }, [fetchDelegates]);
 
@@ -72,87 +74,74 @@ export function useDelegates() {
         return null;
       }
     },
-    [],
+    []
   );
 
-  const acceptDelegate = useCallback(
-    async (id: string): Promise<boolean> => {
-      setError(null);
-      try {
-        const res = await fetch('/api/delegates', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, action: 'accept' }),
-        });
+  const acceptDelegate = useCallback(async (id: string): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await fetch('/api/delegates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'accept' }),
+      });
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.message || 'Failed to accept invitation');
-        }
-
-        const updated: Delegate = await res.json();
-        setReceivedDelegates((prev) =>
-          prev.map((d) => (d.id === id ? updated : d)),
-        );
-        return true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to accept invitation');
-        return false;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to accept invitation');
       }
-    },
-    [],
-  );
 
-  const rejectDelegate = useCallback(
-    async (id: string): Promise<boolean> => {
-      setError(null);
-      try {
-        const res = await fetch('/api/delegates', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, action: 'reject' }),
-        });
+      const updated: Delegate = await res.json();
+      setReceivedDelegates((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to accept invitation');
+      return false;
+    }
+  }, []);
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.message || 'Failed to reject invitation');
-        }
+  const rejectDelegate = useCallback(async (id: string): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await fetch('/api/delegates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, action: 'reject' }),
+      });
 
-        const updated: Delegate = await res.json();
-        setReceivedDelegates((prev) =>
-          prev.map((d) => (d.id === id ? updated : d)),
-        );
-        return true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to reject invitation');
-        return false;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to reject invitation');
       }
-    },
-    [],
-  );
 
-  const revokeDelegate = useCallback(
-    async (id: string): Promise<boolean> => {
-      setError(null);
-      try {
-        const res = await fetch(`/api/delegates?id=${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        });
+      const updated: Delegate = await res.json();
+      setReceivedDelegates((prev) => prev.map((d) => (d.id === id ? updated : d)));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to reject invitation');
+      return false;
+    }
+  }, []);
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.message || 'Failed to revoke delegate');
-        }
+  const revokeDelegate = useCallback(async (id: string): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/delegates?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
 
-        setSentDelegates((prev) => prev.filter((d) => d.id !== id));
-        return true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to revoke delegate');
-        return false;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to revoke delegate');
       }
-    },
-    [],
-  );
+
+      setSentDelegates((prev) => prev.filter((d) => d.id !== id));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to revoke delegate');
+      return false;
+    }
+  }, []);
 
   const updatePermission = useCallback(
     async (id: string, permission_level: DelegatePermissionLevel): Promise<boolean> => {
@@ -170,16 +159,14 @@ export function useDelegates() {
         }
 
         const updated: Delegate = await res.json();
-        setSentDelegates((prev) =>
-          prev.map((d) => (d.id === id ? updated : d)),
-        );
+        setSentDelegates((prev) => prev.map((d) => (d.id === id ? updated : d)));
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update permission');
         return false;
       }
     },
-    [],
+    []
   );
 
   return {

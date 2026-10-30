@@ -11,9 +11,38 @@
  * Strictly owner-scoped: dismissals are UI preferences on the owner's own AI
  * summary card (no dependent/delegate surface).
  */
-import { sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, unique } from 'drizzle-orm/sqlite-core';
 import { user } from './auth';
 import { uuidPk, timestampNow } from './_shared';
+
+/** Secrets never leave the server; drafts expire and are excluded from exports. */
+export const aiSettings = sqliteTable('ai_settings', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  revision: text('revision').notNull(),
+  provider: text('provider'),
+  encryptedKey: text('encrypted_key'),
+  primaryModel: text('primary_model'),
+  extractionModel: text('extraction_model'),
+  modelsJson: text('models_json').notNull().default('[]'),
+  testedAt: text('tested_at'),
+  updatedAt: text('updated_at').notNull(),
+});
+export const aiSettingDrafts = sqliteTable('ai_setting_drafts', {
+  userId: text('user_id')
+    .primaryKey()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  id: text('id').notNull().unique(),
+  baseRevision: text('base_revision').notNull(),
+  provider: text('provider').notNull(),
+  encryptedKey: text('encrypted_key').notNull(),
+  modelsJson: text('models_json').notNull().default('[]'),
+  testId: text('test_id'),
+  testedSelection: text('tested_selection'),
+  testedAt: text('tested_at'),
+  expiresAt: integer('expires_at').notNull(),
+});
 
 /**
  * daily_summaries — precomputed cache for the dashboard AI Health Overview.
@@ -48,7 +77,7 @@ export const dailySummaries = sqliteTable(
     /** Reasoning model id used to generate it. */
     model: text('model').notNull(),
   },
-  (t) => [unique('daily_summaries_user_date_unique').on(t.userId, t.summaryDate)],
+  (t) => [unique('daily_summaries_user_date_unique').on(t.userId, t.summaryDate)]
 );
 
 export const aiLabWarningDismissals = sqliteTable(
@@ -59,11 +88,12 @@ export const aiLabWarningDismissals = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     /** Normalized lab test name (lowercased, trimmed) the warning cites. */
+    contextVersion: integer('context_version').notNull().default(0),
     warningKey: text('warning_key').notNull(),
     /** Latest lab_visits.visit_date at dismissal time (YYYY-MM-DD). */
     labVisitDate: text('lab_visit_date').notNull(),
     createdAt: timestampNow('created_at'),
     updatedAt: timestampNow('updated_at'),
   },
-  (t) => [unique('ai_lab_warning_dismissals_user_key_unique').on(t.userId, t.warningKey)],
+  (t) => [unique('ai_lab_warning_dismissals_user_key_unique').on(t.userId, t.warningKey)]
 );

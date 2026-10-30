@@ -4,6 +4,7 @@ import Link from "next/link";
 import { authClient } from "@/lib/auth/client";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
+import { safeReturnTo } from '@/lib/auth/return-to';
 
 type AuthMode = "login" | "signup";
 
@@ -14,9 +15,11 @@ interface LoginFormProps {
   signupPolicy: "open" | "invite" | "closed";
   /** ?invite= token from an invite link, if any. */
   inviteToken: string | null;
+  returnTo?: string;
 }
 
-export default function LoginForm({ googleEnabled, signupPolicy, inviteToken }: LoginFormProps) {
+export default function LoginForm({ googleEnabled, signupPolicy, inviteToken, returnTo }: LoginFormProps) {
+  const destination = safeReturnTo(returnTo);
   const [mode, setMode] = useState<AuthMode>("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -54,7 +57,7 @@ export default function LoginForm({ googleEnabled, signupPolicy, inviteToken }: 
     setLoadingProvider(provider);
     const { error: oauthError } = await authClient.signIn.social({
       provider,
-      callbackURL: "/dashboard",
+      callbackURL: destination,
     });
     if (oauthError) {
       setError(oauthError.message ?? "Google sign-in failed.");
@@ -96,7 +99,7 @@ export default function LoginForm({ googleEnabled, signupPolicy, inviteToken }: 
     // Better Auth signs the user in on both flows (no email confirmation
     // step on a self-hosted instance). Full navigation so the proxy sees
     // the fresh session cookie.
-    window.location.href = "/dashboard";
+    window.location.href = destination;
   }
 
   const isLoading = loadingProvider !== null;

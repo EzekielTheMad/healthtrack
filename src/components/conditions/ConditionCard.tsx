@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatDateOnly } from '@/lib/dates';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { conditionSchema, type ConditionFormValues } from '@/lib/validations';
@@ -16,7 +17,10 @@ const STATUS_CONFIG: Record<ConditionStatus, { label: string; color: string; bg:
 
 interface ConditionCardProps {
   condition: Condition;
-  onUpdate: (id: string, updates: Partial<Omit<Condition, 'id' | 'user_id' | 'created_at' | 'updated_at'>>) => Promise<void>;
+  onUpdate: (
+    id: string,
+    updates: Partial<Omit<Condition, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
+  ) => Promise<void>;
 }
 
 export default function ConditionCard({ condition, onUpdate }: ConditionCardProps) {
@@ -69,12 +73,17 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
   if (editing) {
     return (
       <div
+        id={`record-${condition.id}`}
         className="rounded-xl border p-4 space-y-4"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <label htmlFor={`edit-name-${condition.id}`} className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+            <label
+              htmlFor={`edit-name-${condition.id}`}
+              className="block text-sm font-medium mb-1"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               Name
             </label>
             <input
@@ -82,21 +91,37 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
               type="text"
               {...register('name')}
               className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
-              style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-card)', color: 'var(--color-text-primary)' }}
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: 'var(--border-card)',
+                color: 'var(--color-text-primary)',
+              }}
               aria-invalid={errors.name ? 'true' : undefined}
             />
-            {errors.name && <p className="text-xs mt-1" style={{ color: 'var(--color-terracotta)' }}>{errors.name.message}</p>}
+            {errors.name && (
+              <p className="text-xs mt-1" style={{ color: 'var(--color-terracotta)' }}>
+                {errors.name.message}
+              </p>
+            )}
           </div>
 
           <div>
-            <label htmlFor={`edit-status-${condition.id}`} className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+            <label
+              htmlFor={`edit-status-${condition.id}`}
+              className="block text-sm font-medium mb-1"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               Status
             </label>
             <select
               id={`edit-status-${condition.id}`}
               {...register('status')}
               className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
-              style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-card)', color: 'var(--color-text-primary)' }}
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: 'var(--border-card)',
+                color: 'var(--color-text-primary)',
+              }}
             >
               <option value="active">Active</option>
               <option value="resolved">Resolved</option>
@@ -106,7 +131,11 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
           </div>
 
           <div>
-            <label htmlFor={`edit-date-${condition.id}`} className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+            <label
+              htmlFor={`edit-date-${condition.id}`}
+              className="block text-sm font-medium mb-1"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               Diagnosed Date
             </label>
             <input
@@ -114,20 +143,28 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
               type="date"
               {...register('diagnosed_date')}
               className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
-              style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-card)', color: 'var(--color-text-primary)' }}
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: 'var(--border-card)',
+                color: 'var(--color-text-primary)',
+              }}
               aria-invalid={errors.diagnosed_date ? 'true' : undefined}
             />
-            {errors.diagnosed_date && <p className="text-xs mt-1" style={{ color: 'var(--color-terracotta)' }}>{errors.diagnosed_date.message}</p>}
+            {errors.diagnosed_date && (
+              <p className="text-xs mt-1" style={{ color: 'var(--color-terracotta)' }}>
+                {errors.diagnosed_date.message}
+              </p>
+            )}
           </div>
 
-          <ProviderPicker
-            value={editProviderId}
-            onChange={setEditProviderId}
-            label="Provider"
-          />
+          <ProviderPicker value={editProviderId} onChange={setEditProviderId} label="Provider" />
 
           <div>
-            <label htmlFor={`edit-notes-${condition.id}`} className="block text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>
+            <label
+              htmlFor={`edit-notes-${condition.id}`}
+              className="block text-sm font-medium mb-1"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               Notes
             </label>
             <textarea
@@ -136,7 +173,11 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
               onChange={(e) => setEditNotes(e.target.value)}
               rows={3}
               className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none resize-none"
-              style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-card)', color: 'var(--color-text-primary)' }}
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: 'var(--border-card)',
+                color: 'var(--color-text-primary)',
+              }}
             />
           </div>
 
@@ -145,7 +186,12 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
               type="submit"
               disabled={saving}
               className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
-              style={{ background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))', color: 'white', boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)' }}
+              style={{
+                background:
+                  'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+                color: 'white',
+                boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)',
+              }}
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -153,7 +199,11 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
               type="button"
               onClick={() => setEditing(false)}
               className="px-4 py-2 rounded-lg border text-sm font-medium"
-              style={{ border: '2px solid var(--color-soft-peach)', color: 'var(--color-bark)', backgroundColor: 'var(--color-cream)' }}
+              style={{
+                border: '2px solid var(--color-soft-peach)',
+                color: 'var(--color-bark)',
+                backgroundColor: 'var(--color-cream)',
+              }}
             >
               Cancel
             </button>
@@ -165,6 +215,7 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
 
   return (
     <div
+      id={`record-${condition.id}`}
       className="rounded-xl border p-4"
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
     >
@@ -184,21 +235,27 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
 
           {condition.diagnosed_date && (
             <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
-              Diagnosed: {new Date(condition.diagnosed_date).toLocaleDateString()}
+              Diagnosed: {formatDateOnly(condition.diagnosed_date)}
             </p>
           )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
           <div className="relative">
-            <label htmlFor={`status-change-${condition.id}`} className="sr-only">Change status</label>
+            <label htmlFor={`status-change-${condition.id}`} className="sr-only">
+              Change status
+            </label>
             <select
               id={`status-change-${condition.id}`}
               value={condition.status}
               onChange={(e) => handleStatusChange(e.target.value as ConditionStatus)}
               disabled={saving}
               className="text-xs px-2 py-1 rounded-lg border appearance-none pr-6 focus:outline-none"
-              style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-card)', color: 'var(--color-text-muted)' }}
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                borderColor: 'var(--border-card)',
+                color: 'var(--color-text-muted)',
+              }}
               aria-label="Change condition status"
             >
               <option value="active">Active</option>

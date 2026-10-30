@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useOffline } from '@/hooks/useOffline';
 
 export function OfflineIndicator() {
-  const { isOnline, pendingActions, syncNow } = useOffline();
+  const { isOnline, pendingActions } = useOffline();
   const [showReconnected, setShowReconnected] = useState(false);
 
   // The offline banner is derived directly from isOnline. The transient
@@ -16,7 +16,6 @@ export function OfflineIndicator() {
     const handleOnline = () => {
       // Just came back online
       setShowReconnected(true);
-      syncNow();
       timer = setTimeout(() => setShowReconnected(false), 3000);
     };
 
@@ -32,7 +31,7 @@ export function OfflineIndicator() {
       window.removeEventListener('offline', handleOffline);
       if (timer) clearTimeout(timer);
     };
-  }, [syncNow]);
+  }, []);
 
   const reconnected = isOnline && showReconnected;
 
@@ -57,13 +56,13 @@ export function OfflineIndicator() {
   return (
     <div style={bannerStyle} role="status" aria-live="polite">
       {reconnected ? (
-        'Back online — syncing...'
+        'Back online — reload to see current records'
       ) : (
         <>
-          You&apos;re offline — changes will sync when reconnected
+          You&apos;re offline — reconnect before saving changes
           {pendingActions > 0 && (
             <span style={{ marginLeft: 12, fontWeight: 600 }}>
-              {pendingActions} pending change{pendingActions !== 1 ? 's' : ''}
+              {pendingActions} legacy draft{pendingActions !== 1 ? 's' : ''} retained; automatic replay disabled
             </span>
           )}
         </>
