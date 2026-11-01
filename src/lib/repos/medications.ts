@@ -6,7 +6,7 @@
  *   match; delegates read (read_only+), insert/update (read_write+), delete
  *   (admin). Unfiltered listings ('all') are owner/delegate only.
  */
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { medications } from '@/db/schema';
@@ -56,6 +56,7 @@ export async function listMedications(
     .where(
       and(
         eq(medications.userId, scope.ownerId),
+        sql`NOT EXISTS(SELECT 1 FROM clinical_records hf WHERE hf.user_id=${medications.userId} AND hf.dependent_id IS ${medications.dependentId} AND hf.legacy_table='medications' AND hf.legacy_id=${medications.id})`,
         dependentFilter(medications.dependentId, scope.dependentId),
         opts.active === undefined ? undefined : eq(medications.active, opts.active)
       )

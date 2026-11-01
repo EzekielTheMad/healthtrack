@@ -272,7 +272,7 @@ export async function stageImportBatch(
   dependentId: string | null,
   input: {
     hash: string;
-    kind: 'labs' | 'medical_history' | 'vaccines';
+    kind: 'labs' | 'medical_history' | 'vaccines' | 'clinical_labs';
     name: string;
     sourcePath?: string | null;
     warnings?: string[];
@@ -549,6 +549,10 @@ export async function commitImportBatch(
     throw new FitnessWriteError('Each item may have only one decision.');
   const batch = loadBatch(userId, id);
   await authorize(userId, batch.dependent_id);
+  if (batch.kind === 'clinical_labs')
+    throw new FitnessWriteError(
+      'This document retains typed source evidence. Approve its exact clinical preview in Clinical history; numeric import decisions cannot commit it.'
+    );
   const sqlite = getSqlite();
   sqlite
     .transaction(() => {

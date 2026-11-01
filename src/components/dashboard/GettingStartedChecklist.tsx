@@ -113,7 +113,7 @@ export default function GettingStartedChecklist({
     },
     {
       id: 'vital',
-      label: 'Record a vital sign',
+      label: 'Record a vital sign or body scan',
       href: '/vitals',
       complete: vitalCount > 0,
     },

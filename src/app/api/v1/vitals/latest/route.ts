@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
 import { getMetric } from '@/lib/metrics/registry';
 import { listVitals, type VitalRow } from '@/lib/repos/vitals';
+import { typedVitalLatest } from '@/lib/fidelity/vitals-typed';
+import { errorResponse } from '@/lib/api/respond';
 
 const MAX_METRICS = 25;
 
@@ -38,6 +40,15 @@ export async function GET(request: NextRequest) {
   const ctx = await validateApiKey(request.headers.get('Authorization'));
   if (!ctx) return unauthorized();
   if (!hasScope(ctx, 'read:vitals')) return forbidden('read:vitals');
+  if (
+    request.nextUrl.searchParams.get('format') === 'typed' &&
+    (request.nextUrl.searchParams.has('owner_id') ||
+      request.nextUrl.searchParams.has('dependent_id'))
+  )
+    return Response.json(
+      { error: 'Typed PAT vitals access is self-scoped.' },
+      { status: 400, headers: corsHeaders }
+    );
 
   const raw = request.nextUrl.searchParams.get('metrics');
   const metrics = (raw ?? '')
@@ -71,6 +82,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const out: Record<string, ReturnType<typeof toWire> | null> = {};
+    const typedRows: Record<string, VitalRow | null> = {};
     for (const metricKey of [...new Set(metrics)]) {
       const rows = await listVitals(
         ctx.userId,
@@ -78,9 +90,21 @@ export async function GET(request: NextRequest) {
         { metricKey, limit: 1 }
       );
       out[metricKey] = rows[0] ? toWire(rows[0]) : null;
+      typedRows[metricKey] = rows[0] ?? null;
     }
+    if (request.nextUrl.searchParams.get('format') === 'typed')
+      return Response.json(
+        await typedVitalLatest(
+          ctx.userId,
+          typedRows,
+          [...new Set(metrics)],
+          request.nextUrl.searchParams.get('source') ?? undefined
+        ),
+        { headers: corsHeaders }
+      );
     return Response.json(out, { headers: corsHeaders });
   } catch (error) {
+    if (request.nextUrl.searchParams.get('format') === 'typed') return errorResponse(error);
     // Never reflect internal error details to API clients (respond.ts policy).
     console.error('v1 vitals latest GET error:', error);
     return Response.json({ error: 'internal_error' }, { status: 500, headers: corsHeaders });

@@ -49,6 +49,51 @@ afterEach(() => {
 });
 
 describe('selected profile demographics', () => {
+  it('treats only the authenticated owner self 404 as an incomplete profile without creating one', async () => {
+    vi.mocked(apiFetch).mockRejectedValueOnce(new ApiRequestError('Profile not found', 404));
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current).toMatchObject({ profile: null, missing: true, error: null });
+    expect(vi.mocked(apiFetch).mock.calls).toEqual([['/api/profile']]);
+  });
+  it.each([
+    new ApiRequestError('Profile not found', 401),
+    new ApiRequestError('Profile not found', 403),
+    new ApiRequestError('Profile not found', 500),
+    new Error('Profile not found'),
+  ])(
+    'keeps status/network failures unknown rather than treating their message as a missing profile',
+    async (failure) => {
+      vi.mocked(apiFetch).mockRejectedValueOnce(failure);
+      const { result } = renderHook(() => useProfile());
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(result.current).toMatchObject({
+        profile: null,
+        missing: false,
+        error: 'Profile not found',
+      });
+    }
+  );
+  it('retains a delegated 404 as unavailable and never falls back to the actor profile', async () => {
+    selected.delegateOwnerId = 'delegated-owner';
+    vi.mocked(apiFetch).mockRejectedValueOnce(new ApiRequestError('Not found', 404));
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current).toMatchObject({ profile: null, missing: false, error: 'Not found' });
+    expect(vi.mocked(apiFetch).mock.calls).toEqual([['/api/profile?owner_id=delegated-owner']]);
+  });
+  it('clears the missing state only after an explicitly saved owner profile succeeds', async () => {
+    vi.mocked(apiFetch)
+      .mockRejectedValueOnce(new ApiRequestError('Profile not found', 404))
+      .mockResolvedValueOnce(owner);
+    const { result } = renderHook(() => useProfile());
+    await waitFor(() => expect(result.current.missing).toBe(true));
+    expect(vi.mocked(apiFetch)).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await result.current.updateProfile({ display_name: owner.display_name });
+    });
+    expect(result.current).toMatchObject({ profile: owner, missing: false, error: null });
+  });
   it('hides owner demographics on the first child render and never copies owner height or weight', async () => {
     let resolveDependents!: (value: Dependent[]) => void;
     vi.mocked(apiFetch)

@@ -102,7 +102,7 @@ describe('ordinary website workflows in Android', () => {
     expect(screen.getByRole('region', { name: 'Lab upload' })).toBeInTheDocument();
     expect(screen.getByLabelText('Choose report')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Cancel$/ }));
-    expect(screen.getByText('No lab results yet')).toBeInTheDocument();
+    expect(screen.getByText('No numeric lab results in this view')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /in browser/i })).not.toBeInTheDocument();
   });
 

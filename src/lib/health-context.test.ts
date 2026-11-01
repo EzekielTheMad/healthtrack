@@ -25,17 +25,196 @@ afterEach(() => {
 });
 
 describe('shared health facts and doctor summary', () => {
+  it('uses the latest draw across legacy and typed-only labs in doctor summaries', async () => {
+    const labs = await import('./repos/labs');
+    const clinical = await import('./fidelity/clinical');
+    const scope = { ownerId: OWNER, dependentId: null };
+    await labs.createLabVisitWithResults(OWNER, scope, {
+      visitDate: '2026-01-01',
+      results: [{ testName: 'Fictional mixed analyte', value: 7, unit: 'mg/L' }],
+    });
+    const preview = await clinical.stageClinicalIntake(OWNER, scope, {
+      external_id: 'mixed-latest',
+      items: [
+        {
+          item_key: 'one',
+          action: 'add',
+          reason: 'Separate fictional October draw',
+          fact: {
+            kind: 'lab',
+            test_name: 'Fictional mixed analyte',
+            source_unit: 'mg/L',
+            outcome: { kind: 'censored', value: 5, comparator: '<' },
+            raw_result: '<5',
+            collection_date: { precision: 'day', value: '2026-10-01' },
+            provenance: { basis: 'source_reported' },
+          },
+        },
+      ],
+    });
+    const result = await clinical.approveClinicalIntake(OWNER, preview.id, {
+      version: preview.version,
+      digest: preview.digest,
+    });
+    expect(result.counts.created).toBe(1);
+    const { buildDoctorSummary } = await import('./doctor-summary');
+    const summary = await buildDoctorSummary(OWNER);
+    expect(summary.labResults).toHaveLength(0);
+    expect(summary.typedClinical?.filter((r) => r.fact.kind === 'lab')).toHaveLength(1);
+    await labs.createLabVisitWithResults(OWNER, scope, {
+      visitDate: '2026-10-01',
+      results: [{ testName: 'Fictional mixed analyte', value: 6, unit: 'mg/L' }],
+    });
+    expect((await buildDoctorSummary(OWNER)).labResults?.map((r) => r.value)).toEqual([6]);
+    await labs.createLabVisitWithResults(OWNER, scope, {
+      visitDate: '2026-10-02',
+      results: [{ testName: 'Fictional mixed analyte', value: 4, unit: 'mg/L' }],
+    });
+    const newest = await buildDoctorSummary(OWNER);
+    expect(newest.labResults?.map((r) => r.value)).toEqual([4]);
+    expect(newest.typedClinical?.filter((r) => r.fact.kind === 'lab')).toHaveLength(0);
+  });
+  it('never exposes a superseded legacy numeric result as current and retains explicit conflict evidence', async () => {
+    const labs = await import('./repos/labs');
+    const clinical = await import('./fidelity/clinical');
+    const visit = await labs.createLabVisitWithResults(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      {
+        visitDate: '2026-10-30',
+        results: [{ testName: 'Fictional overlay analyte', value: 7, unit: 'mg/L' }],
+      }
+    );
+    const before = (
+      await clinical.listClinicalFacts(
+        OWNER,
+        { ownerId: OWNER, dependentId: null },
+        { kind: 'lab' }
+      )
+    ).find((r) => r.legacy)!;
+    const fact = {
+      kind: 'lab',
+      test_name: 'Fictional overlay analyte',
+      outcome: { kind: 'censored', value: 5, comparator: '<' },
+      raw_result: '<5.00',
+      source_unit: 'mg/L',
+      collection_date: { precision: 'day', value: '2026-10-30' },
+      reference: { text: 'Not established' },
+      printed_flags: [],
+      provenance: { basis: 'source_reported' },
+    };
+    const preview = await clinical.stageClinicalIntake(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      {
+        external_id: 'overlay-summary',
+        items: [
+          {
+            item_key: 'one',
+            action: 'correct',
+            target_id: before.id,
+            expected_revision: before.revision,
+            reason: 'Fictional source correction',
+            fact,
+          },
+        ],
+      }
+    );
+    await clinical.approveClinicalIntake(OWNER, preview.id, {
+      version: preview.version,
+      digest: preview.digest,
+    });
+    const { buildHealthContext, contextForPrompt } = await import('./health-context');
+    const { buildDoctorSummary } = await import('./doctor-summary');
+    const snapshot = await buildHealthContext(OWNER, null, 30, new Date('2026-10-31T19:00:00Z'));
+    expect(snapshot.facts.labs).toHaveLength(0);
+    expect(snapshot.facts.clinical_records).toHaveLength(1);
+    expect(contextForPrompt(snapshot).lab_results_data).toContain('"comparator":"<"');
+    const summary = await buildDoctorSummary(OWNER);
+    expect(summary.labResults).toHaveLength(0);
+    expect(summary.typedClinical?.[0].fact).toMatchObject({
+      raw_result: '<5.00',
+      reference: { text: 'Not established' },
+    });
+    await labs.updateLabVisit(OWNER, visit.id, {
+      results: [{ id: visit.labResults[0].id, value: 9 }],
+      reason: 'Fictional changed original evidence',
+    });
+    const changed = await buildHealthContext(OWNER, null, 30, new Date('2026-10-31T19:00:00Z'));
+    expect(changed.fingerprint).not.toBe(snapshot.fingerprint);
+    expect(changed.facts.labs).toHaveLength(0);
+    expect(changed.facts.clinical_records).toHaveLength(2);
+    expect(changed.coverage.warnings.join(' ')).toContain('require review');
+  });
+  it('keeps scan source/precision/evidence consistent and changes cache fingerprints after new scans', async () => {
+    const { createBodyScan } = await import('./fidelity/scans');
+    const { buildHealthContext, contextForPrompt } = await import('./health-context');
+    const scope = { ownerId: OWNER, dependentId: null };
+    const input = {
+      external_id: 'one',
+      source: 'Fictional A',
+      manufacturer: 'Synthetic',
+      model: 'BIA-A',
+      method: 'bia',
+      measured_at: { precision: 'day', value: '2026-10-30' },
+      measurements: [{ metric_key: 'skeletal_muscle_mass', value: 31.2345, unit: 'kg' }],
+      provenance: { basis: 'source_reported', sources: [{ reference: 'Fictional report' }] },
+    };
+    await createBodyScan(OWNER, scope, input);
+    const before = await buildHealthContext(OWNER, null, 30, new Date('2026-10-31T19:00:00Z'));
+    await createBodyScan(OWNER, scope, { ...input, external_id: 'two', source: 'Fictional B' });
+    await createBodyScan(
+      OWNER,
+      { ownerId: OWNER, dependentId: dep },
+      { ...input, external_id: 'child', source: 'Child-only source' }
+    );
+    const after = await buildHealthContext(OWNER, null, 30, new Date('2026-10-31T19:00:00Z'));
+    expect(after.fingerprint).not.toBe(before.fingerprint);
+    expect(after.facts.body_scans).toHaveLength(2);
+    expect(JSON.stringify(after)).not.toContain('Child-only source');
+    expect(after.facts.scan_selection.policy).toBe('choice_required');
+    expect(after.evidence.filter((e) => e.domain === 'scans')).toHaveLength(2);
+    expect(contextForPrompt(after).vitals_data).toContain('source_value');
+    const { setVitalSourcePreference } = await import('./repos/vitals');
+    await setVitalSourcePreference(OWNER, 'skeletal_muscle_mass', 'Fictional A');
+    const { buildDoctorSummary } = await import('./doctor-summary');
+    const summary = await buildDoctorSummary(OWNER);
+    expect(summary.bodyScans).toHaveLength(1);
+    expect(summary.bodyScans![0].scan.source).toBe('Fictional A');
+  });
   it('keeps native source identity and a readable package in app/API facts, evidence and doctor summaries', async () => {
     const source = 'hc:oXVka5w7YY-FL02zOl40n0VlJa6EoQFoRj6bZIpcjh0';
     const { createVital } = await import('./repos/vitals');
-    await createVital(OWNER, { ownerId: OWNER, dependentId: null }, { metricKey: 'weight', value: 180, unit: 'lbs', source, recordedAt: '2026-10-22T00:00:00Z', metadata: { health_connect: true, source_package: 'com.example.scale' } });
+    await createVital(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      {
+        metricKey: 'weight',
+        value: 180,
+        unit: 'lbs',
+        source,
+        recordedAt: '2026-10-22T00:00:00Z',
+        metadata: { health_connect: true, source_package: 'com.example.scale' },
+      }
+    );
     const { buildHealthContext, contextForPrompt } = await import('./health-context');
     const snapshot = await buildHealthContext(OWNER, null, 30, new Date('2026-10-23T20:00:00Z'));
-    expect(snapshot.facts.vitals[0]).toMatchObject({ source, source_label: 'Health Connect · com.example.scale' });
-    expect(snapshot.evidence.find((item) => item.domain === 'vitals')).toMatchObject({ source, source_label: 'Health Connect · com.example.scale' });
-    expect(contextForPrompt(snapshot, 'weight').vitals_data).toContain('Health Connect · com.example.scale');
+    expect(snapshot.facts.vitals[0]).toMatchObject({
+      source,
+      source_label: 'Health Connect · com.example.scale',
+    });
+    expect(snapshot.evidence.find((item) => item.domain === 'vitals')).toMatchObject({
+      source,
+      source_label: 'Health Connect · com.example.scale',
+    });
+    expect(contextForPrompt(snapshot, 'weight').vitals_data).toContain(
+      'Health Connect · com.example.scale'
+    );
     const { buildDoctorSummary } = await import('./doctor-summary');
-    expect((await buildDoctorSummary(OWNER)).vitals?.[0]).toMatchObject({ source, source_label: 'Health Connect · com.example.scale' });
+    expect((await buildDoctorSummary(OWNER)).vitals?.[0]).toMatchObject({
+      source,
+      source_label: 'Health Connect · com.example.scale',
+    });
   });
   it('uses the configured local day for true intraday observations and validates references', async () => {
     vi.stubEnv('TZ', 'America/Phoenix');

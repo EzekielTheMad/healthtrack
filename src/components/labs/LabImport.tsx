@@ -4,6 +4,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import type { ParsedLabResult } from '@/lib/claude/parse-lab';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
+import { useRouter } from 'next/navigation';
 
 interface LabImportProps {
   onParsed: (results: ParsedLabResult, storagePath: string) => void;
@@ -14,16 +15,20 @@ const ACCEPTED_TYPES = ['application/pdf', 'image/png', 'image/jpeg'];
 
 export default function LabImport({ onParsed }: LabImportProps) {
   const { dependentId, delegateOwnerId } = useActiveProfile();
+  const router = useRouter();
+  const [typed, setTyped] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retainedDocument, setRetainedDocument] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback(
     async (file: File) => {
       setError(null);
+      setRetainedDocument(null);
       if (delegateOwnerId) {
         setError('Only the patient profile owner can import lab documents.');
         return;
@@ -50,18 +55,26 @@ export default function LabImport({ onParsed }: LabImportProps) {
         setUploading(false);
         setParsing(true);
 
-        const res = await fetch('/api/parse-lab-pdf', {
+        const res = await fetch('/api/parse-lab-pdf' + (typed ? '?format=typed' : ''), {
           method: 'POST',
           body: formData,
         });
 
         if (!res.ok) {
           const body = await res.json().catch(() => null);
+          if (typed && typeof body?.document_id === 'string') setRetainedDocument(body.document_id);
           const msg = body?.message ?? `Upload failed (${res.status})`;
           throw new Error(msg);
         }
 
-        const { parsed, storagePath } = (await res.json()) as {
+        const response = await res.json();
+        if (response.typed) {
+          const query = new URLSearchParams({ document_id: response.document_id });
+          if (response.clinical_batch_id) query.set('batch_id', response.clinical_batch_id);
+          router.push('/clinical-intake?' + query);
+          return;
+        }
+        const { parsed, storagePath } = response as {
           parsed: ParsedLabResult;
           storagePath: string;
         };
@@ -80,7 +93,7 @@ export default function LabImport({ onParsed }: LabImportProps) {
         setParsing(false);
       }
     },
-    [onParsed, dependentId, delegateOwnerId]
+    [onParsed, dependentId, delegateOwnerId, typed, router]
   );
 
   const handleDrop = useCallback(
@@ -105,6 +118,35 @@ export default function LabImport({ onParsed }: LabImportProps) {
 
   return (
     <div className="space-y-4">
+      {retainedDocument && (
+        <a
+          className="underline text-sm"
+          href={'/clinical-intake?document_id=' + encodeURIComponent(retainedDocument)}
+        >
+          Open retained source and extraction status
+        </a>
+      )}
+      <label
+        className="flex items-start gap-2 rounded-lg border p-3 text-sm"
+        style={{ borderColor: 'var(--border-card)' }}
+      >
+        <input
+          type="checkbox"
+          checked={typed}
+          disabled={isProcessing}
+          onChange={(event) => setTyped(event.target.checked)}
+        />
+        <span>
+          <strong>Typed clinical document review</strong> — preserve qualitative, censored and
+          canceled results, partial dates and printed evidence. An owner approves the exact preview
+          before accepted records change.
+        </span>
+      </label>
+      <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+        {typed
+          ? 'AI extraction may incur provider charges. Limits: 10 MB per PDF/image, 100 staged results and 2,000 retained extracted rows (512 KiB) per review. This single-pass lab extractor does not certify complete page coverage; split large histories. Unsupported rows remain held; the original is retained.'
+          : 'Legacy numeric-only review omits qualitative/canceled results and holds thresholds for correction. Enable typed review for full supported outcome types.'}
+      </p>
       <div
         onDragOver={(e) => {
           e.preventDefault();

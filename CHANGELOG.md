@@ -2,6 +2,28 @@
 
 All notable changes to HealthTrack are documented here for GitHub releases.
 
+## 2.1.0-alpha.1 — next-release fidelity candidate (unpublished)
+
+- Typed numeric, qualitative, censored and canceled labs retain source units,
+  comparators, reference evidence, printed/derived flags and honest date precision.
+- Structured medication/supplement courses separate strength, amount, prescribed
+  directions, reported use and explicitly reported administration/missed/skip events.
+- New clinical API intake stages an exact preview for owner approval in the app;
+  corrections retain prior source values and audits. New grants are explicit;
+  historical wildcard/device tokens cannot silently gain these write capabilities.
+- Identified body scans retain same-day repeats, raw units, source/device/method
+  and known conditions. Seven core mass/water/area metrics, manual/JSON entry,
+  bounded typed metadata and source-aware comparisons preserve estimate labels.
+- Context, doctor PDF inputs and owned exports retain typed evidence. Current
+  numeric projections omit explicitly superseded legacy values with coverage
+  warnings; changed records prevent stale cached/in-flight answers.
+- Additive migration `0017_fidelity_contracts` preserves legacy records. Restore
+  requires the matching pre-upgrade image/data/keys/configuration pair; preserve
+  subsequent writes before rollback. See [next-release notes](docs/NEXT-RELEASE.md).
+
+This is a local development candidate. Full-app/recovery/review evidence and
+separate publication/deployment authorization are required; v2 gates remain open.
+
 ## 2.0.0 — release candidate (unpublished)
 
 ### Added

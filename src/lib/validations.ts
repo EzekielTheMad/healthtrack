@@ -172,7 +172,9 @@ export const dependentSchema = z.object({
       },
       { message: 'Date cannot be in the future' }
     ),
-  biological_sex: z.enum(['male', 'female']).optional(),
+  biological_sex: z
+    .enum(['male', 'female'], { error: 'Choose Male, Female, or Prefer not to say.' })
+    .nullish(),
   relationship: z.enum(dependentRelationships),
   transition_age: z.number().int().min(13).max(25),
 });

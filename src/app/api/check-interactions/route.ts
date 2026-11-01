@@ -23,6 +23,7 @@ import { AI_INTERACTION_DISCLAIMER } from '@/lib/ai-disclaimer';
 import { z } from 'zod';
 import { NotFoundError } from '@/lib/authz';
 import { errorResponse } from '@/lib/api/respond';
+import { listClinicalFacts } from '@/lib/fidelity/clinical';
 
 const DISCLAIMER = AI_INTERACTION_DISCLAIMER;
 const bodySchema = z
@@ -70,6 +71,20 @@ export async function POST(request: NextRequest) {
       throw new NotFoundError();
     const scope = { ownerId: user.id, dependentId: body.dependent_id ?? null };
     const rows = await listMedications(user.id, scope, { active: true });
+    const typed = await listClinicalFacts(user.id, scope, { kind: 'medication', limit: 1000 });
+    if (
+      typed.some(
+        (record) =>
+          !record.legacy &&
+          record.fact.kind === 'medication' &&
+          (record.legacy_conflict || ['active', 'unconfirmed'].includes(record.fact.status))
+      )
+    )
+      return apiError(
+        409,
+        'structured_regimen_review_required',
+        'Structured medication history is available in Clinical history. This legacy interaction check cannot establish a complete result. Review the full prescribed and reported-use record with a clinician.'
+      );
     const selectedIds = new Set(rows.map((row) => row.id));
     if (
       [...(body.medication_ids ?? []), ...(trigger_id ? [trigger_id] : [])].some(

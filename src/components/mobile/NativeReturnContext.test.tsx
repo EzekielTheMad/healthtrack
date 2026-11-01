@@ -1,6 +1,6 @@
 // @vitest-environment-options {"url":"https://synthetic.invalid"}
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { ActiveProfileProvider, useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import { AndroidModeProvider, nativeActionHref, useNativeActionHref } from './AndroidMode';
 import BrowserSubjectGate from './BrowserSubjectGate';
@@ -157,7 +157,10 @@ describe('returning from native screens', () => {
     );
     view();
     expect(screen.queryByTestId('records')).not.toBeInTheDocument();
-    resolve({ ok: true, json: async () => [{ id: 'child', name: 'Synthetic child' }] });
+    await waitFor(() => expect(resolve).toBeDefined());
+    await act(async () =>
+      resolve({ ok: true, json: async () => [{ id: 'child', name: 'Synthetic child' }] })
+    );
     expect(await screen.findByTestId('records')).toHaveTextContent('child');
     const next = returnUrl(
       screen.getByRole('link', { name: 'Save on this phone' }).getAttribute('href')

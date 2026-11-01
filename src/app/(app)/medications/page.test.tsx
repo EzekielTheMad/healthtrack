@@ -7,6 +7,8 @@ import type { Medication } from '@/lib/types';
 
 vi.mock('@/hooks/useInteractionAlerts', () => ({ useInteractionAlerts: vi.fn() }));
 vi.mock('@/hooks/useMedications', () => ({ useMedications: vi.fn() }));
+// Detailed HF history has its own request/profile tests; this suite isolates interaction refresh.
+vi.mock('@/components/clinical-intake/ClinicalRecordsPanel', () => ({ default: () => null }));
 vi.mock('@/hooks/useCapabilities', () => ({
   useCapabilities: () => ({ capabilities: { ai: true } }),
 }));

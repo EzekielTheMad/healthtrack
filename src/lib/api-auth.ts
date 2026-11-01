@@ -73,10 +73,13 @@ export async function validateApiKey(authHeader: string | null): Promise<ApiKeyC
 
 /**
  * Check whether a context has a given scope.
- * `read:all` and `write:all` grant all read/write respectively.
+ * `read:all` grants all reads. `write:all` covers legacy writes; the new
+ * clinical-intake and scan capabilities require their explicit grants.
  */
 export function hasScope(ctx: ApiKeyContext, required: string): boolean {
   if (ctx.scopes.includes(required)) return true;
+  // HF capabilities are opt-in. Historical broad/device grants gain no new mutations.
+  if (required === 'write:clinical_intake' || required === 'write:scans') return false;
   if (required.startsWith('read:') && ctx.scopes.includes('read:all')) return true;
   if (required.startsWith('write:') && ctx.scopes.includes('write:all')) return true;
   return false;

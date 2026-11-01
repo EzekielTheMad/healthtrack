@@ -21,6 +21,7 @@ import {
 import { scheduleAfterResponse } from '@/lib/api/after';
 import { buildHealthContext, CONTEXT_VERSION } from '@/lib/health-context';
 import { listLabWarningDismissals, latestLabVisitDate } from '@/lib/repos/lab-warning-dismissals';
+import { FitnessConflictError } from '@/lib/repos/_fitness';
 
 interface SummaryMeta {
   cached: boolean;
@@ -158,6 +159,8 @@ export async function GET(request: NextRequest) {
       config
     );
   } catch (err) {
+    if (err instanceof FitnessConflictError)
+      return apiError(409, 'health_records_changed', err.message);
     if (err instanceof AiError) return apiError(err.status, `ai_${err.code}`, err.message);
     safeError('Health summary error', err);
     return apiError(500, 'internal_error', 'Failed to generate health summary');

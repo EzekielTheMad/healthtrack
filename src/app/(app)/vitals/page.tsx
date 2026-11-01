@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Suspense, useMemo, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useVitals } from '@/hooks/useVitals';
 import { useActiveGoals } from '@/hooks/useActiveGoals';
@@ -163,6 +164,14 @@ function VitalsPageContent() {
         </button>
       </div>
 
+      <Link
+        href="/scans"
+        className="inline-flex min-h-11 items-center rounded-lg border px-4 text-sm"
+        style={{ borderColor: 'var(--border-card)', color: 'var(--color-sage)' }}
+      >
+        Body composition scans — reports, devices and same-day sessions
+      </Link>
+
       {/* View toggle: Focus (default) | Daily | All metrics | Measurements */}
       <div
         className="inline-flex flex-wrap items-center gap-1 rounded-lg border p-1"
@@ -216,7 +225,13 @@ function VitalsPageContent() {
               None connected
             </span>
           ) : (
-            connectedSources.map((src) => <SourceBadge key={src} source={src} metadata={rawVitals.find((row) => row.source === src)?.metadata} />)
+            connectedSources.map((src) => (
+              <SourceBadge
+                key={src}
+                source={src}
+                metadata={rawVitals.find((row) => row.source === src)?.metadata}
+              />
+            ))
           )}
         </div>
       )}
@@ -243,7 +258,9 @@ function VitalsPageContent() {
         <SourcePreferencesPanel
           conflicts={sourceConflicts}
           preferences={sourcePreferences}
-          labels={Object.fromEntries(rawVitals.map((row) => [row.source, vitalSourceLabel(row.source, row.metadata)]))}
+          labels={Object.fromEntries(
+            rawVitals.map((row) => [row.source, vitalSourceLabel(row.source, row.metadata)])
+          )}
           onChoose={chooseSource}
           error={sourcePreferenceError}
           disabled={!canChooseSource}

@@ -43,23 +43,28 @@ export function useDependents() {
 
   const addDependent = useCallback(async (values: DependentFormValues) => {
     setError(null);
-    const res = await fetch('/api/dependents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
-    });
-    if (!res.ok) {
-      setError(await readError(res));
+    try {
+      const res = await fetch('/api/dependents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+      });
+      if (!res.ok) {
+        setError(await readError(res));
+        return undefined;
+      }
+      const data = (await res.json()) as Dependent;
+      setDependents((prev) => [data, ...prev]);
+      return data;
+    } catch {
+      setError('Failed to add dependent. Your entered values are still available.');
       return undefined;
     }
-    const data = (await res.json()) as Dependent;
-    setDependents((prev) => [data, ...prev]);
-    return data;
   }, []);
 
-  const updateDependent = useCallback(
-    async (id: string, updates: Partial<DependentFormValues>) => {
-      setError(null);
+  const updateDependent = useCallback(async (id: string, updates: Partial<DependentFormValues>) => {
+    setError(null);
+    try {
       const res = await fetch('/api/dependents', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -67,13 +72,16 @@ export function useDependents() {
       });
       if (!res.ok) {
         setError(await readError(res));
-        return;
+        return undefined;
       }
       const data = (await res.json()) as Dependent;
       setDependents((prev) => prev.map((d) => (d.id === id ? data : d)));
-    },
-    [],
-  );
+      return data;
+    } catch {
+      setError('Failed to update dependent. Your entered values are still available.');
+      return undefined;
+    }
+  }, []);
 
   const deleteDependent = useCallback(async (id: string) => {
     setError(null);
@@ -88,11 +96,14 @@ export function useDependents() {
   }, []);
 
   const getAge = useCallback((dependent: Dependent): number => {
-    const dob = new Date(dependent.date_of_birth);
+    const [birthYear, birthMonth, birthDay] = dependent.date_of_birth
+      .slice(0, 10)
+      .split('-')
+      .map(Number);
     const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const monthDiff = today.getMonth() - dob.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    let age = today.getFullYear() - birthYear;
+    const monthDiff = today.getMonth() + 1 - birthMonth;
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDay)) {
       age--;
     }
     return age;
@@ -103,7 +114,7 @@ export function useDependents() {
       if (dependent.transitioned) return false;
       return getAge(dependent) >= dependent.transition_age;
     },
-    [getAge],
+    [getAge]
   );
 
   return {

@@ -73,6 +73,15 @@ export async function POST(request: Request) {
     }
     const metadata = { ...queryContextMetadata(snapshot), ai: provenance };
     assertCurrentAiConfiguration(config);
+    if (
+      (await buildHealthContext(user.id, body.dependent_id ?? null, body.days)).fingerprint !==
+      snapshot.fingerprint
+    )
+      return apiError(
+        409,
+        'health_records_changed',
+        'Health records changed while answering. Ask again using the current record.'
+      );
     const responseText = `${validateAnswerReferences(answer, snapshot.evidence)}\n\n⚠️ ${AI_DISCLAIMER}`;
     try {
       const saved = await createQueryHistoryEntry(user.id, {

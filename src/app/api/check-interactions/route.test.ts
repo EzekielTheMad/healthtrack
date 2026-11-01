@@ -101,6 +101,40 @@ async function previousOwnerWarning() {
 }
 
 describe('interaction checks isolate the selected patient', () => {
+  it('never returns a legacy-only all-clear when structured current/uncertain medication records exist', async () => {
+    const clinical = await import('@/lib/fidelity/clinical');
+    const preview = await clinical.stageClinicalIntake(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      {
+        external_id: 'typed-regimen',
+        items: [
+          {
+            item_key: 'one',
+            action: 'add',
+            fact: {
+              kind: 'medication',
+              name: 'Fictional structured course',
+              status: 'unconfirmed',
+              prescribed_directions: 'Recorded directions',
+              patient_reported_use: 'Different reported use',
+              provenance: { basis: 'patient_reported' },
+            },
+          },
+        ],
+      }
+    );
+    await clinical.approveClinicalIntake(OWNER, preview.id, {
+      version: preview.version,
+      digest: preview.digest,
+    });
+    const response = await route.POST(post({}));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: 'structured_regimen_review_required',
+    });
+    expect(checkAI).not.toHaveBeenCalled();
+  });
   it('defaults to owner medicines and never sends dependent medicines to AI', async () => {
     expect((await route.POST(post({}))).status).toBe(200);
     const sent = checkAI.mock.calls[0][0] as Medication[];

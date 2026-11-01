@@ -120,6 +120,13 @@
       "when": 1793305801000,
       "tag": "0016_trusted_ai_context",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1793487600000,
+      "tag": "0017_fidelity_contracts",
+      "breakpoints": true
     }
   ]
 }

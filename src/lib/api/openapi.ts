@@ -8,6 +8,7 @@
  */
 import { AVAILABLE_SCOPES } from '@/lib/api-scopes';
 import { healthConnectEnvelopeSchema } from './health-connect-openapi';
+import { FIDELITY_PATHS, FIDELITY_SCHEMAS, FIDELITY_FORMAT_PARAMETER } from './fidelity-openapi';
 
 const SCOPE_DOC = AVAILABLE_SCOPES.map((s) => `- \`${s.value}\` — ${s.description}`).join('\n');
 
@@ -24,16 +25,26 @@ const AUTH_ERRORS = {
 } as const;
 
 function listOperation(summary: string, scope: string, parameters?: unknown[]) {
+  const clinical = scope === 'read:labs' || scope === 'read:medications';
   return {
     summary,
-    description: `Requires scope \`${scope}\` (or \`read:all\`).`,
-    ...(parameters ? { parameters } : {}),
+    description: `Requires scope \`${scope}\` (or \`read:all\`).${clinical ? ' Use format=typed for full outcomes/history. Default legacy projection omits explicitly superseded current records with X-HealthTrack-Clinical-Coverage and Link headers; unchanged records retain their existing shape.' : ''}`,
+    ...(parameters || clinical
+      ? { parameters: [...(parameters ?? []), ...(clinical ? [FIDELITY_FORMAT_PARAMETER] : [])] }
+      : {}),
     responses: {
       '200': {
         description: 'JSON array of records (snake_case fields)',
         content: {
           'application/json': {
-            schema: { type: 'array', items: { type: 'object' } },
+            schema: clinical
+              ? {
+                  anyOf: [
+                    { type: 'array', items: { type: 'object' } },
+                    { $ref: '#/components/schemas/ClinicalHistory' },
+                  ],
+                }
+              : { type: 'array', items: { type: 'object' } },
           },
         },
       },
@@ -98,6 +109,7 @@ export const OPENAPI_DOCUMENT = {
       },
     },
     schemas: {
+      ...FIDELITY_SCHEMAS,
       Error: {
         type: 'object',
         properties: { error: { type: 'string' } },
@@ -789,6 +801,7 @@ export const OPENAPI_DOCUMENT = {
     },
   },
   paths: {
+    ...FIDELITY_PATHS,
     '/api/v1/mobile/state': {
       get: {
         summary: 'Paired Android device state and live offline subject grants',
@@ -988,8 +1001,22 @@ export const OPENAPI_DOCUMENT = {
     },
     '/api/v1/labs': {
       get: listOperation('List lab results', 'read:labs', [
-        { name: 'test', in: 'query', required: false, schema: { type: 'string' } },
-        { name: 'days', in: 'query', required: false, schema: { type: 'integer' } },
+        {
+          name: 'test',
+          in: 'query',
+          required: false,
+          schema: { type: 'string' },
+          description:
+            'Case-insensitive analyte-name substring, applied before the history limit in both formats.',
+        },
+        {
+          name: 'days',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer' },
+          description:
+            'Legacy format only. format=typed returns 400 if days is supplied because partial/unknown collection dates cannot safely be treated as exact dates. Typed history explicitly retains that uncertainty.',
+        },
       ]),
     },
     '/api/v1/procedures': {
@@ -1258,6 +1285,7 @@ export const OPENAPI_DOCUMENT = {
         summary: 'List vital signs',
         description: 'Requires scope `read:vitals` (or `read:all`).',
         parameters: [
+          FIDELITY_FORMAT_PARAMETER,
           { name: 'metric', in: 'query', required: false, schema: { type: 'string' } },
           { name: 'days', in: 'query', required: false, schema: { type: 'integer' } },
           {
@@ -1286,7 +1314,12 @@ export const OPENAPI_DOCUMENT = {
             description: 'Vitals, recorded_at descending',
             content: {
               'application/json': {
-                schema: { type: 'array', items: { $ref: '#/components/schemas/Vital' } },
+                schema: {
+                  anyOf: [
+                    { type: 'array', items: { $ref: '#/components/schemas/Vital' } },
+                    { $ref: '#/components/schemas/TypedVitalHistory' },
+                  ],
+                },
               },
             },
           },
@@ -1362,6 +1395,7 @@ export const OPENAPI_DOCUMENT = {
           'newest reading of each requested metric; metrics with no data map ' +
           'to null. Metric keys must exist in the registry (max 25 per call).',
         parameters: [
+          FIDELITY_FORMAT_PARAMETER,
           {
             name: 'metrics',
             in: 'query',
@@ -1372,10 +1406,15 @@ export const OPENAPI_DOCUMENT = {
         ],
         responses: {
           '200': jsonResponse('Object keyed by metric_key', {
-            type: 'object',
-            additionalProperties: {
-              oneOf: [{ $ref: '#/components/schemas/Vital' }, { type: 'null' }],
-            },
+            anyOf: [
+              {
+                type: 'object',
+                additionalProperties: {
+                  oneOf: [{ $ref: '#/components/schemas/Vital' }, { type: 'null' }],
+                },
+              },
+              { $ref: '#/components/schemas/TypedVitalLatest' },
+            ],
           }),
           ...VALIDATION_400,
           ...AUTH_ERRORS,

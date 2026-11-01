@@ -11,6 +11,7 @@ import {
 import { upsertCachedSummary } from '@/lib/repos/daily-summaries';
 import { listActiveInteractionAlerts } from '@/lib/repos/interaction-alerts';
 import { listGoals } from '@/lib/repos/goals';
+import { FitnessConflictError } from '@/lib/repos/_fitness';
 
 export function ownerLocalDayKey(now = new Date()): string {
   return calendarDayInTimeZone(now, getHealthTrackTimeZone());
@@ -29,7 +30,8 @@ export function hasSummaryData(input: HealthSummaryInput): boolean {
     input.recentLabFlags.length > 0 ||
     input.vitals.length > 0 ||
     !!input.recentWorkouts?.length ||
-    !!input.nutritionContext
+    !!input.nutritionContext ||
+    !!input.fidelityContext
   );
 }
 export async function buildSummaryInputForUser(userId: string): Promise<HealthSummaryInput> {
@@ -75,6 +77,14 @@ export async function buildSummaryInputForUser(userId: string): Promise<HealthSu
       .filter((w) => new Date(w.started_at).getTime() >= Date.now() - 14 * 86400000)
       .map((w) => ({ type: w.type, label: w.label, startedAt: w.started_at })),
     nutritionContext: f.nutrition.length ? JSON.stringify(f.nutrition) : undefined,
+    fidelityContext:
+      f.clinical_records.length || f.body_scans.length
+        ? JSON.stringify({
+            clinical_records: f.clinical_records,
+            body_scans: f.body_scans,
+            scan_selection: f.scan_selection,
+          })
+        : undefined,
     contextMetadata,
   };
 }
@@ -91,6 +101,12 @@ export async function generateAndCacheSummary(
   if (!hasSummaryData(input)) return { summary: WELCOME_SUMMARY, cached: false };
   const generated = await generateHealthSummary(input, config);
   assertCurrentAiConfiguration(config);
+  if (
+    (await buildHealthContext(userId, null, 365)).fingerprint !== input.contextMetadata?.fingerprint
+  )
+    throw new FitnessConflictError(
+      'Health records changed while generating the summary. Refresh to use the current record.'
+    );
   const summary = {
     ...generated,
     contextMetadata: { ...input.contextMetadata!, ai: aiProvenance(config) },

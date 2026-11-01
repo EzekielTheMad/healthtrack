@@ -18,6 +18,7 @@ export interface HealthSummaryInput {
     end_date?: string | null;
   }>;
   nutritionContext?: string;
+  fidelityContext?: string;
   contextMetadata?: import('@/lib/health-context-types').QueryContextMetadata;
   conditions: Array<{ name: string }>;
   recentLabFlags: Array<{
@@ -106,13 +107,21 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
     );
   if (input.nutritionContext)
     parts.push(`Nutrition (separate daily source snapshots): ${input.nutritionContext}`);
+  if (input.fidelityContext)
+    parts.push(
+      `Typed clinical and scan evidence: ${input.fidelityContext}. Preserve outcome comparators/raw units/date precision and source/device boundaries. Prescribed and actual use differ. Unconfirmed status is not current use; missing events are not missed doses. Conflicts require review. Scan muscle/water compartments overlap, and estimates are not measured tissue gains.`
+    );
 
   if (input.medications.length > 0) {
     parts.push(
       `Active medications (${input.medications.length}): ${input.medications.map((m) => m.name).join(', ')}`
     );
   } else {
-    parts.push('No active medications recorded.');
+    parts.push(
+      input.fidelityContext
+        ? 'No active medications in the legacy projection; consult the typed clinical history and its status/uncertainty.'
+        : 'No active medications recorded.'
+    );
   }
 
   if (input.conditions.length > 0) {

@@ -20,7 +20,10 @@ import type { HealthContext } from '@/lib/claude/query';
 
 const { authState, captured } = vi.hoisted(() => ({
   authState: { userId: null as string | null },
-  captured: { context: null as HealthContext | null },
+  captured: {
+    context: null as HealthContext | null,
+    duringAnswer: null as null | (() => Promise<void>),
+  },
 }));
 
 vi.mock('@/lib/auth/session', () => {
@@ -44,6 +47,7 @@ vi.mock('@/lib/claude/query', async (importOriginal) => {
     ...actual,
     queryHealthData: async (_question: string, context: HealthContext) => {
       captured.context = context;
+      await captured.duringAnswer?.();
       return 'mock answer';
     },
   };
@@ -67,6 +71,7 @@ beforeEach(async () => {
   seedAiConfiguration(ctx.sqlite, OWNER);
   authState.userId = OWNER;
   captured.context = null;
+  captured.duringAnswer = null;
 });
 
 afterEach(() => {
@@ -115,6 +120,20 @@ function dayISO(daysAgo: number): string {
 }
 
 describe('POST /api/health-query — vitals scope (I1)', () => {
+  it('does not save or return a stale answer after records change during generation', async () => {
+    captured.duringAnswer = async () => {
+      const { createMedication } = await import('@/lib/repos/medications');
+      await createMedication(
+        OWNER,
+        { ownerId: OWNER, dependentId: null },
+        { name: 'Fictional concurrent course' }
+      );
+    };
+    const response = await route.POST(post({ query: 'What is recorded?', days: 90 }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: 'health_records_changed' });
+    expect(ctx.sqlite.prepare('SELECT count(*) n FROM query_history').get()).toEqual({ n: 0 });
+  });
   it("system prompt reflects only the owner's vitals, never a dependent's", async () => {
     const depId = crypto.randomUUID();
     insertDependent(ctx.sqlite, depId, OWNER);
@@ -159,7 +178,7 @@ describe('POST /api/health-query — vitals scope (I1)', () => {
     const first = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
     expect(first.status).toBe(200);
     const saved = await first.json();
-    expect(saved.context_metadata.context_version).toBe(2);
+    expect(saved.context_metadata.context_version).toBe(3);
     captured.context = null;
     const repeat = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
     expect((await repeat.json()).reused).toBe(true);

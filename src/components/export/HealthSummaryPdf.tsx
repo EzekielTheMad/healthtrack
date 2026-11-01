@@ -1,6 +1,12 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import { Children } from 'react';
 import { formatDateOnly, formatVitalDateLong } from '@/lib/dates';
+import type { BodyScan, FidelityRecord } from '@/lib/fidelity/contracts';
+import {
+  clinicalSummaryRow,
+  scanSummaryRow,
+  type FidelitySummaryRow,
+} from '@/lib/fidelity/presentation';
 
 const colors = {
   sage: '#81B29A',
@@ -179,6 +185,8 @@ function severityBadgeStyle(severity: string) {
 // ---------------------------------------------------------------------------
 
 export interface HealthSummaryPdfProps {
+  typedClinical?: FidelityRecord[];
+  bodyScans?: BodyScan[];
   timezone?: string;
   profile: {
     display_name: string;
@@ -245,6 +253,40 @@ function SectionBlock({ title, children }: { title: string; children: React.Reac
   );
 }
 
+function FidelitySection({ title, rows }: { title: string; rows: FidelitySummaryRow[] }) {
+  if (!rows.length) return null;
+  // Detailed rows can span pages. A clipped table around the whole history
+  // corrupts split-row layout and can hide text even when PDF extraction finds it.
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader} wrap={false} minPresenceAhead={45}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      {rows.map((row) => (
+        <View
+          key={row.id}
+          style={{ padding: 8, borderBottomWidth: 1, borderBottomColor: colors.lightGray }}
+        >
+          <Text
+            orphans={2}
+            widows={2}
+            style={[styles.tableCell, { fontFamily: 'Helvetica-Bold', marginBottom: 3 }]}
+          >
+            {row.title}
+            {'\n'}
+            <Text style={{ fontFamily: 'Helvetica' }}>{row.date}</Text>
+          </Text>
+          {row.lines.map((line, index) => (
+            <Text key={index} style={[styles.tableCell, { marginTop: 2 }]}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 function MedicationsSection({
   medications,
 }: {
@@ -253,7 +295,7 @@ function MedicationsSection({
   if (!medications?.length) {
     return (
       <SectionBlock title="Medications">
-        <Text style={styles.emptyText}>No medications recorded.</Text>
+        <Text style={styles.emptyText}>No medications in the standard list. Detailed medication courses and reported dose events appear in the clinical history section when available.</Text>
       </SectionBlock>
     );
   }
@@ -385,13 +427,20 @@ function VitalsSection({
 function LabResultsSection({ labResults }: { labResults: HealthSummaryPdfProps['labResults'] }) {
   if (!labResults?.length) {
     return (
-      <SectionBlock title="Lab Results (Latest per test)">
-        <Text style={styles.emptyText}>No lab results recorded.</Text>
+      <SectionBlock title="Exact numeric labs (latest collection day)">
+        <Text style={styles.emptyText}>
+          No current legacy numeric results. Qualified and typed results appear in the clinical
+          section below.
+        </Text>
       </SectionBlock>
     );
   }
   return (
-    <SectionBlock title="Lab Results (Latest per test)">
+    <SectionBlock title="Exact numeric labs (latest collection day)">
+      <Text style={styles.emptyText}>
+        Latest collection days are selected across legacy and typed results. See the clinical
+        section for qualified results and uncertain history.
+      </Text>
       <View style={styles.tableHeader}>
         <Text style={[styles.tableHeaderCell, { flex: 3 }]}>Test</Text>
         <Text style={[styles.tableHeaderCell, { flex: 2 }]}>Value</Text>
@@ -510,6 +559,8 @@ export default function HealthSummaryPdf({
   vaccines,
   warnings,
   timezone,
+  typedClinical = [],
+  bodyScans = [],
 }: HealthSummaryPdfProps) {
   const generatedDate = new Date().toLocaleDateString('en-US', {
     timeZone: timezone,
@@ -568,6 +619,18 @@ export default function HealthSummaryPdf({
         {has('allergies') && <AllergiesSection allergies={allergies} />}
         {has('vitals') && <VitalsSection vitals={vitals} timezone={timezone} />}
         {has('labs') && <LabResultsSection labResults={labResults} />}
+        <FidelitySection
+          title="Typed clinical results and medication history"
+          rows={typedClinical
+            .filter((record) => (record.fact.kind === 'lab' ? has('labs') : has('medications')))
+            .map(clinicalSummaryRow)}
+        />
+        {has('vitals') && (
+          <FidelitySection
+            title="Identified body scans — sources and estimates"
+            rows={bodyScans.map(scanSummaryRow)}
+          />
+        )}
         {has('providers') && <ProvidersSection providers={providers} />}
         {has('vaccines') && <VaccinesSection vaccines={vaccines} />}
 

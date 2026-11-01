@@ -201,6 +201,22 @@ function ReviewContent({ batchId, onComplete, onCancel }: Props) {
   }
   if (!batch)
     return <p role={error ? 'alert' : 'status'}>{error ?? 'Loading saved import review…'}</p>;
+  if (batch.kind === 'clinical_labs')
+    return (
+      <div className="space-y-3 rounded-xl border p-4" style={fieldStyle}>
+        <h2 className="font-semibold">Typed clinical document review</h2>
+        <p>
+          {batch.file_name} retains typed extraction evidence. Review its exact typed facts and held
+          source rows before owner approval.
+        </p>
+        <Link
+          className="underline"
+          href={'/clinical-intake?document_id=' + encodeURIComponent(batch.id)}
+        >
+          Open clinical source review
+        </Link>
+      </div>
+    );
   return (
     <div className="space-y-4">
       <div className="rounded-xl border p-4 space-y-2" style={fieldStyle}>

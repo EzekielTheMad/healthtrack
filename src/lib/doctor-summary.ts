@@ -12,6 +12,9 @@ import { selectVitalSources, sourceConflicts } from './metrics/source-selection'
 import type { HealthSummaryPdfProps } from '@/components/export/HealthSummaryPdf';
 import { getHealthTrackTimeZone } from './oura/timezone';
 import { vitalSourceLabel } from './metrics/source-label';
+import { listBodyScans, selectCoherentScan } from './fidelity/scans';
+import { listClinicalFacts } from './fidelity/clinical';
+import { clinicalDoctorRecords, doctorLabIdentity } from './fidelity/presentation';
 
 export async function buildDoctorSummary(
   actorId: string,
@@ -32,6 +35,8 @@ export async function buildDoctorSummary(
     rawVitals,
     rawLabs,
     preferences,
+    bodyScanHistory,
+    clinicalHistory,
   ] = await Promise.all([
     dependentId ? Promise.resolve(null) : getProfile(actorId, actorId),
     listMedications(actorId, scope, { orderBy: 'name' }),
@@ -42,8 +47,14 @@ export async function buildDoctorSummary(
     listVitals(actorId, scope, { limit: 20000 }),
     listLabResults(actorId, scope),
     dependentId ? Promise.resolve([]) : listVitalSourcePreferences(actorId),
+    listBodyScans(actorId, scope, { limit: 100 }),
+    listClinicalFacts(actorId, scope, { limit: 1000 }),
   ]);
   const prefs = Object.fromEntries(preferences.map((p) => [p.metricKey, p.preferredSource]));
+  const scanSelection = selectCoherentScan(bodyScanHistory, prefs);
+  const bodyScans = scanSelection.scan ? [scanSelection.scan] : bodyScanHistory.slice(0, 5);
+  const typedSelection = clinicalDoctorRecords(clinicalHistory, getHealthTrackTimeZone(), rawLabs);
+  const typedClinical = typedSelection.records;
   const selected = selectVitalSources(rawVitals, prefs);
   const latestVitals = selected.filter(
     (v, i) => selected.findIndex((r) => r.metricKey === v.metricKey) === i
@@ -51,14 +62,14 @@ export async function buildDoctorSummary(
   const orderedLabs = [...rawLabs].sort(
     (a, b) => b.visitDate.localeCompare(a.visitDate) || b.createdAt.localeCompare(a.createdAt)
   );
-  const latestDates = new Map<string, string>();
   const latestLabs = orderedLabs.filter((r) => {
-    const key = `${r.loincCode ?? r.testName.toLowerCase().trim()}@@${r.unit ?? ''}`;
-    if (!latestDates.has(key)) latestDates.set(key, r.visitDate);
-    return latestDates.get(key) === r.visitDate;
+    const key = doctorLabIdentity(r.testName, r.loincCode, r.unit);
+    return typedSelection.latestLabDates.get(key) === r.visitDate;
   });
   return {
     timezone: getHealthTrackTimeZone(),
+    bodyScans,
+    typedClinical,
     sections: ['medications', 'conditions', 'allergies', 'vitals', 'labs', 'providers', 'vaccines'],
     profile: {
       display_name: dependent?.name ?? profile?.displayName ?? 'Your record',
@@ -115,8 +126,34 @@ export async function buildDoctorSummary(
       reference_range_text: r.referenceRangeText ?? undefined,
       visit_date: r.visitDate,
     })),
-    warnings: sourceConflicts(rawVitals, prefs)
-      .filter((c) => c.needsChoice)
-      .map((c) => `Choose a source for ${c.metricKey} in Vitals; it is omitted from this summary.`),
+    warnings: [
+      ...typedSelection.warnings,
+      ...(clinicalHistory.length >= 1000
+        ? [
+            'Typed clinical summary is bounded to 1000 records; full export retains complete source history.',
+          ]
+        : []),
+      ...(typedClinical.some((record) => record.legacy_conflict)
+        ? [
+            'Some corrected clinical records conflict with changed legacy source values. The typed history shows both for review; no current exact result is implied.',
+          ]
+        : []),
+      ...scanSelection.warnings,
+      ...(bodyScanHistory.length >= 100
+        ? [
+            'Body scan selection considers at most 100 sessions; use the full data export for complete history.',
+          ]
+        : []),
+      ...(!scanSelection.scan && bodyScans.length
+        ? [
+            'No unambiguous latest scan is available; the displayed scans are separate history, not a combined current assessment.',
+          ]
+        : []),
+      ...sourceConflicts(rawVitals, prefs)
+        .filter((c) => c.needsChoice)
+        .map(
+          (c) => `Choose a source for ${c.metricKey} in Vitals; it is omitted from this summary.`
+        ),
+    ],
   };
 }

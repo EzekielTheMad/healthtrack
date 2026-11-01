@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useMedications } from '@/hooks/useMedications';
 import { useInteractionAlerts } from '@/hooks/useInteractionAlerts';
@@ -10,6 +11,7 @@ import MedCard from '@/components/medications/MedCard';
 import AddMedForm, { type AddMedFormData } from '@/components/medications/AddMedForm';
 import InteractionAlert from '@/components/medications/InteractionAlert';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
+import ClinicalRecordsPanel from '@/components/clinical-intake/ClinicalRecordsPanel';
 
 /** Friendly absolute date for the last interaction check, e.g. "Jul 13, 2026". */
 function formatCheckDate(iso: string): string {
@@ -146,6 +148,15 @@ export default function MedicationsPage() {
         )}
       </div>
 
+      <ClinicalRecordsPanel kind="medication" />
+      <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        These lists use the saved active/inactive status. Detailed courses and reported dose events
+        are shown separately above. Recording a course or dose does not automatically mark a
+        medication active.{' '}
+        <Link className="underline" href="/clinical-records">
+          Detailed clinical records
+        </Link>
+      </p>
       {/* Interaction status: the persisted result of the last check. The check
           runs automatically on med add/remove; this also offers an on-demand
           re-check. Alerts snooze temporarily (severity-capped) instead of being
@@ -287,11 +298,13 @@ export default function MedicationsPage() {
                     />
                   </svg>
                 }
-                title={tab === 'active' ? 'No active medications' : 'No past medications'}
+                title={
+                  tab === 'active' ? 'No active medications' : 'No medications marked inactive'
+                }
                 description={
                   tab === 'active'
-                    ? 'Add your current medications to track dosages, interactions, and refills.'
-                    : 'Past medications will appear here when you mark them as inactive.'
+                    ? 'Detailed medication history may still be recorded. Only medications marked active appear in this list.'
+                    : 'Only medications marked inactive appear here. Historical or unconfirmed courses may remain in detailed clinical history.'
                 }
                 action={
                   tab === 'active'
