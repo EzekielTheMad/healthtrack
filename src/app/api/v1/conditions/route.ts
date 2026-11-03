@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
 import { listConditions } from '@/lib/repos/conditions';
+import { clinicalProjectionCoverage } from '@/lib/fidelity/clinical';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
     const rows = await listConditions(
       ctx.userId,
       { ownerId: ctx.userId, dependentId: null },
-      { orderBy: 'diagnosed_date' },
+      { orderBy: 'diagnosed_date' }
     );
 
     // Response shape parity: same field list as the legacy PostgREST select.
@@ -37,7 +38,20 @@ export async function GET(request: NextRequest) {
         icd10_code: c.icd10Code,
         notes: c.notes,
       })),
-      { headers: corsHeaders },
+      {
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Expose-Headers': 'X-HealthTrack-Clinical-Coverage, Link',
+          'X-HealthTrack-Clinical-Coverage': JSON.stringify(
+            await clinicalProjectionCoverage(
+              ctx.userId,
+              { ownerId: ctx.userId, dependentId: null },
+              'condition'
+            )
+          ),
+          Link: '</api/v1/clinical-records?kind=condition>; rel="alternate"',
+        },
+      }
     );
   } catch (error) {
     console.error('[v1] request failed:', error instanceof Error ? error.message : error);

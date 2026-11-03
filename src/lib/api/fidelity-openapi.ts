@@ -4,6 +4,7 @@ import {
   clinicalFactSchema,
   intakeSchema,
   scanInputSchema,
+  CLINICAL_KINDS,
 } from '@/lib/fidelity/contracts';
 
 const schema = (value: z.ZodType) => z.toJSONSchema(value, { io: 'input', unrepresentable: 'any' });
@@ -215,6 +216,7 @@ export const FIDELITY_SCHEMAS = {
       source_value: { type: 'number' },
       source_unit: { type: 'string' },
       raw_text: { type: 'string' },
+      definition: { type: ['string', 'null'] },
       estimated: { type: 'boolean' },
     },
   },
@@ -227,6 +229,23 @@ export const FIDELITY_SCHEMAS = {
       dependent_id: { type: ['string', 'null'] },
       scan: ref('BodyScanInput'),
       measurements: array('ScanMeasurement'),
+      derived_measurements: {
+        type: 'array',
+        readOnly: true,
+        description:
+          'Compatible same-scan ratios, separate from reported values; never accepted as input.',
+        items: {
+          type: 'object',
+          properties: {
+            metric_key: { enum: ['ecw_ratio', 'body_fat_pct', 'body_water_pct'] },
+            value: { type: 'number' },
+            unit: { enum: ['fraction', '%'] },
+            basis: { const: 'derived' },
+            formula: { type: 'string' },
+            input_metric_keys: strings,
+          },
+        },
+      },
       revision: { type: 'string' },
       received_at: { type: 'string' },
     },
@@ -277,7 +296,7 @@ export const FIDELITY_SCHEMAS = {
     required: ['id', 'kind', 'fact', 'revision', 'received_at'],
     properties: {
       id: { type: 'string' },
-      kind: { enum: ['lab', 'medication', 'medication_event'] },
+      kind: { enum: CLINICAL_KINDS },
       fact: ref('ClinicalFact'),
       revision: { type: 'string' },
       received_at: {
@@ -289,7 +308,7 @@ export const FIDELITY_SCHEMAS = {
       supersedes_legacy: {
         type: 'object',
         properties: {
-          table: { enum: ['lab_results', 'medications'] },
+          table: { enum: ['lab_results', 'medications', 'conditions', 'procedures'] },
           id: { type: 'string' },
           revision: { type: 'string' },
         },
@@ -301,7 +320,7 @@ export const FIDELITY_SCHEMAS = {
 const kindParameter = {
   in: 'query',
   name: 'kind',
-  schema: { enum: ['lab', 'medication', 'medication_event'] },
+  schema: { enum: CLINICAL_KINDS },
   description: 'Read only the matching clinical domain; its existing read scope is required.',
 };
 const boundedLimit = {
@@ -315,7 +334,7 @@ export const FIDELITY_PATHS = {
     get: {
       summary: 'List own staged clinical previews/outcomes',
       description:
-        'Explicit write:clinical_intake grant. Token owner/self only. Previews include matching own clinical records even without separate domain read grants. No approval or canonical writes.',
+        'Explicit write:clinical_intake grant. New report previews additionally require write:clinical_reports and are omitted without it. Token owner/self only. Previews include matching own clinical records even without separate domain read grants. No approval or canonical writes.',
       responses: {
         '200': response('Bounded staged batches/outcomes', {
           type: 'object',
@@ -327,7 +346,7 @@ export const FIDELITY_PATHS = {
     post: {
       summary: 'Stage typed clinical facts for owner review',
       description:
-        'Requires the explicit write:clinical_intake grant. write:all and device/read-only tokens do not qualify. Self only; input cannot choose another person. Previews disclose matching own clinical facts even without separate domain read grants. This is staging only. The owner must review the exact version/digest in the app and approve it using a browser session. No PAT commit endpoint exists. Replays return durable existing outcomes; changed content at the same external ID conflicts.',
+        'Requires the explicit write:clinical_intake grant; encounters, studies, PAP reports, screenings, conditions, procedures, allergy reviews and genetic reports additionally require write:clinical_reports. Persisted report batches and correction targets remain protected when incoming fields omit their kind. write:all and device/read-only tokens do not qualify. Self only; input cannot choose another person. Previews disclose matching own clinical facts even without separate domain read grants. This is staging only. The owner must review the exact version/digest in the app and approve it using a browser session. No PAT commit endpoint exists. Replays return durable existing outcomes; changed content at the same external ID conflicts.',
       requestBody: {
         required: true,
         content: { 'application/json': { schema: ref('ClinicalIntake') } },
@@ -343,7 +362,7 @@ export const FIDELITY_PATHS = {
     get: {
       summary: 'Read a staged batch and durable per-item outcomes',
       description:
-        'Requires explicit write:clinical_intake; token owner/self only. The ID never expands subject access.',
+        'Requires explicit write:clinical_intake and write:clinical_reports for new report kinds; token owner/self only. The ID never expands subject access.',
       parameters: [{ in: 'path', name: 'id', required: true, schema: { type: 'string' } }],
       responses: {
         '200': response(
@@ -358,7 +377,7 @@ export const FIDELITY_PATHS = {
     get: {
       summary: 'Read typed clinical facts with precision, provenance and revision',
       description:
-        'Use the existing domain read scope (read:labs/read:medications) or read:all. Only authorized kinds are returned; coverage identifies unavailable kinds rather than implying they are empty. Self only. Qualitative/canceled/censored outcomes remain typed. Selected legacy overlays/conflicts are explicit; source references do not confer original-file access.',
+        'Use read:all or the existing domain scope: labs, medications (courses/events), vitals (encounters/studies/PAP reports), conditions (conditions/screenings/genetic reports), procedures, or allergies (review records). Only authorized kinds are returned; coverage identifies unavailable kinds rather than implying they are empty. Self only. Qualitative/canceled/censored outcomes remain typed. Selected legacy overlays/conflicts are explicit; source references do not confer original-file access.',
       parameters: [kindParameter, boundedLimit],
       responses: {
         '200': response(
@@ -383,7 +402,7 @@ export const FIDELITY_PATHS = {
     post: {
       summary: 'Create an identified body-composition scan',
       description:
-        'Requires explicit write:scans; existing write:all/write:vitals/device tokens do not qualify. Same owner/source/external_id with same content is idempotent; different content conflicts. Different external IDs preserve valid same-day repeat scans. Manual/typed JSON inputs only; vendor PDF/CSV parsing is unsupported. No day-normalized vital upsert or nutrition-target change occurs.',
+        'Requires explicit write:scans; new regional/specialized metrics, definitions and vendor report fields additionally require write:scan_reports, including persisted report fields omitted from an incoming replay. Existing write:all/write:vitals/device tokens do not qualify. Same owner/source/external_id with same content is idempotent; different content conflicts. Different external IDs preserve valid same-day repeat scans. Manual/typed JSON inputs only; vendor PDF/CSV parsing is unsupported. No day-normalized vital upsert or nutrition-target change occurs.',
       requestBody: {
         required: true,
         content: { 'application/json': { schema: ref('BodyScanInput') } },

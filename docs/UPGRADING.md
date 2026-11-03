@@ -8,6 +8,26 @@ This checklist does not authorize publication, an outage, or a deployment.
 Use [RELEASE.md](RELEASE.md) for release gates and [UNRAID.md](UNRAID.md) for
 applied-template handling. Store instance-specific evidence outside Git.
 
+## Web-focused2.1.0 candidate
+
+The web candidate adds `0018_web_clinical_records` after the alpha fidelity
+migration, for19 ledger entries. It widens the existing typed clinical-record
+constraints and preserves stored rows, row IDs, values and references. It does
+not invent historical clinical dates, diagnoses, procedure completion or receipt
+timestamps. Existing generic lab PDF/image extraction remains available.
+
+Save the exact currently running image, deployment configuration and complete
+stopped `/data` (database, uploads and keys). Rehearse an upgrade/restart on an
+isolated copy, then restore a separate copy with the matching OLD image. Never
+boot an old image against the new schema. Preserve and reconcile post-snapshot
+writes before rollback. Source-specific alpha recovery evidence does not clear
+this changed candidate, and no production restart is authorized by these notes.
+
+AI setup remains per account. Existing tokens need explicit new report-write
+opt-ins; `write:all` does not grant them. Android acceptance remains deferred and
+unverified; this web release includes no public APK. See [web scope](WEB-COMPLETION.md)
+and [release gates](RELEASE.md) for current limits.
+
 ## Account AI candidate migrations
 
 The release-closure candidate adds migrations `0015_account_ai` and

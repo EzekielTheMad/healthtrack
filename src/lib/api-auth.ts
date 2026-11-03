@@ -79,7 +79,15 @@ export async function validateApiKey(authHeader: string | null): Promise<ApiKeyC
 export function hasScope(ctx: ApiKeyContext, required: string): boolean {
   if (ctx.scopes.includes(required)) return true;
   // HF capabilities are opt-in. Historical broad/device grants gain no new mutations.
-  if (required === 'write:clinical_intake' || required === 'write:scans') return false;
+  if (
+    [
+      'write:clinical_intake',
+      'write:scans',
+      'write:clinical_reports',
+      'write:scan_reports',
+    ].includes(required)
+  )
+    return false;
   if (required.startsWith('read:') && ctx.scopes.includes('read:all')) return true;
   if (required.startsWith('write:') && ctx.scopes.includes('write:all')) return true;
   return false;

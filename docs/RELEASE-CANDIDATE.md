@@ -1,5 +1,17 @@
 # v2 release candidate checkpoint
 
+## Current web candidate — 2.1.0
+
+The current source target is the unpublished, web-focused2.1.0 candidate in
+[WEB-COMPLETION](WEB-COMPLETION.md). Its clinical/scan/forms changes require their
+own integrated browser/API/export/PDF/context, independent review and current
+runtime/upgrade/compatible-restore evidence. Older rc.6/alpha/native-CI receipts
+below remain dated historical evidence, not passes for changed source. Android
+AC-04/all seven physical groups remain deferred/unverified; no public APK is part
+of this release. Provider/Oura/private-login/publication gates are retained.
+
+## Historical rc.6 checkpoint
+
 This is an unpublished `2.0.0-rc.6` checkpoint. It does not announce a public
 v2 release or a new deployment. [V2](V2.md) owns scope and dated product
 evidence; [release verification](RELEASE.md) owns the gates.

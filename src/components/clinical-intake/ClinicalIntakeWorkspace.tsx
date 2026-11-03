@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
@@ -9,11 +10,16 @@ import {
   type ClinicalFact,
   type ClinicalIntake,
   type FidelityRecord,
+  CLINICAL_KINDS,
 } from '@/lib/fidelity/contracts';
 import type { ClinicalReview } from '@/lib/fidelity/clinical';
 import ClinicalFactForm from './ClinicalFactForm';
 import ClinicalFactDetails, { clinicalFactTitle } from './ClinicalFactDetails';
 import TypedDocumentEvidence from './TypedDocumentEvidence';
+import { webClinicalKindLabels } from './WebClinicalFactFields';
+const EncounterObservationTrends = dynamic(() => import('./EncounterObservationTrends'), {
+  ssr: false,
+});
 const fieldStyle = {
   background: 'var(--bg-primary)',
   color: 'var(--color-text-primary)',
@@ -45,7 +51,7 @@ export default function ClinicalIntakeWorkspace() {
   const params = useSearchParams();
   return (
     <Workspace
-      key={`${profile.delegateOwnerId ?? 'own'}:${profile.dependentId ?? 'self'}:${params.get('record_id') ?? ''}:${params.get('batch_id') ?? ''}:${params.get('document_id') ?? ''}`}
+      key={`${profile.delegateOwnerId ?? 'own'}:${profile.dependentId ?? 'self'}:${params.get('record_id') ?? ''}:${params.get('batch_id') ?? ''}:${params.get('document_id') ?? ''}:${params.get('kind') ?? ''}`}
     />
   );
 }
@@ -61,6 +67,7 @@ function Workspace() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<'manual' | 'json'>('manual');
+  const [historyKind, setHistoryKind] = useState<ClinicalFact['kind'] | 'all'>('all');
   const [json, setJson] = useState('');
   const [selectedOverride, setSelected] = useState<FidelityRecord | null | undefined>(undefined);
   const selected =
@@ -459,6 +466,7 @@ function Workspace() {
                 key={`${formVersion}:${selected?.id ?? 'new'}`}
                 records={records}
                 initial={formInitial}
+                defaultKind={CLINICAL_KINDS.find((kind) => kind === params.get('kind'))}
                 correction={Boolean(formInitial)}
                 busy={busy}
                 onSubmit={submitManual}
@@ -519,8 +527,8 @@ function Workspace() {
                       {(item.matching_count ?? 0) > item.matches.length && (
                         <p className="text-sm">
                           Showing {item.matches.length} of {item.matching_count} possible matches.
-                          Select the correct record from clinical history, or add separately with
-                          a reason. Records are checked again when you save.
+                          Select the correct record from clinical history, or add separately with a
+                          reason. Records are checked again when you save.
                         </p>
                       )}
                       {item.matches.map((match) => (
@@ -755,6 +763,28 @@ function Workspace() {
       )}
       <Card>
         <h2 className="text-lg font-semibold">Detailed clinical records</h2>
+        {records.some((record) => record.kind === 'encounter') && (
+          <EncounterObservationTrends records={records} />
+        )}
+        <label className="block text-sm space-y-1">
+          <span>Filter clinical history</span>
+          <select
+            className={cls}
+            style={fieldStyle}
+            value={historyKind}
+            onChange={(e) => setHistoryKind(e.target.value as ClinicalFact['kind'] | 'all')}
+          >
+            <option value="all">All clinical records</option>
+            <option value="lab">Lab results</option>
+            <option value="medication">Medications</option>
+            <option value="medication_event">Medication events</option>
+            {Object.entries(webClinicalKindLabels).map(([kind, label]) => (
+              <option key={kind} value={kind}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
           Current typed facts and explicit legacy adapters. Unknown historical precision remains
           unknown. Original numeric lists omit superseded originals; conflicts below show both
@@ -762,46 +792,48 @@ function Workspace() {
         </p>
         {loading ? (
           <p role="status">Loading clinical history…</p>
-        ) : records.length ? (
+        ) : records.some((record) => historyKind === 'all' || record.kind === historyKind) ? (
           <ul className="space-y-4">
-            {records.map((record) => (
-              <li
-                className="rounded-lg border p-3 space-y-3 scroll-mt-20"
-                id={'record-' + record.id}
-                style={{ borderColor: 'var(--border-card)' }}
-                key={record.id}
-              >
-                <h3 className="font-semibold break-words">{clinicalFactTitle(record.fact)}</h3>
-                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  {record.legacy
-                    ? 'Legacy record — provenance/precision not backfilled'
-                    : record.supersedes_legacy
-                      ? 'Typed correction over a preserved original'
-                      : 'Typed clinical record'}
-                </p>
-                {record.legacy_conflict && (
-                  <p
-                    role="alert"
-                    className="text-sm font-medium"
-                    style={{ color: 'var(--color-terracotta)' }}
-                  >
-                    Conflict: the legacy original changed. Both versions remain visible until
-                    explicitly reviewed.
+            {records
+              .filter((record) => historyKind === 'all' || record.kind === historyKind)
+              .map((record) => (
+                <li
+                  className="rounded-lg border p-3 space-y-3 scroll-mt-20"
+                  id={'record-' + record.id}
+                  style={{ borderColor: 'var(--border-card)' }}
+                  key={record.id}
+                >
+                  <h3 className="font-semibold break-words">{clinicalFactTitle(record.fact)}</h3>
+                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    {record.legacy
+                      ? 'Legacy record — provenance/precision not backfilled'
+                      : record.supersedes_legacy
+                        ? 'Typed correction over a preserved original'
+                        : 'Typed clinical record'}
                   </p>
-                )}
-                <ClinicalFactDetails fact={record.fact} record={record} />
-                {!delegateOwnerId && (
-                  <button
-                    type="button"
-                    className="underline text-sm"
-                    disabled={busy}
-                    onClick={() => selectRecord(record)}
-                  >
-                    Review a correction to this record
-                  </button>
-                )}
-              </li>
-            ))}
+                  {record.legacy_conflict && (
+                    <p
+                      role="alert"
+                      className="text-sm font-medium"
+                      style={{ color: 'var(--color-terracotta)' }}
+                    >
+                      Conflict: the legacy original changed. Both versions remain visible until
+                      explicitly reviewed.
+                    </p>
+                  )}
+                  <ClinicalFactDetails fact={record.fact} record={record} />
+                  {!delegateOwnerId && (
+                    <button
+                      type="button"
+                      className="underline text-sm"
+                      disabled={busy}
+                      onClick={() => selectRecord(record)}
+                    >
+                      Review a correction to this record
+                    </button>
+                  )}
+                </li>
+              ))}
           </ul>
         ) : (
           <p className="text-sm">No clinical records for this person.</p>

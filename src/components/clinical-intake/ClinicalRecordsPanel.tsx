@@ -3,9 +3,10 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import { apiFetch } from '@/lib/api/client';
-import type { FidelityRecord } from '@/lib/fidelity/contracts';
+import type { ClinicalFact, FidelityRecord } from '@/lib/fidelity/contracts';
 import ClinicalFactDetails, { clinicalFactTitle } from './ClinicalFactDetails';
-export default function ClinicalRecordsPanel({ kind }: { kind?: 'lab' | 'medication' }) {
+import { isWebClinicalKind, webClinicalKindLabels } from './WebClinicalFactFields';
+export default function ClinicalRecordsPanel({ kind }: { kind?: ClinicalFact['kind'] }) {
   const profile = useActiveProfile();
   return (
     <Panel
@@ -14,7 +15,7 @@ export default function ClinicalRecordsPanel({ kind }: { kind?: 'lab' | 'medicat
     />
   );
 }
-function Panel({ kind }: { kind?: 'lab' | 'medication' }) {
+function Panel({ kind }: { kind?: ClinicalFact['kind'] }) {
   const { dependentId, delegateOwnerId } = useActiveProfile();
   const [records, setRecords] = useState<FidelityRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -66,9 +67,14 @@ function Panel({ kind }: { kind?: 'lab' | 'medication' }) {
             ? 'Qualified lab history'
             : kind === 'medication'
               ? 'Structured medication and supplement history'
-              : 'Detailed clinical history'}
+              : kind && isWebClinicalKind(kind)
+                ? webClinicalKindLabels[kind] + ' history'
+                : 'Detailed clinical history'}
         </h2>
-        <Link className="text-sm underline" href="/clinical-intake">
+        <Link
+          className="text-sm underline"
+          href={kind ? '/clinical-intake?kind=' + kind : '/clinical-intake'}
+        >
           {delegateOwnerId ? 'Read clinical history' : 'Add / import / review'}
         </Link>
       </div>

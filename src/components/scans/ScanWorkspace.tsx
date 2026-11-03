@@ -6,7 +6,12 @@ import { ZodError } from 'zod';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import { apiFetch } from '@/lib/api/client';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
-import { METRICS, getMetric } from '@/lib/metrics/registry';
+import {
+  SCAN_METRICS,
+  getScanMetric,
+  scanMetricUnits,
+  isSourceDefinedScanMetric,
+} from '@/lib/metrics/scan-registry';
 import { normalizeScanMeasurements } from '@/lib/metrics/scan-normalization';
 import {
   scanInputSchema,
@@ -20,8 +25,12 @@ import {
   scanDeviceKey,
   scanMetricDelta,
   scanComparisonWarnings,
+  scanMetricComparisonWarnings,
+  scanEvidenceRows,
 } from '@/lib/fidelity/scan-presentation';
 import type { VitalSourcePreferences } from '@/lib/metrics/source-selection';
+import VendorResultsFields, { emptyVendorResults, parseVendorResults } from './VendorResultsFields';
+import { emptySourceDraft, SourceReferences, SupplementLinks } from './ScanEvidenceFields';
 
 const card = {
   backgroundColor: 'var(--bg-card)',
@@ -34,10 +43,8 @@ const controlStyle = {
   borderColor: 'var(--border-card)',
   color: 'var(--color-text-primary)',
 };
-const scanMetrics = METRICS.filter((m) =>
-  ['body_composition', 'body_measurement'].includes(m.category)
-);
-type MetricDraft = { metric: string; value: string; unit: string };
+const scanMetrics = SCAN_METRICS;
+type MetricDraft = { metric: string; value: string; unit: string; definition?: string };
 type History = {
   scans: BodyScan[];
   preferences: VitalSourcePreferences;
@@ -46,7 +53,7 @@ type History = {
 };
 type Outcome = { id: string; result: string; message?: string };
 function defaultUnit(key: string) {
-  const metric = getMetric(key);
+  const metric = getScanMetric(key);
   return metric?.unit === 'lbs' ? 'kg' : (metric?.unit ?? 'unitless');
 }
 function sessionLabel(row: BodyScan) {
@@ -67,7 +74,7 @@ export function formatScanComparisonValue(value: number, signed = false): string
   return `${rounded !== value ? '≈ ' : ''}${signed && rounded > 0 ? '+' : ''}${rounded}`;
 }
 export function scanMeasurementLabel(metricKey: string, estimated: boolean): string {
-  const label = getMetric(metricKey)?.label ?? metricKey;
+  const label = getScanMetric(metricKey)?.label ?? metricKey;
   return estimated && !/\bestimat(?:e|ed|es)\b/i.test(label) ? `${label} · estimate` : label;
 }
 function requestScope(ownerId: string | null, dependentId: string | null) {
@@ -117,11 +124,16 @@ export function ScanWorkspace({
   const [precision, setPrecision] = useState<ClinicalDate['precision']>('unknown');
   const [date, setDate] = useState('');
   const [dateText, setDateText] = useState('');
+  const [timezone, setTimezone] = useState('');
   const [approximate, setApproximate] = useState(false);
   const [workout, setWorkout] = useState<'pre_workout' | 'post_workout' | 'unknown'>('unknown');
   const [fasting, setFasting] = useState<'fasted' | 'fed' | 'unknown'>('unknown');
   const [notes, setNotes] = useState('');
-  const [reference, setReference] = useState('');
+  const [workoutAt, setWorkoutAt] = useState('');
+  const [workoutTimezone, setWorkoutTimezone] = useState('');
+  const [supplementIds, setSupplementIds] = useState<string[]>([]);
+  const [sources, setSources] = useState([emptySourceDraft()]);
+  const [vendor, setVendor] = useState(emptyVendorResults);
   const [metrics, setMetrics] = useState<MetricDraft[]>([
     { metric: 'skeletal_muscle_mass', value: '', unit: 'kg' },
   ]);
@@ -190,7 +202,9 @@ export function ScanWorkspace({
               (row) =>
                 scanDeviceKey(row) === scanDeviceKey(current) &&
                 ['day', 'instant'].includes(row.scan.measured_at.precision) &&
-                !row.scan.measured_at.approximate
+                !row.scan.measured_at.approximate &&
+                (row.id === current.id ||
+                  scanMetricComparisonWarnings(row, current, chartMetric).length === 0)
             )
             .slice()
             .reverse()
@@ -212,6 +226,17 @@ export function ScanWorkspace({
   function updateMetric(index: number, patch: Partial<MetricDraft>) {
     invalidate();
     setMetrics((old) => old.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  }
+  function addMetricGroup(keys: string[]) {
+    invalidate();
+    setMetrics((old) =>
+      [
+        ...old,
+        ...keys
+          .filter((key) => !old.some((row) => row.metric === key))
+          .map((metric) => ({ metric, value: '', unit: defaultUnit(metric) })),
+      ].slice(0, 50)
+    );
   }
   function makePreview(event: React.FormEvent) {
     event.preventDefault();
@@ -236,6 +261,7 @@ export function ScanWorkspace({
           value: precision === 'unknown' ? null : date,
           ...(dateText ? { original_text: dateText } : {}),
           ...(approximate ? { approximate: true } : {}),
+          ...(precision === 'instant' && timezone.trim() ? { timezone: timezone.trim() } : {}),
         };
         candidates = [
           {
@@ -249,12 +275,31 @@ export function ScanWorkspace({
               workout_status: workout,
               fasting_status: fasting,
               notes: notes || undefined,
+              ...(workoutAt.trim() || workoutTimezone.trim()
+                ? {
+                    workout_at: {
+                      precision: 'instant',
+                      value: workoutAt.trim(),
+                      ...(workoutTimezone.trim() ? { timezone: workoutTimezone.trim() } : {}),
+                    },
+                  }
+                : {}),
             },
+            supplement_record_ids: supplementIds,
             provenance: {
               basis: 'source_reported',
               verification: 'unconfirmed',
-              sources: reference ? [{ reference }] : [],
+              sources: sources
+                .filter((row) => row.reference.trim() || row.document_id.trim() || row.page.trim())
+                .map((row) => ({
+                  reference: row.reference,
+                  ...(row.document_id.trim() ? { document_id: row.document_id.trim() } : {}),
+                  ...(row.page.trim()
+                    ? { page: /^\d+$/.test(row.page.trim()) ? Number(row.page) : Number.NaN }
+                    : {}),
+                })),
             },
+            vendor_results: parseVendorResults(vendor),
             measurements: metrics
               .filter((row) => row.value.trim() !== '')
               .map((row) => ({
@@ -264,6 +309,7 @@ export function ScanWorkspace({
                   : Number.NaN,
                 unit: row.unit,
                 raw_text: `${row.value} ${row.unit}`,
+                ...(row.definition?.trim() ? { definition: row.definition.trim() } : {}),
               })),
           },
         ];
@@ -316,11 +362,16 @@ export function ScanWorkspace({
     setPrecision('unknown');
     setDate('');
     setDateText('');
+    setTimezone('');
     setApproximate(false);
     setWorkout('unknown');
     setFasting('unknown');
     setNotes('');
-    setReference('');
+    setWorkoutAt('');
+    setWorkoutTimezone('');
+    setSupplementIds([]);
+    setSources([emptySourceDraft()]);
+    setVendor(emptyVendorResults());
   }
   return (
     <main className="space-y-6" style={{ color: 'var(--color-text-primary)' }}>
@@ -450,6 +501,7 @@ export function ScanWorkspace({
                         onChange={(e) => {
                           setPrecision(e.target.value as ClinicalDate['precision']);
                           setDate('');
+                          setTimezone('');
                           invalidate();
                         }}
                         className={control}
@@ -489,6 +541,26 @@ export function ScanWorkspace({
                       </span>
                     </label>
                   )}
+                  {precision === 'instant' && (
+                    <label className="block text-sm">
+                      Measurement timezone (optional)
+                      <input
+                        value={timezone}
+                        onChange={(event) => {
+                          setTimezone(event.target.value);
+                          invalidate();
+                        }}
+                        className={control}
+                        style={controlStyle}
+                        maxLength={100}
+                        placeholder="America/Phoenix"
+                      />
+                      <span className="text-xs">
+                        Use the source timezone when known. The explicit timestamp offset remains
+                        authoritative; no timezone is inferred from this browser.
+                      </span>
+                    </label>
+                  )}
                   <label className="block text-sm">
                     Original date text, if useful
                     <input
@@ -517,8 +589,39 @@ export function ScanWorkspace({
                     <legend className="font-medium">Reported measurements</legend>
                     <p className="text-xs">
                       Blank rows are not imported. Source units and entered precision are retained;
-                      water volumes in liters are not converted into mass.
+                      water volumes in liters are not converted into mass. Regional lean mass is not
+                      skeletal muscle mass. Compartments overlap and must not be summed.
                     </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="min-h-11 rounded-lg border px-3 text-sm"
+                        disabled={metrics.length > 40}
+                        onClick={() =>
+                          addMetricGroup(
+                            ['left_arm', 'right_arm', 'left_leg', 'right_leg', 'trunk'].flatMap(
+                              (region) => [`lean_mass_${region}`, `fat_mass_${region}`]
+                            )
+                          )
+                        }
+                      >
+                        Add five-region lean and fat rows
+                      </button>
+                      <button
+                        type="button"
+                        className="min-h-11 rounded-lg border px-3 text-sm"
+                        disabled={metrics.length > 45}
+                        onClick={() =>
+                          addMetricGroup(
+                            ['left_arm', 'right_arm', 'left_leg', 'right_leg', 'trunk'].map(
+                              (region) => `ecw_ratio_${region}`
+                            )
+                          )
+                        }
+                      >
+                        Add regional ECW ratio rows
+                      </button>
+                    </div>
                     {metrics.map((row, index) => (
                       <div
                         key={index}
@@ -533,6 +636,7 @@ export function ScanWorkspace({
                               updateMetric(index, {
                                 metric: e.target.value,
                                 unit: defaultUnit(e.target.value),
+                                definition: '',
                               })
                             }
                             className={control}
@@ -562,12 +666,43 @@ export function ScanWorkspace({
                             <input
                               required
                               value={row.unit}
+                              list={`scan-units-${index}`}
                               onChange={(e) => updateMetric(index, { unit: e.target.value })}
                               className={control}
                               style={controlStyle}
                             />
+                            <datalist id={`scan-units-${index}`}>
+                              {scanMetricUnits(row.metric).map((unit) => (
+                                <option key={unit} value={unit} />
+                              ))}
+                            </datalist>
                           </label>
                         </div>
+                        <label className="block text-sm">
+                          Source definition / protocol
+                          <input
+                            aria-label={`Metric ${index + 1}: Source definition / protocol`}
+                            value={row.definition ?? ''}
+                            onChange={(event) =>
+                              updateMetric(index, { definition: event.target.value })
+                            }
+                            maxLength={4000}
+                            className={control}
+                            style={controlStyle}
+                            placeholder={
+                              isSourceDefinedScanMetric(row.metric)
+                                ? 'e.g. region, frequency, and numerator / denominator from the report'
+                                : 'Optional exact definition from the report'
+                            }
+                          />
+                        </label>
+                        {isSourceDefinedScanMetric(row.metric) && (
+                          <p className="text-xs">
+                            This metric stays source-defined. A matching definition/protocol,
+                            device, method and known collection conditions are required for
+                            comparisons. SMI is not calculated from regional lean mass.
+                          </p>
+                        )}
                         {metrics.length > 1 && (
                           <button
                             type="button"
@@ -629,6 +764,39 @@ export function ScanWorkspace({
                       </select>
                     </label>
                   </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="text-sm">
+                      Workout exact timestamp (optional)
+                      <input
+                        value={workoutAt}
+                        onChange={(event) => {
+                          setWorkoutAt(event.target.value);
+                          invalidate();
+                        }}
+                        required={!!workoutTimezone.trim()}
+                        placeholder="2026-10-30T08:00:00-07:00"
+                        className={control}
+                        style={controlStyle}
+                      />
+                      <span className="text-xs">
+                        Requires the reported UTC offset. Leave unknown times blank.
+                      </span>
+                    </label>
+                    <label className="text-sm">
+                      Workout timezone (optional)
+                      <input
+                        value={workoutTimezone}
+                        onChange={(event) => {
+                          setWorkoutTimezone(event.target.value);
+                          invalidate();
+                        }}
+                        maxLength={100}
+                        placeholder="America/Phoenix"
+                        className={control}
+                        style={controlStyle}
+                      />
+                    </label>
+                  </div>
                   <label className="block text-sm">
                     Known collection-condition notes
                     <textarea
@@ -642,19 +810,29 @@ export function ScanWorkspace({
                       rows={2}
                     />
                   </label>
-                  <label className="block text-sm">
-                    Durable source reference
-                    <input
-                      value={reference}
-                      onChange={(e) => {
-                        setReference(e.target.value);
-                        invalidate();
-                      }}
-                      className={control}
-                      style={controlStyle}
-                      placeholder="Report filename, identifier or location"
-                    />
-                  </label>
+                  <SupplementLinks
+                    ownerId={ownerId}
+                    dependentId={dependentId}
+                    selected={supplementIds}
+                    onChange={(ids) => {
+                      setSupplementIds(ids);
+                      invalidate();
+                    }}
+                  />
+                  <SourceReferences
+                    sources={sources}
+                    onChange={(rows) => {
+                      setSources(rows);
+                      invalidate();
+                    }}
+                  />
+                  <VendorResultsFields
+                    draft={vendor}
+                    onChange={(draft) => {
+                      setVendor(draft);
+                      invalidate();
+                    }}
+                  />
                 </>
               ) : (
                 <>
@@ -727,10 +905,34 @@ export function ScanWorkspace({
                     {scan.measurements
                       .map(
                         (m) =>
-                          `${getMetric(m.metric_key)?.label}: ${m.raw_text ?? `${m.value} ${m.unit}`}`
+                          `${getScanMetric(m.metric_key)?.label}: ${m.raw_text ?? `${m.value} ${m.unit}`}${m.definition ? ` (${m.definition})` : ''}`
                       )
                       .join('; ')}
                   </p>
+                  <p className="text-xs">
+                    Workout time: {formatClinicalDate(scan.conditions?.workout_at)} · Linked
+                    supplements: {scan.supplement_record_ids?.length ?? 0}
+                  </p>
+                  <ul className="text-xs">
+                    {scan.provenance.sources.map((reference, index) => (
+                      <li key={index}>
+                        {reference.reference}
+                        {reference.document_id ? ` · document ${reference.document_id}` : ''}
+                        {reference.page ? ` · page ${reference.page}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                  <ScanAdditionalEvidence
+                    scan={{
+                      id: 'preview',
+                      user_id: '',
+                      dependent_id: null,
+                      scan,
+                      measurements: normalizeScanMeasurements(scan),
+                      revision: '',
+                      received_at: '',
+                    }}
+                  />
                 </div>
               ))}
               <p className="text-xs">
@@ -887,9 +1089,11 @@ export function ScanWorkspace({
                   </select>
                 </label>
                 <p className="text-xs">
-                  Grouped by reported source/device/method; unknown labels do not establish the same
-                  hardware. Dots show reported observations without joining incomparable sessions;
-                  partial/unknown dates stay in history. Collection conditions may differ.
+                  Only matching source, device, method, units, definitions and known collection
+                  conditions share a plot. The selected observation can appear alone when
+                  comparisons are uncertain. Dots do not connect sessions; partial or unknown dates
+                  stay in history. Vendor scores and derived ratios are not plotted as reported
+                  measurements.
                 </p>
                 {chartRows.every((row) => row.value === null) ? (
                   <p className="text-sm">
@@ -900,7 +1104,7 @@ export function ScanWorkspace({
                   <div
                     className="h-56 min-w-0"
                     role="img"
-                    aria-label={`${getMetric(chartMetric)?.label} observations for ${current.scan.source} ${current.scan.model ?? current.scan.method}`}
+                    aria-label={`${getScanMetric(chartMetric)?.label} observations for ${current.scan.source} ${current.scan.model ?? current.scan.method}`}
                   >
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={chartRows}>
@@ -990,6 +1194,15 @@ function ScanDetails({ scan, baseline }: { scan: BodyScan; baseline?: BodyScan }
         Workout: {scan.scan.conditions?.workout_status ?? 'unknown'} · Fasting:{' '}
         {scan.scan.conditions?.fasting_status ?? 'unknown'}
       </p>
+      <p className="text-sm">
+        Workout time: {formatClinicalDate(scan.scan.conditions?.workout_at)}
+      </p>
+      {scan.scan.supplement_record_ids?.length ? (
+        <p className="text-sm break-words">
+          Linked supplement record IDs: {scan.scan.supplement_record_ids.join(', ')}. Links do not
+          establish actual use or dose.
+        </p>
+      ) : null}
       {scan.scan.conditions?.notes && (
         <p className="text-sm break-words">{scan.scan.conditions.notes}</p>
       )}
@@ -1007,6 +1220,14 @@ function ScanDetails({ scan, baseline }: { scan: BodyScan; baseline?: BodyScan }
               </dt>
               <dd className="text-sm break-words">
                 Source: {m.raw_text ?? `${m.source_value} ${m.source_unit}`}
+                {m.definition && (
+                  <span className="block text-xs">Source definition: {m.definition}</span>
+                )}
+                {!m.definition && isSourceDefinedScanMetric(m.metric_key) && (
+                  <span className="block text-xs">
+                    Source definition / protocol unknown; comparisons withheld.
+                  </span>
+                )}
                 <span className="block text-xs">
                   Comparison units: {formatScanComparisonValue(m.value)} {m.unit ?? ''}
                 </span>
@@ -1018,11 +1239,20 @@ function ScanDetails({ scan, baseline }: { scan: BodyScan; baseline?: BodyScan }
                       : `${formatScanComparisonValue(delta, true)} ${m.unit ?? ''}`}
                   </span>
                 )}
+                {baseline &&
+                  scanMetricComparisonWarnings(scan, baseline, m.metric_key)
+                    .filter((warning) => !scanComparisonWarnings(scan, baseline).includes(warning))
+                    .map((warning) => (
+                      <span key={warning} className="block text-xs">
+                        {warning}
+                      </span>
+                    ))}
               </dd>
             </div>
           );
         })}
       </dl>
+      <ScanAdditionalEvidence scan={scan} />
       <details>
         <summary className="min-h-11 cursor-pointer text-sm">
           Source references and exact saved payload
@@ -1048,5 +1278,59 @@ function ScanDetails({ scan, baseline }: { scan: BodyScan; baseline?: BodyScan }
         </pre>
       </details>
     </article>
+  );
+}
+
+function ScanAdditionalEvidence({ scan }: { scan: BodyScan }) {
+  const rows = scanEvidenceRows(scan);
+  return (
+    <>
+      {(['derived', 'vendor'] as const).map((basis) => {
+        const evidence = rows.filter((row) => row.basis === basis);
+        if (!evidence.length) return null;
+        return (
+          <section
+            key={basis}
+            aria-label={basis === 'derived' ? 'Derived from this scan' : 'Source vendor outputs'}
+            className="space-y-2 rounded-lg border p-3"
+            style={{ borderColor: 'var(--border-card)' }}
+          >
+            <h4 className="font-medium">
+              {basis === 'derived' ? 'Derived from this scan' : 'Source vendor outputs'}
+            </h4>
+            <p className="text-xs">
+              {basis === 'derived'
+                ? 'Calculated only from mass values in this report. These are not additional reported measurements and do not replace a source-reported ratio.'
+                : 'Source-specific scores, estimates and reference bands. Recommendations are preserved as printed and do not change adopted goals or targets.'}
+            </p>
+            <dl className="space-y-3">
+              {evidence.map((row) => (
+                <div key={row.key} className="text-sm break-words">
+                  <dt className="font-medium">{row.label}</dt>
+                  <dd>
+                    {row.basis === 'derived'
+                      ? formatScanComparisonValue(Number(row.value))
+                      : row.value}
+                    {row.unit ? ` ${row.unit}` : ''}
+                    {row.definition && (
+                      <span className="block text-xs">Definition: {row.definition}</span>
+                    )}
+                    {row.reference && (
+                      <span className="block text-xs">Source reference: {row.reference}</span>
+                    )}
+                    {row.formula && (
+                      <span className="block text-xs">
+                        Formula: {row.formula}. Inputs: {row.input_metric_keys?.join(', ')}.
+                      </span>
+                    )}
+                    <span className="block text-xs">Source: {row.source}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        );
+      })}
+    </>
   );
 }

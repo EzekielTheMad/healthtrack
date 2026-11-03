@@ -1,7 +1,11 @@
 import { Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
 import { Children } from 'react';
 import { formatDateOnly, formatVitalDateLong } from '@/lib/dates';
-import type { BodyScan, FidelityRecord } from '@/lib/fidelity/contracts';
+import {
+  CLINICAL_KIND_SECTIONS,
+  type BodyScan,
+  type FidelityRecord,
+} from '@/lib/fidelity/contracts';
 import {
   clinicalSummaryRow,
   scanSummaryRow,
@@ -295,7 +299,10 @@ function MedicationsSection({
   if (!medications?.length) {
     return (
       <SectionBlock title="Medications">
-        <Text style={styles.emptyText}>No medications in the standard list. Detailed medication courses and reported dose events appear in the clinical history section when available.</Text>
+        <Text style={styles.emptyText}>
+          No medications in the standard list. Detailed medication courses and reported dose events
+          appear in the clinical history section when available.
+        </Text>
       </SectionBlock>
     );
   }
@@ -333,7 +340,10 @@ function ConditionsSection({ conditions }: { conditions: HealthSummaryPdfProps['
   if (!conditions?.length) {
     return (
       <SectionBlock title="Conditions">
-        <Text style={styles.emptyText}>No conditions recorded.</Text>
+        <Text style={styles.emptyText}>
+          No conditions in the standard list. Detailed condition evidence and screening or genetic
+          history appear in the clinical history section when available.
+        </Text>
       </SectionBlock>
     );
   }
@@ -361,7 +371,10 @@ function AllergiesSection({ allergies }: { allergies: HealthSummaryPdfProps['all
   if (!allergies?.length) {
     return (
       <SectionBlock title="Allergies">
-        <Text style={styles.emptyText}>No allergies recorded.</Text>
+        <Text style={styles.emptyText}>
+          No individual allergens recorded. This does not establish a reviewed negative; any
+          explicit allergy review appears in the clinical history section.
+        </Text>
       </SectionBlock>
     );
   }
@@ -395,7 +408,10 @@ function VitalsSection({
   if (!vitals?.length) {
     return (
       <SectionBlock title="Vitals (Latest per metric)">
-        <Text style={styles.emptyText}>No vitals recorded.</Text>
+        <Text style={styles.emptyText}>
+          No daily vitals in this list. Encounter observations, diagnostic studies and aggregate PAP
+          reports appear separately in the clinical history section when available.
+        </Text>
       </SectionBlock>
     );
   }
@@ -620,9 +636,9 @@ export default function HealthSummaryPdf({
         {has('vitals') && <VitalsSection vitals={vitals} timezone={timezone} />}
         {has('labs') && <LabResultsSection labResults={labResults} />}
         <FidelitySection
-          title="Typed clinical results and medication history"
+          title="Detailed clinical records and history"
           rows={typedClinical
-            .filter((record) => (record.fact.kind === 'lab' ? has('labs') : has('medications')))
+            .filter((record) => has(CLINICAL_KIND_SECTIONS[record.fact.kind]))
             .map(clinicalSummaryRow)}
         />
         {has('vitals') && (

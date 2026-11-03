@@ -1,4 +1,5 @@
 import { getSqlite } from '@/db';
+import { deriveScanMeasurements } from './scan-derivations';
 
 /** Called only after the existing owner/recent-auth export fence. No secrets/files are read. */
 export function exportFidelityData(ownerId: string) {
@@ -8,6 +9,7 @@ export function exportFidelityData(ownerId: string) {
     .all(ownerId) as Array<
     Record<string, unknown> & {
       id: string;
+      user_id: string;
       dependent_id: string | null;
       payload_json: string;
       legacy_table: string | null;
@@ -20,9 +22,14 @@ export function exportFidelityData(ownerId: string) {
     Record<string, unknown> & { payload_json: string; normalized_json: string }
   >;
   const historicalSources = records.flatMap((record) => {
-    if (!record.legacy_id || !['lab_results', 'medications'].includes(record.legacy_table ?? ''))
+    if (
+      !record.legacy_id ||
+      !['lab_results', 'medications', 'conditions', 'procedures'].includes(
+        record.legacy_table ?? ''
+      )
+    )
       return [];
-    const table = record.legacy_table === 'lab_results' ? 'lab_results' : 'medications';
+    const table = record.legacy_table!;
     const source = sqlite
       .prepare(`SELECT * FROM ${table} WHERE id=? AND user_id=? AND dependent_id IS ?`)
       .get(record.legacy_id, ownerId, record.dependent_id);
@@ -56,6 +63,7 @@ export function exportFidelityData(ownerId: string) {
       ...row,
       scan: JSON.parse(payload_json),
       measurements: JSON.parse(normalized_json),
+      derived_measurements: deriveScanMeasurements(JSON.parse(normalized_json)),
     })),
     historical_source_rows: historicalSources,
     correction_history: sqlite

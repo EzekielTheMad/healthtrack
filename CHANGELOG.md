@@ -2,6 +2,42 @@
 
 All notable changes to HealthTrack are documented here for GitHub releases.
 
+## 2.1.0 — web completion candidate (unpublished)
+
+This candidate combines the unshipped 2.0.0 work and the fidelity changes below
+with the remaining approved web workflows. It has not been publicly released.
+
+- Add ordinary and typed-JSON entry for encounters, diagnostic sleep studies,
+  aggregate PAP reports, instrument-specific screenings, procedure events,
+  condition certainty/activity/history, explicit allergy reviews and qualitative
+  genetic reports. Preserve dates, original text, zero, unknown and provenance.
+- Encounter heart rate and historical height stay separate from resting heart
+  rate and profile height. Same-day repeats survive. PAP windows remain aggregate
+  reports; overlapping windows are never summed or expanded into daily readings.
+- Add all ten regional lean/fat values and source-reported specialized scan
+  measurements, definitions, vendor scores/body age/reference bands and archived
+  recommendations. Compatible same-scan derived ratios remain separate from
+  reported values; vendor advice never changes targets.
+- Expose timezone, exact workout timestamp, authorized supplement links and source
+  document/page controls in normal forms. Comparisons reject incompatible units,
+  source/device/method, protocols and collection conditions.
+- Share the same scoped evidence across history, doctor PDFs, exports and app/API
+  context. Preserve selected corrections, prior values and conflict evidence.
+  New report-write grants are explicit; historical tokens gain no new mutations.
+- Refresh the person picker immediately after successful family-member changes;
+  keep failed edits and late responses from replacing current person lists.
+- Migration `0018_web_clinical_records` widens typed history constraints while
+  preserving existing row IDs, source values and references. It does not backfill
+  certainty or clinical dates. Keep the matching pre-upgrade image/data/config/key
+  pair and reconcile later writes before any rollback.
+
+Android and all seven physical-phone acceptance groups remain **deferred and
+unverified**, outside this web release. No public APK is included. Existing generic
+lab PDF/image ingestion is retained; vendor-specific scan/history parsers and
+automatic clinical interpretation remain excluded. Provider, Oura, exact-candidate
+runtime/recovery and publication gates retain their own evidence requirements.
+See [web scope](docs/WEB-COMPLETION.md) and [release gates](docs/RELEASE.md).
+
 ## 2.1.0-alpha.1 — next-release fidelity candidate (unpublished)
 
 - Typed numeric, qualitative, censored and canceled labs retain source units,

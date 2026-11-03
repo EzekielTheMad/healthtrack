@@ -41,7 +41,7 @@ it('saves the untouched Prefer not to say default as explicit null and displays 
   fetchMock
     .mockResolvedValueOnce(json([]))
     .mockResolvedValueOnce(json(saved, 201))
-    .mockResolvedValueOnce(json([saved]));
+    .mockImplementation(async () => json([saved]));
   const page = render(<DependentManager />);
   await openAdd();
   expect(screen.getByLabelText('Biological Sex')).toHaveValue('');
@@ -61,7 +61,8 @@ it('saves the untouched Prefer not to say default as explicit null and displays 
 it('editing Male to Prefer not to say sends null and keeps it cleared on reopening', async () => {
   fetchMock
     .mockResolvedValueOnce(json([child]))
-    .mockResolvedValueOnce(json({ ...child, biological_sex: null }));
+    .mockResolvedValueOnce(json({ ...child, biological_sex: null }))
+    .mockImplementation(async () => json([{ ...child, biological_sex: null }]));
   render(<DependentManager />);
   fireEvent.click(await screen.findByTitle('Edit'));
   expect(screen.getByLabelText('Biological Sex')).toHaveValue('male');

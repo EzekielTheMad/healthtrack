@@ -31,10 +31,12 @@ can be wrong and needs human review.
 
 ## Features
 
-The **2.1.0-alpha.1 next-release fidelity candidate** adds typed clinical history,
-owner-approved clinical API intake and coherent body-composition scans. See the
-[capability matrix and acceptance limits](docs/NEXT-RELEASE.md); it is separate
-from the existing v2 release and deployment records below.
+The **web-focused2.1.0 candidate** adds owner-reviewed clinical history and complete,
+source-bound body-scan reports, with normal forms for dates, report metadata and
+protected source references. See [web completion](docs/WEB-COMPLETION.md) and the
+[capability matrix](docs/NEXT-RELEASE.md). It remains unpublished; historical private
+alpha deployments do not establish acceptance of this changed candidate. Android
+phone testing is deferred and unverified, and no public APK is included.
 
 Private v2 work includes [aligned metric comparisons](docs/V2.md#comparisons-and-oura-permission-review-200-rc3)
 and a [website-first Android companion](docs/ANDROID-ACCEPTANCE.md). The dated

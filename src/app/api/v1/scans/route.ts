@@ -1,4 +1,6 @@
 import { NextRequest } from 'next/server';
+import { scanInputSchema } from '@/lib/fidelity/contracts';
+import { scanReportGrantRequired } from '@/lib/fidelity/web-write-grants';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
 import { errorResponse } from '@/lib/api/respond';
 import { createBodyScan, listBodyScans } from '@/lib/fidelity/scans';
@@ -45,10 +47,13 @@ export async function POST(request: NextRequest) {
   if (!hasScope(ctx, 'write:scans')) return forbidden('write:scans');
   try {
     rejectPatSubject(request.nextUrl.searchParams);
+    const input = scanInputSchema.parse(await scanJson(request));
+    if (scanReportGrantRequired(ctx.userId, input) && !hasScope(ctx, 'write:scan_reports'))
+      return forbidden('write:scan_reports');
     const result = await createBodyScan(
       ctx.userId,
       { ownerId: ctx.userId, dependentId: null },
-      await scanJson(request)
+      input
     );
     return Response.json(result, {
       status: result.result === 'created' ? 201 : 200,

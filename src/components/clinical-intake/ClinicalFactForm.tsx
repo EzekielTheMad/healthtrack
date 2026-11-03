@@ -7,6 +7,12 @@ import {
   type FidelityRecord,
 } from '@/lib/fidelity/contracts';
 import { clinicalFactTitle } from './ClinicalFactDetails';
+import WebClinicalFactFields, {
+  isWebClinicalKind,
+  webClinicalDraft,
+  webClinicalKindLabels,
+  cleanWebClinicalDraft,
+} from './WebClinicalFactFields';
 type Props = {
   initial?: ClinicalFact;
   records: FidelityRecord[];
@@ -14,6 +20,7 @@ type Props = {
   onSubmit: (fact: ClinicalFact) => Promise<void>;
   submitLabel?: string;
   correction?: boolean;
+  defaultKind?: ClinicalFact['kind'];
 };
 const fieldStyle = {
   background: 'var(--bg-primary)',
@@ -173,8 +180,14 @@ export default function ClinicalFactForm({
   onSubmit,
   submitLabel = 'Preview this record',
   correction = false,
+  defaultKind = 'lab',
 }: Props) {
-  const [kind, setKind] = useState<ClinicalFact['kind']>(initial?.kind ?? 'lab');
+  const [kind, setKind] = useState<ClinicalFact['kind']>(initial?.kind ?? defaultKind);
+  const [webDrafts, setWebDrafts] = useState<Record<string, Record<string, unknown>>>(() =>
+    initial && isWebClinicalKind(initial.kind)
+      ? { [initial.kind]: webClinicalDraft(initial.kind, initial) }
+      : {}
+  );
   const [outcomeKind, setOutcomeKind] = useState(
     initial?.kind === 'lab' ? initial.outcome.kind : 'numeric'
   );
@@ -210,7 +223,12 @@ export default function ClinicalFactForm({
         notes: t(data, 'provenance_notes'),
       };
       let fact: unknown;
-      if (kind === 'lab') {
+      if (isWebClinicalKind(kind)) {
+        fact = cleanWebClinicalDraft({
+          ...(webDrafts[kind] ?? webClinicalDraft(kind)),
+          provenance,
+        });
+      } else if (kind === 'lab') {
         const outcome =
           outcomeKind === 'text'
             ? { kind: 'text', text: t(data, 'result_text') ?? '' }
@@ -322,8 +340,21 @@ export default function ClinicalFactForm({
           <option value="medication_event">
             Medication administration / missed / skipped event
           </option>
+          {Object.entries(webClinicalKindLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
         </select>
       </label>
+      {isWebClinicalKind(kind) && (
+        <WebClinicalFactFields
+          kind={kind}
+          value={webDrafts[kind] ?? webClinicalDraft(kind)}
+          records={records}
+          onChange={(value) => setWebDrafts((previous) => ({ ...previous, [kind]: value }))}
+        />
+      )}
       {kind === 'lab' && (
         <>
           <Field label="Test name" name="test_name" value={lab?.test_name} required />

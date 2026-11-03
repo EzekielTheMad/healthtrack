@@ -26,10 +26,16 @@ import type { HealthContext } from './claude/query';
 import type { ContextEvidence, QueryContextMetadata } from './health-context-types';
 import { vitalSourceLabel } from './metrics/source-label';
 import { listBodyScans, selectCoherentScan } from './fidelity/scans';
-import { clinicalConsumerRecords, dateIntersectsWindow } from './fidelity/presentation';
+import {
+  clinicalConsumerRecords,
+  clinicalRecordIntersectsWindow,
+  dateIntersectsWindow,
+} from './fidelity/presentation';
+import { clinicalFactDate } from './fidelity/web-clinical-presentation';
+import { scanEvidenceRows } from './fidelity/scan-presentation';
 import { listClinicalFacts } from './fidelity/clinical';
 
-export const CONTEXT_VERSION = 3;
+export const CONTEXT_VERSION = 4;
 export const contextDaysSchema = z.coerce
   .number()
   .pipe(z.union([z.literal(30), z.literal(90), z.literal(365)]));
@@ -101,15 +107,8 @@ export async function buildHealthContext(
     dateIntersectsWindow(scan.scan.measured_at, startDate, endDate, timezone)
   );
   const scanSelection = selectCoherentScan(bodyScans, prefs);
-  const clinicalFacts = clinicalConsumerRecords(allClinicalFacts).filter(
-    (record) =>
-      record.fact.kind === 'medication' ||
-      dateIntersectsWindow(
-        record.fact.kind === 'lab' ? record.fact.collection_date : record.fact.event_date,
-        startDate,
-        endDate,
-        timezone
-      )
+  const clinicalFacts = clinicalConsumerRecords(allClinicalFacts).filter((record) =>
+    clinicalRecordIntersectsWindow(record, startDate, endDate, timezone)
   );
   const windowVitals = rawVitals.filter((row) => {
     const day = getMetric(row.metricKey)?.intraday
@@ -138,6 +137,10 @@ export async function buildHealthContext(
     }));
   const warnings: string[] = [];
   warnings.push(...scanSelection.warnings);
+  if (clinicalFacts.some((record) => record.fact.provenance.verification === 'conflict'))
+    warnings.push(
+      'Some clinical source evidence is explicitly marked conflicting; retain it as reviewable history, not an unqualified current finding.'
+    );
   if (allClinicalFacts.length >= 1000)
     warnings.push(
       'Typed clinical context is bounded to 1000 records; use full export for complete source history.'
@@ -229,11 +232,7 @@ export async function buildHealthContext(
     cite(
       'clinical',
       record.id,
-      record.fact.kind === 'lab'
-        ? record.fact.collection_date.value
-        : record.fact.kind === 'medication_event'
-          ? record.fact.event_date.value
-          : (record.fact.start_date?.value ?? null),
+      clinicalFactDate(record.fact)?.value ?? null,
       record.fact.provenance.basis,
       `/clinical-intake#record-${encodeURIComponent(record.id)}`
     )
@@ -269,6 +268,7 @@ export async function buildHealthContext(
     nutrition: rowsToSnake(nutrition),
     integrations: rowsToSnake(integrations),
     body_scans: bodyScans,
+    scan_evidence: bodyScans.map((scan) => ({ scan_id: scan.id, rows: scanEvidenceRows(scan) })),
     scan_selection: scanSelection,
     clinical_records: clinicalFacts,
   };
@@ -338,7 +338,9 @@ export function contextForPrompt(snapshot: HealthContextSnapshot, question = '')
     profile_data: json({ ...f.subject, coverage: snapshot.coverage, integrations: f.integrations }),
     medications_data: json({
       legacy: f.medications,
-      typed_history: f.clinical_records.filter((record) => record.fact.kind !== 'lab'),
+      typed_history: f.clinical_records.filter(
+        (record) => record.fact.kind === 'medication' || record.fact.kind === 'medication_event'
+      ),
       meaning:
         'Prescribed and patient-reported use are independent. Unknown/unconfirmed status is not current use; absent events do not establish missed doses.',
     }),
@@ -394,13 +396,26 @@ export function contextForPrompt(snapshot: HealthContextSnapshot, question = '')
         )
         .join('\n') +
       '\nIdentified body scans (separate source/device estimates; only scan_selection establishes a coherent latest selection; never add overlapping muscle/water compartments or change nutrition targets):\n' +
-      json({ scans: f.body_scans, scan_selection: f.scan_selection }),
+      json({ scans: f.body_scans, evidence: f.scan_evidence, scan_selection: f.scan_selection }) +
+      '\nClinical encounters, diagnostic studies and bounded PAP reports (not daily vitals):\n' +
+      json(
+        f.clinical_records.filter((record) =>
+          ['encounter', 'sleep_study', 'pap_report'].includes(record.fact.kind)
+        )
+      ),
     flagged_data: json(f.labs.filter((r) => r.flag && r.flag !== 'normal')),
     conditions_data: json({
       conditions: f.conditions,
       allergies: f.allergies,
       vaccines: f.vaccines,
       procedures: f.procedures,
+      typed_history: f.clinical_records.filter((record) =>
+        ['condition', 'procedure', 'allergy_review', 'screening', 'genetic_report'].includes(
+          record.fact.kind
+        )
+      ),
+      meaning:
+        'Certainty, activity and temporal scope are separate. Legacy procedure dates do not establish completed status. An empty allergy list does not establish a reviewed negative. Screening totals, items and functional responses are source-reported, not automatically scored; copied history is not a new administration. Genetic results and counseling remain qualitative evidence without interpretation.',
     }),
     recent_notes: json(f.notes),
     appointments_data: json(f.appointments),

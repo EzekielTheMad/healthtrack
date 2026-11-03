@@ -5,6 +5,17 @@ not permission to publish an image, change package visibility, submit a CA
 listing or deploy an instance. Contributors follow the repository instructions
 and their maintainer's authorization.
 
+## Current web-focused2.1.0 boundary
+
+[WEB-COMPLETION](WEB-COMPLETION.md) defines the current approved web extension.
+Android AC-04 and the seven physical-phone groups retain their original history
+but are deferred/unverified and outside this web release; no public APK is
+included. This does not waive provider compatibility, Oura consent/delivery,
+private login/existing-PAT readiness, exact-candidate review, runtime on every
+advertised architecture, fresh isolated upgrade/compatible restore, or separate
+publication/deployment authorization. Treat older native-CI and private-alpha
+receipts as evidence for their own source, never the changed candidate.
+
 ## Container implementation
 
 - [Dockerfile](../Dockerfile) builds dependencies with Python/make/g++, then

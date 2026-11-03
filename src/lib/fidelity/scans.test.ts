@@ -78,6 +78,67 @@ it('replays one identity, rejects changed content and preserves distinct same-da
   expect(await repo.listBodyScans(OWNER, scope)).toHaveLength(2);
   expect(repo.selectCoherentScan(await repo.listBodyScans(OWNER, scope)).scan).toBeNull();
 });
+it('round-trips ten regional outputs, vendor evidence and separate ratios through replay and selection', async () => {
+  const regional = ['left_arm', 'right_arm', 'left_leg', 'right_leg', 'trunk'].flatMap((region) => [
+    {
+      metric_key: `lean_mass_${region}`,
+      value: 3.123456,
+      unit: 'kg',
+      definition: 'Regional lean soft tissue, not skeletal muscle',
+    },
+    { metric_key: `fat_mass_${region}`, value: 0, unit: 'kg', raw_text: '0.000 kg' },
+  ]);
+  const input = {
+    ...fixture('regional'),
+    measurements: [
+      ...regional,
+      { metric_key: 'weight', value: 80, unit: 'kg' },
+      { metric_key: 'body_fat_mass', value: 20, unit: 'kg' },
+      { metric_key: 'total_body_water', value: 40, unit: 'kg' },
+      { metric_key: 'extracellular_water', value: 16, unit: 'kg' },
+      { metric_key: 'ecw_ratio', value: 0.39, unit: 'fraction' },
+    ],
+    vendor_results: {
+      scores: [{ key: 'score', name: 'Vendor score', value: 0, reference: { low: 0, high: 100 } }],
+      body_age: { value: 'Below reference', unit: 'years' },
+      reference_bands: [],
+      recommendations: [
+        { name: 'Weight control', text: 'Source recommendation', value: 0, unit: 'kg' },
+      ],
+    },
+  };
+  const created = await repo.createBodyScan(OWNER, scope, input);
+  expect(created.scan.scan.vendor_results).toEqual(input.vendor_results);
+  expect(
+    created.scan.measurements.slice(0, 10).map((measurement) => measurement.metric_key)
+  ).toEqual(regional.map((measurement) => measurement.metric_key));
+  expect(created.scan.measurements[0].definition).toBe(regional[0].definition);
+  expect(
+    created.scan.measurements.find((measurement) => measurement.metric_key === 'ecw_ratio')?.value
+  ).toBe(0.39);
+  expect(
+    created.scan.derived_measurements?.map((measurement) => [
+      measurement.metric_key,
+      measurement.value,
+    ])
+  ).toEqual([
+    ['ecw_ratio', 0.4],
+    ['body_fat_pct', 25],
+    ['body_water_pct', 50],
+  ]);
+  expect((await repo.createBodyScan(OWNER, scope, input)).scan).toEqual(created.scan);
+  const rows = await repo.listBodyScans(OWNER, scope);
+  expect(repo.selectCoherentScan(rows).scan).toEqual(created.scan);
+  expect(ctx.sqlite.prepare('SELECT count(*) n FROM vitals').get()).toEqual({ n: 0 });
+  const changed = { ...input, vendor_results: { ...input.vendor_results, scores: [] } };
+  await expect(repo.createBodyScan(OWNER, scope, changed)).rejects.toMatchObject({ status: 409 });
+  await expect(
+    repo.createBodyScan(OWNER, scope, {
+      ...input,
+      derived_measurements: created.scan.derived_measurements,
+    })
+  ).rejects.toThrow();
+});
 it('fences owner/dependent/share references and keeps legacy delegate permissions', async () => {
   insertDependent(ctx.sqlite, 'child', OWNER);
   await repo.createBodyScan(OWNER, { ownerId: OWNER, dependentId: 'child' }, fixture());
@@ -113,7 +174,7 @@ it('rejects unsupported units/metrics, duplicate fields and fake numerics while 
   for (const measurement of [
     { metric_key: 'total_body_water', value: 40, unit: 'L' },
     { metric_key: 'ecw_ratio', value: 37, unit: 'fraction' },
-    { metric_key: 'phase_angle', value: 7, unit: 'degrees' },
+    { metric_key: 'unsupported_metric', value: 7, unit: 'degrees' },
   ])
     await expect(
       repo.createBodyScan(OWNER, scope, { ...fixture(), measurements: [measurement] })

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { formatDateOnly } from '@/lib/dates';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -219,6 +220,17 @@ export default function ConditionCard({ condition, onUpdate }: ConditionCardProp
       className="rounded-xl border p-4"
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
     >
+      <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
+        Diagnostic certainty and current / historical scope were not recorded.{' '}
+        <Link
+          className="underline"
+          href={
+            '/clinical-intake?record_id=' + encodeURIComponent('legacy:condition:' + condition.id)
+          }
+        >
+          Review detailed history
+        </Link>
+      </p>
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">

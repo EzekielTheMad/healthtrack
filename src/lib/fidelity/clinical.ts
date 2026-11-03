@@ -15,6 +15,7 @@ import {
   type FidelityRecord,
 } from './contracts';
 import { approvalDigest, canonicalJson, contentRevision } from './security';
+import { CLINICAL_KIND_SECTIONS } from './web-clinical-contracts';
 
 type Kind = ClinicalFact['kind'];
 type IntakeItem = ClinicalIntake['items'][number];
@@ -26,7 +27,7 @@ type SqlRecord = {
   payload_json: string;
   revision: number;
   source_key: string | null;
-  legacy_table: 'lab_results' | 'medications' | null;
+  legacy_table: LegacyTable | null;
   legacy_id: string | null;
   legacy_revision: string | null;
   received_at: string;
@@ -82,7 +83,22 @@ export type ClinicalReview = {
 };
 
 const MAX_ROWS = 1000;
-const section = (kind: Kind) => (kind === 'lab' ? ('labs' as const) : ('medications' as const));
+type LegacyTable = 'lab_results' | 'medications' | 'conditions' | 'procedures';
+const legacyTables = {
+  lab: 'lab_results',
+  medication: 'medications',
+  condition: 'conditions',
+  procedure: 'procedures',
+} as const;
+const legacyKinds = {
+  lab_results: 'lab',
+  medications: 'medication',
+  conditions: 'condition',
+  procedures: 'procedure',
+} as const;
+const legacyTable = (kind: Kind): LegacyTable | undefined =>
+  legacyTables[kind as keyof typeof legacyTables];
+const section = (kind: Kind) => CLINICAL_KIND_SECTIONS[kind];
 const normalizedName = (s: string) => s.trim().toLocaleLowerCase('en-US').replace(/\s+/g, ' ');
 const provenance = {
   basis: 'legacy_unknown' as const,
@@ -199,6 +215,48 @@ function legacyLab(row: Record<string, unknown>): FidelityRecord {
     legacy: true,
   };
 }
+/** Legacy dates/statuses are source evidence, not proof of a confirmed diagnosis or completed procedure. */
+function legacyClinical(
+  row: Record<string, unknown>,
+  kind: 'condition' | 'procedure'
+): FidelityRecord {
+  const fact = clinicalFactSchema.parse({
+    kind,
+    name: row.name,
+    notes: row.notes,
+    ...(kind === 'condition'
+      ? {
+          certainty: 'unknown',
+          activity: row.status === 'active' || row.status === 'resolved' ? row.status : 'unknown',
+          temporal_scope: 'unknown',
+          diagnosis_date: unknownClinicalDate(row.diagnosed_date as string | null),
+          codes: row.icd10_code ? [{ system: 'ICD-10', code: row.icd10_code }] : [],
+        }
+      : {
+          status: 'unknown',
+          procedure_date: unknownClinicalDate(row.procedure_date as string | null),
+          codes: row.cpt_code ? [{ system: 'CPT', code: row.cpt_code }] : [],
+        }),
+    provenance: {
+      ...provenance,
+      notes:
+        kind === 'condition'
+          ? `Legacy status: ${row.status ?? 'not reported'}; certainty and temporal scope were not recorded.`
+          : 'Legacy procedure date retained as source text. Completion was not recorded.',
+    },
+  });
+  return {
+    id: `legacy:${kind}:${row.id}`,
+    user_id: row.user_id as string,
+    dependent_id: row.dependent_id as string | null,
+    kind,
+    fact,
+    revision: contentRevision(row),
+    received_at: null,
+    updated_at: row.updated_at as string,
+    legacy: true,
+  };
+}
 function recordsInScope(
   scope: ListScope,
   kinds: Kind[],
@@ -238,10 +296,21 @@ function recordsInScope(
       ).map(legacyLab)
     );
   }
-  // Name filtering can exclude a renamed typed overlay. Its preserved legacy
-  // original must still not reappear as a current matching result.
+  for (const kind of ['condition', 'procedure'] as const) {
+    if (!kinds.includes(kind)) continue;
+    const table = legacyTables[kind];
+    records.push(
+      ...(
+        sqlite
+          .prepare(`SELECT * FROM ${table} WHERE ${where.sql} ORDER BY created_at DESC,id LIMIT ?`)
+          .all(...where.args, limit) as Record<string, unknown>[]
+      ).map((row) => legacyClinical(row, kind))
+    );
+  }
+  // Filtering or a bounded read can exclude an overlay. Its preserved original
+  // must still never reappear as an unqualified current result.
   const current = records.filter((record) => {
-    if (!test || !record.legacy) return true;
+    if (!record.legacy) return true;
     const overlay = sqlite
       .prepare(
         'SELECT * FROM clinical_records WHERE user_id=? AND dependent_id IS ? AND legacy_table=? AND legacy_id=?'
@@ -249,7 +318,7 @@ function recordsInScope(
       .get(
         record.user_id,
         record.dependent_id,
-        record.kind === 'lab' ? 'lab_results' : 'medications',
+        legacyTable(record.kind),
         record.id.slice(`legacy:${record.kind}:`.length)
       ) as SqlRecord | undefined;
     if (!overlay) return true;
@@ -262,7 +331,7 @@ function recordsInScope(
       .filter((record) => record.supersedes_legacy && record.legacy_conflict)
       .map(
         (record) =>
-          `legacy:${record.supersedes_legacy!.table === 'lab_results' ? 'lab' : 'medication'}:${record.supersedes_legacy!.id}`
+          `legacy:${legacyKinds[record.supersedes_legacy!.table]}:${record.supersedes_legacy!.id}`
       )
   );
   for (const record of records)
@@ -270,10 +339,7 @@ function recordsInScope(
   const hidden = new Set(
     records
       .filter((r) => r.supersedes_legacy && !r.legacy_conflict)
-      .map(
-        (r) =>
-          `legacy:${r.supersedes_legacy!.table === 'lab_results' ? 'lab' : 'medication'}:${r.supersedes_legacy!.id}`
-      )
+      .map((r) => `legacy:${legacyKinds[r.supersedes_legacy!.table]}:${r.supersedes_legacy!.id}`)
   );
   return current
     .filter((r) => !hidden.has(r.id))
@@ -288,9 +354,7 @@ export async function listClinicalFacts(
   scope: ListScope,
   options: { limit?: number; kind?: Kind; test?: string | null } = {}
 ): Promise<FidelityRecord[]> {
-  const kinds = options.kind
-    ? [options.kind]
-    : (['lab', 'medication', 'medication_event'] as Kind[]);
+  const kinds = options.kind ? [options.kind] : (Object.keys(CLINICAL_KIND_SECTIONS) as Kind[]);
   const allowed: Kind[] = [];
   for (const kind of kinds) {
     try {
@@ -306,12 +370,14 @@ export async function listClinicalFacts(
     throw new FitnessWriteError('The test filter requires kind=lab.');
   return recordsInScope(scope, allowed, limit, options.test);
 }
-function legacyRecord(
-  scope: AuthzScope,
-  table: 'lab_results' | 'medications',
-  id: string
-): FidelityRecord | null {
+function legacyRecord(scope: AuthzScope, table: LegacyTable, id: string): FidelityRecord | null {
   const sqlite = getSqlite();
+  if (table === 'conditions' || table === 'procedures') {
+    const row = sqlite
+      .prepare(`SELECT * FROM ${table} WHERE id=? AND user_id=? AND dependent_id IS ?`)
+      .get(id, scope.ownerId, scope.dependentId) as Record<string, unknown> | undefined;
+    return row ? legacyClinical(row, legacyKinds[table]) : null;
+  }
   if (table === 'medications') {
     const row = sqlite
       .prepare('SELECT * FROM medications WHERE id=? AND user_id=? AND dependent_id IS ?')
@@ -331,6 +397,11 @@ function recordInScope(scope: AuthzScope, id: string): FidelityRecord | null {
     .prepare('SELECT * FROM clinical_records WHERE id=? AND user_id=? AND dependent_id IS ?')
     .get(id, scope.ownerId, scope.dependentId) as SqlRecord | undefined;
   if (row) return typedRow(row);
+  for (const kind of ['condition', 'procedure'] as const) {
+    const prefix = `legacy:${kind}:`;
+    if (id.startsWith(prefix))
+      return legacyRecord(scope, legacyTables[kind], id.slice(prefix.length));
+  }
   if (id.startsWith('legacy:medication:')) {
     const med = sqlite
       .prepare('SELECT * FROM medications WHERE id=? AND user_id=? AND dependent_id IS ?')
@@ -380,6 +451,11 @@ function validateReferences(scope: AuthzScope, fact: ClinicalFact): void {
     const medication = recordInScope(scope, fact.medication_id);
     if (!medication || medication.kind !== 'medication')
       throw new FitnessWriteError('Select a medication belonging to this person.');
+  }
+  if (fact.kind === 'screening' && fact.copied_from_record_id) {
+    const source = recordInScope(scope, fact.copied_from_record_id);
+    if (!source || source.kind !== 'screening')
+      throw new FitnessWriteError('The copied screening record is not available for this person.');
   }
   if (fact.kind === 'lab')
     for (const id of fact.medication_event_ids ?? []) {
@@ -447,6 +523,35 @@ function classify(fact: ClinicalFact, record: FidelityRecord): ClinicalMatch | n
   } else if (fact.kind === 'medication_event' && other.kind === 'medication_event') {
     related = fact.medication_id === other.medication_id;
     exact = false;
+  } else {
+    const name = (f: ClinicalFact) =>
+      'name' in f
+        ? f.name
+        : f.kind === 'screening'
+          ? f.instrument.name
+          : f.kind === 'allergy_review'
+            ? f.scope
+            : '';
+    const identity = (f: ClinicalFact) =>
+      f.kind === 'encounter'
+        ? f.encounter_id
+        : f.kind === 'sleep_study'
+          ? f.study_id
+          : f.kind === 'pap_report'
+            ? f.report_id
+            : undefined;
+    const a = identity(fact),
+      b = identity(other);
+    related =
+      normalizedName(name(fact)) === normalizedName(name(other)) ||
+      Boolean(knownLabIdentity(a) && a === b);
+    // Report/encounter identity plus equal content can establish a duplicate.
+    // Dates/names, copied screening scores, and condition/procedure status alone cannot.
+    exact = Boolean(
+      knownLabIdentity(a) &&
+      a === b &&
+      canonicalJson(semantics(fact)) === canonicalJson(semantics(other))
+    );
   }
   if (!related) return null;
   const classification = exact
@@ -479,14 +584,16 @@ function matchingFor(scope: AuthzScope, item: IntakeItem) {
             sql: "(hf_clinical_name(json_extract(payload_json,'$.name'))=? OR (? IS NOT NULL AND json_extract(payload_json,'$.rxcui')=?))",
             args: [normalizedName(fact.name), fact.rxcui ?? null, fact.rxcui ?? null],
           }
-        : { sql: "json_extract(payload_json,'$.medication_id')=?", args: [fact.medication_id] };
+        : fact.kind === 'medication_event'
+          ? { sql: "json_extract(payload_json,'$.medication_id')=?", args: [fact.medication_id] }
+          : { sql: '1=1', args: [] };
   const matches: ClinicalMatch[] = [],
     hash = createHash('sha256');
   let count = 0,
     selectedSeen = false;
   function consider(record: FidelityRecord) {
     if (record.legacy) {
-      const table = record.kind === 'lab' ? 'lab_results' : 'medications';
+      const table = legacyTable(record.kind);
       const overlay = sqlite
         .prepare(
           'SELECT * FROM clinical_records WHERE user_id=? AND dependent_id IS ? AND legacy_table=? AND legacy_id=?'
@@ -571,6 +678,13 @@ function matchingFor(scope: AuthzScope, item: IntakeItem) {
         fact.loinc_code ?? null
       ))
       consider(legacyLab(row as Record<string, unknown>));
+  } else if (fact.kind === 'condition' || fact.kind === 'procedure') {
+    for (const row of sqlite
+      .prepare(
+        `SELECT * FROM ${legacyTables[fact.kind]} WHERE user_id=? AND dependent_id IS ? ORDER BY id`
+      )
+      .iterate(scope.ownerId, scope.dependentId))
+      consider(legacyClinical(row as Record<string, unknown>, fact.kind));
   }
   if (item.target_id && !selectedSeen) {
     const selected = recordInScope(scope, item.target_id);
@@ -1001,8 +1115,9 @@ export async function approveClinicalIntake(
         }
         if (!item.reason) throw new FitnessWriteError('A correction reason is required.');
         if (target.legacy) {
-          const table = target.kind === 'lab' ? 'lab_results' : 'medications',
+          const table = legacyTable(target.kind),
             legacyId = target.id.slice(`legacy:${target.kind}:`.length);
+          if (!table) throw new FitnessConflictError('This record has no supported legacy source.');
           if (
             sqlite
               .prepare(
@@ -1087,11 +1202,11 @@ export async function canReadClinicalKind(
 export async function clinicalProjectionCoverage(
   actorId: string,
   scope: ListScope,
-  kind: 'lab' | 'medication'
+  kind: 'lab' | 'medication' | 'condition' | 'procedure'
 ) {
   await requireListAuthz(actorId, scope, section(kind), 'read');
   const sqlite = getSqlite(),
-    table = kind === 'lab' ? 'lab_results' : 'medications',
+    table = legacyTables[kind],
     where = scopedWhere(scope, 'l');
   const omitted = sqlite
     .prepare(

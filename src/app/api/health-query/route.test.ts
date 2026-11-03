@@ -178,7 +178,7 @@ describe('POST /api/health-query — vitals scope (I1)', () => {
     const first = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
     expect(first.status).toBe(200);
     const saved = await first.json();
-    expect(saved.context_metadata.context_version).toBe(3);
+    expect(saved.context_metadata.context_version).toBe(4);
     captured.context = null;
     const repeat = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
     expect((await repeat.json()).reused).toBe(true);

@@ -271,7 +271,14 @@ it('filters typed read domains by token scopes and leaves legacy numeric respons
   ).json();
   expect(partial.coverage).toMatchObject({
     included_kinds: ['lab'],
-    unavailable_kinds: ['medication', 'medication_event'],
+    unavailable_kinds: expect.arrayContaining([
+      'medication',
+      'medication_event',
+      'encounter',
+      'screening',
+      'procedure',
+      'allergy_review',
+    ]),
   });
   expect(
     (

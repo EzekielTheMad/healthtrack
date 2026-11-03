@@ -5,7 +5,7 @@
  * READ-ONLY with section + exact dependent match; delegates read (read_only+),
  * insert/update (read_write+), delete (admin).
  */
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { procedures } from '@/db/schema';
@@ -29,10 +29,7 @@ const procedureUpdateSchema = procedureInputSchema.partial();
 
 export type ProcedureInput = z.infer<typeof procedureInputSchema>;
 
-export async function listProcedures(
-  actorId: string,
-  scope: ListScope,
-): Promise<ProcedureRow[]> {
+export async function listProcedures(actorId: string, scope: ListScope): Promise<ProcedureRow[]> {
   await requireListAuthz(actorId, scope, 'procedures', 'read');
   return db
     .select()
@@ -41,7 +38,8 @@ export async function listProcedures(
       and(
         eq(procedures.userId, scope.ownerId),
         dependentFilter(procedures.dependentId, scope.dependentId),
-      ),
+        sql`NOT EXISTS(SELECT 1 FROM clinical_records wc WHERE wc.user_id=${procedures.userId} AND wc.dependent_id IS ${procedures.dependentId} AND wc.legacy_table='procedures' AND wc.legacy_id=${procedures.id})`
+      )
     )
     .orderBy(desc(procedures.procedureDate));
 }
@@ -49,7 +47,7 @@ export async function listProcedures(
 export async function createProcedure(
   actorId: string,
   scope: { ownerId: string; dependentId: string | null },
-  input: unknown,
+  input: unknown
 ): Promise<ProcedureRow> {
   await requireAuthz(actorId, scope, 'procedures', 'write');
   const values = procedureInputSchema.parse(input);
@@ -70,14 +68,14 @@ async function loadRow(id: string): Promise<ProcedureRow> {
 export async function updateProcedure(
   actorId: string,
   id: string,
-  updates: unknown,
+  updates: unknown
 ): Promise<ProcedureRow> {
   const row = await loadRow(id);
   await requireAuthz(
     actorId,
     { ownerId: row.userId, dependentId: row.dependentId },
     'procedures',
-    'write',
+    'write'
   );
   const values = procedureUpdateSchema.parse(updates);
   const [updated] = await db
@@ -94,7 +92,7 @@ export async function deleteProcedure(actorId: string, id: string): Promise<void
     actorId,
     { ownerId: row.userId, dependentId: row.dependentId },
     'procedures',
-    'delete',
+    'delete'
   );
   await db.delete(procedures).where(eq(procedures.id, id));
 }
