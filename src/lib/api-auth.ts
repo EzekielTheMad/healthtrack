@@ -56,7 +56,10 @@ export async function validateApiKey(authHeader: string | null): Promise<ApiKeyC
   const data = rows[0];
   if (!data) return null;
   if (data.revokedAt) return null;
-  if (data.expiresAt && new Date(data.expiresAt) < new Date()) return null;
+  if (data.expiresAt !== null) {
+    const expiresAt = Date.parse(data.expiresAt);
+    if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return null;
+  }
 
   // Update last_used_at (side effect; synchronous with better-sqlite3)
   await db
