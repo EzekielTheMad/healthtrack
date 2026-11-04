@@ -7,6 +7,8 @@ import {
 } from './contracts';
 import { calendarDayInTimeZone } from '@/lib/oura/timezone';
 import { isValidDayKey } from '@/lib/dates';
+import { clinicalFactDate, webClinicalSummaryRow } from './web-clinical-presentation';
+import { scanEvidenceRows } from './scan-presentation';
 
 export interface FidelitySummaryRow {
   id: string;
@@ -14,18 +16,24 @@ export interface FidelitySummaryRow {
   date: string;
   lines: string[];
 }
-/** Existing legacy arrays already carry untouched rows; only add typed/explicit conflict evidence. */
+/** Legacy numeric/medication arrays carry untouched rows. Rich history adapters retain uncertainty. */
 export function clinicalConsumerRecords(records: FidelityRecord[]): FidelityRecord[] {
   const conflictedBases = new Set(
     records
       .filter((record) => record.legacy_conflict && record.supersedes_legacy)
       .map(
         (record) =>
-          `legacy:${record.supersedes_legacy!.table === 'lab_results' ? 'lab' : 'medication'}:${record.supersedes_legacy!.id}`
+          `legacy:${{ lab_results: 'lab', medications: 'medication', conditions: 'condition', procedures: 'procedure' }[record.supersedes_legacy!.table]}:${record.supersedes_legacy!.id}`
       )
   );
   return records
-    .filter((record) => !record.legacy || conflictedBases.has(record.id))
+    .filter(
+      (record) =>
+        !record.legacy ||
+        record.kind === 'condition' ||
+        record.kind === 'procedure' ||
+        conflictedBases.has(record.id)
+    )
     .map((record) =>
       conflictedBases.has(record.id) ? { ...record, legacy_conflict: true } : record
     );
@@ -66,12 +74,18 @@ export function clinicalDoctorRecords(
   }
   for (const record of current) {
     const day = exactDay(record);
-    if (day && !record.legacy_conflict && day > (latest.get(key(record)) ?? ''))
+    if (
+      day &&
+      !record.legacy_conflict &&
+      record.fact.provenance.verification !== 'conflict' &&
+      day > (latest.get(key(record)) ?? '')
+    )
       latest.set(key(record), day);
   }
   const selected = current.filter(
     (record) =>
       record.legacy_conflict ||
+      record.fact.provenance.verification === 'conflict' ||
       record.fact.kind !== 'lab' ||
       exactDay(record) === null ||
       exactDay(record) === latest.get(key(record))
@@ -110,8 +124,29 @@ export function dateIntersectsWindow(
     date.value >= start.slice(0, date.value.length) && date.value <= end.slice(0, date.value.length)
   );
 }
+/** Aggregate windows overlap the requested window; they are never assigned a daily date. */
+export function clinicalRecordIntersectsWindow(
+  record: FidelityRecord,
+  start: string,
+  end: string,
+  timezone: string
+): boolean {
+  const f = record.fact;
+  if (f.kind === 'medication' || f.kind === 'medication_event') return true;
+  if (f.kind !== 'pap_report')
+    return dateIntersectsWindow(clinicalFactDate(f), start, end, timezone);
+  const key = (date: ClinicalDate) =>
+    date.precision === 'instant'
+      ? calendarDayInTimeZone(new Date(date.value), timezone)
+      : date.value;
+  const from = key(f.window_start);
+  const to = key(f.window_end);
+  return (!from || from <= end.slice(0, from.length)) && (!to || to >= start.slice(0, to.length));
+}
 export function clinicalSummaryRow(record: FidelityRecord): FidelitySummaryRow {
   const f = record.fact;
+  if (f.kind !== 'lab' && f.kind !== 'medication' && f.kind !== 'medication_event')
+    return webClinicalSummaryRow(record);
   const source = f.provenance.sources
     .map((s) => `${s.reference}${s.page ? `, page ${s.page}` : ''}`)
     .join('; ');
@@ -121,6 +156,10 @@ export function clinicalSummaryRow(record: FidelityRecord): FidelitySummaryRow {
   if (record.legacy_conflict)
     lines.unshift(
       'CONFLICT: The legacy source changed after typed correction. These versions require review; neither establishes an unqualified current result.'
+    );
+  else if (f.provenance.verification === 'conflict')
+    lines.unshift(
+      'CONFLICT: Source evidence is explicitly marked conflicting; review before treating it as current.'
     );
   if (record.legacy) lines.unshift('Historical legacy source evidence, shown for conflict review.');
   let title: string, date: string;
@@ -200,6 +239,12 @@ export function scanSummaryRow(record: BodyScan): FidelitySummaryRow {
         (m) =>
           `${m.metric_key}: ${m.source_value} ${m.source_unit}${m.raw_text ? ` [original: ${m.raw_text}]` : ''}; canonical ${m.value} ${m.unit ?? ''}${m.estimated ? ' (estimate)' : ''}`
       ),
+      ...scanEvidenceRows(record)
+        .filter((row) => row.basis !== 'reported' || row.definition)
+        .map(
+          (row) =>
+            `${row.label}: ${row.value}${row.unit ? ` ${row.unit}` : ''}; basis: ${row.basis}; source: ${row.source}${row.definition ? `; definition: ${row.definition}` : ''}${row.reference ? `; reference: ${row.reference}` : ''}${row.formula ? `; formula: ${row.formula}` : ''}`
+        ),
       `Conditions: workout ${s.conditions?.workout_status ?? 'unknown'}; fasting ${s.conditions?.fasting_status ?? 'unknown'}${s.conditions?.notes ? `; ${s.conditions.notes}` : ''}`,
       ...(s.conditions?.workout_at
         ? [`Workout time: ${formatClinicalDate(s.conditions.workout_at)}`]

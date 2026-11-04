@@ -6,6 +6,7 @@ import { usePdfExport } from '@/hooks/usePdfExport';
 const SECTIONS = [
   { key: 'medications', label: 'Medications' },
   { key: 'conditions', label: 'Conditions' },
+  { key: 'procedures', label: 'Procedures and history' },
   { key: 'allergies', label: 'Allergies' },
   { key: 'vitals', label: 'Vitals' },
   { key: 'labs', label: 'Lab Results' },
@@ -17,9 +18,7 @@ type SectionKey = (typeof SECTIONS)[number]['key'];
 
 export default function PdfExportSection() {
   const { generating, error, generatePdf } = usePdfExport();
-  const [selected, setSelected] = useState<Set<SectionKey>>(
-    new Set(SECTIONS.map((s) => s.key)),
-  );
+  const [selected, setSelected] = useState<Set<SectionKey>>(new Set(SECTIONS.map((s) => s.key)));
 
   function toggle(key: SectionKey) {
     setSelected((prev) => {
@@ -40,15 +39,12 @@ export default function PdfExportSection() {
   return (
     <div className="space-y-4">
       <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-        Download a formatted PDF health summary suitable for sharing with doctors
-        or storing offline. Choose which sections to include.
+        Download a formatted PDF health summary suitable for sharing with doctors or storing
+        offline. Choose which sections to include.
       </p>
 
       <div>
-        <p
-          className="mb-2 text-sm font-medium"
-          style={{ color: 'var(--color-text-primary)' }}
-        >
+        <p className="mb-2 text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
           Include in PDF:
         </p>
         <ul className="grid grid-cols-2 gap-2">

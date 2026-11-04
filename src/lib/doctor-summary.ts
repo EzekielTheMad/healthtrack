@@ -70,7 +70,16 @@ export async function buildDoctorSummary(
     timezone: getHealthTrackTimeZone(),
     bodyScans,
     typedClinical,
-    sections: ['medications', 'conditions', 'allergies', 'vitals', 'labs', 'providers', 'vaccines'],
+    sections: [
+      'medications',
+      'conditions',
+      'procedures',
+      'allergies',
+      'vitals',
+      'labs',
+      'providers',
+      'vaccines',
+    ],
     profile: {
       display_name: dependent?.name ?? profile?.displayName ?? 'Your record',
       date_of_birth: dependent?.dateOfBirth ?? profile?.dateOfBirth ?? undefined,

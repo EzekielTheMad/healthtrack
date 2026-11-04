@@ -5,7 +5,28 @@ not permission to publish an image, change package visibility, submit a CA
 listing or deploy an instance. Contributors follow the repository instructions
 and their maintainer's authorization.
 
+## Current web-focused2.1.0 boundary
+
+[WEB-COMPLETION](WEB-COMPLETION.md) defines the current approved web extension.
+Physical Android acceptance remains deferred and unverified outside this web
+release; no public APK is included. The [candidate checklist](RELEASE-CHECKLIST.md)
+records current verification and its limits, including live provider coverage,
+Oura and the missing production post-revocation bearer check. Final corrected
+images still require exact review, runtime on every advertised architecture,
+isolated upgrade/compatible restore, and separate publication/deployment
+authorization. Earlier native-CI and private deployment evidence belongs to its
+recorded source and binary. See [release notes](RELEASE-NOTES-2.1.md) for changes
+and upgrade compatibility.
+
 ## Container implementation
+
+- The build runs `scripts/prepare-migration-artifacts.mjs` before compiling and
+  copies its separate output into the final image. The manifest pins the known
+  source and runtime SHA-256 for each migration/journal file. Only an exact known
+  source or already-pinned runtime input is accepted; the declared conversion
+  must reproduce the runtime digest. This does not edit source SQL or a database.
+  Added migrations or changed inputs require a deliberate manifest review.
+  CI and release builds use this same Dockerfile rule, without a private overlay.
 
 - [Dockerfile](../Dockerfile) builds dependencies with Python/make/g++, then
   Next.js standalone output and an esbuild-bundled migration runner. The runtime
@@ -39,6 +60,17 @@ the source SHA, workflow result and manifest/platform digests for an authorized
 release. If anonymous installation is intended, verify an unauthenticated pull;
 a workflow push does not prove package visibility. Visibility changes and
 release-tag pushes require separate publication authority.
+
+Before either platform digest reaches the manifest job, the release verifier
+pulls that exact digest on its native runner and checks the source, architecture,
+all pinned migration bytes, fresh startup, unchanged ledger after restart and
+anonymous `401` responses. The fixture has no network, published ports, accounts,
+sessions or API keys; it has bounded memory/CPU and removes its labeled container
+and fresh volume. Failure, including failed cleanup, blocks named manifest tags.
+The digest itself was already pushed: a failed run may leave registry content.
+There is no automatic registry deletion, tag reset or deployment rollback.
+This gate does not replace an applicable isolated upgrade/compatible restore
+rehearsal or prove a provider, phone or real-user workflow.
 
 The non-publishing CI container smoke job uses the same native AMD64 and ARM64
 runner types, verifies the running Node architecture, and can also be dispatched

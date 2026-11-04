@@ -127,6 +127,13 @@
       "when": 1793487600000,
       "tag": "0017_fidelity_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1793644200000,
+      "tag": "0018_web_clinical_records",
+      "breakpoints": true
     }
   ]
 }

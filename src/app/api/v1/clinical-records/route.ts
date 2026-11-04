@@ -1,4 +1,9 @@
 import { NextRequest } from 'next/server';
+import {
+  CLINICAL_KINDS,
+  CLINICAL_KIND_SECTIONS,
+  type ClinicalFact,
+} from '@/lib/fidelity/contracts';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
 import { corsHeaders, clampLimit, fitnessErrorResponse } from '@/lib/api/v1-fitness';
 import { listClinicalFacts } from '@/lib/fidelity/clinical';
@@ -10,9 +15,9 @@ export async function GET(request: NextRequest) {
   const auth = await validateApiKey(request.headers.get('authorization'));
   if (!auth) return unauthorized();
   const requested = request.nextUrl.searchParams.get('kind');
-  if (requested && !['lab', 'medication', 'medication_event'].includes(requested))
+  if (requested && !CLINICAL_KINDS.includes(requested as ClinicalFact['kind']))
     return Response.json(
-      { error: 'kind must be lab, medication or medication_event' },
+      { error: `kind must be one of: ${CLINICAL_KINDS.join(', ')}` },
       { status: 400, headers }
     );
   if (
@@ -23,12 +28,16 @@ export async function GET(request: NextRequest) {
       { error: 'PAT clinical reads are self-scoped.' },
       { status: 400, headers }
     );
-  const kinds = (['lab', 'medication', 'medication_event'] as const).filter(
+  const kinds = CLINICAL_KINDS.filter(
     (kind) =>
-      (!requested || requested === kind) &&
-      hasScope(auth, kind === 'lab' ? 'read:labs' : 'read:medications')
+      (!requested || requested === kind) && hasScope(auth, `read:${CLINICAL_KIND_SECTIONS[kind]}`)
   );
-  if (!kinds.length) return forbidden(requested === 'lab' ? 'read:labs' : 'read:medications');
+  if (!kinds.length)
+    return forbidden(
+      requested
+        ? `read:${CLINICAL_KIND_SECTIONS[requested as ClinicalFact['kind']]}`
+        : 'read:clinical domain'
+    );
   try {
     const limit = clampLimit(request.nextUrl.searchParams.get('limit'), 200, 1000);
     const records = (
@@ -54,8 +63,8 @@ export async function GET(request: NextRequest) {
         records,
         coverage: {
           included_kinds: kinds,
-          unavailable_kinds: (['lab', 'medication', 'medication_event'] as const).filter(
-            (kind) => !hasScope(auth, kind === 'lab' ? 'read:labs' : 'read:medications')
+          unavailable_kinds: CLINICAL_KINDS.filter(
+            (kind) => !hasScope(auth, `read:${CLINICAL_KIND_SECTIONS[kind]}`)
           ),
           limit,
           may_be_limited: records.length >= limit,

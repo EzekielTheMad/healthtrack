@@ -5,6 +5,18 @@
  */
 export const AVAILABLE_SCOPES = [
   {
+    value: 'write:clinical_reports',
+    label: 'Stage Clinical Reports',
+    description:
+      'Additional opt-in for encounters, studies, screenings and clinical-history reports; also requires Stage Clinical Imports; owner approval still required',
+  },
+  {
+    value: 'write:scan_reports',
+    label: 'Write Extended Scan Reports',
+    description:
+      'Additional opt-in for regional/specialized metrics and vendor report fields; also requires Write Body Scans',
+  },
+  {
     value: 'write:clinical_intake',
     label: 'Stage Clinical Imports',
     description:

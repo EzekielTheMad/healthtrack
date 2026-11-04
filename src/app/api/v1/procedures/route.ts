@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
 import { listProcedures } from '@/lib/repos/procedures';
+import { clinicalProjectionCoverage } from '@/lib/fidelity/clinical';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,7 +36,20 @@ export async function GET(request: NextRequest) {
         procedure_date: p.procedureDate,
         notes: p.notes,
       })),
-      { headers: corsHeaders },
+      {
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Expose-Headers': 'X-HealthTrack-Clinical-Coverage, Link',
+          'X-HealthTrack-Clinical-Coverage': JSON.stringify(
+            await clinicalProjectionCoverage(
+              ctx.userId,
+              { ownerId: ctx.userId, dependentId: null },
+              'procedure'
+            )
+          ),
+          Link: '</api/v1/clinical-records?kind=procedure>; rel="alternate"',
+        },
+      }
     );
   } catch (error) {
     console.error('[v1] request failed:', error instanceof Error ? error.message : error);

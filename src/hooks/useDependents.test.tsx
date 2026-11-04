@@ -40,9 +40,10 @@ it('accepts null biological sex and sends explicit null in add and update reques
   expect(dependentSchema.parse(values).biological_sex).toBeNull();
   const { result } = renderHook(() => useDependents());
   await waitFor(() => expect(result.current.loading).toBe(false));
-  fetchMock
-    .mockResolvedValueOnce(json({ ...child, biological_sex: null }, 201))
-    .mockResolvedValueOnce(json({ ...child, biological_sex: null }));
+  const stored = { ...child, biological_sex: null };
+  fetchMock.mockImplementation(async (_url, init) =>
+    json(init?.method ? stored : [stored], init?.method === 'POST' ? 201 : 200)
+  );
   await act(async () => {
     await result.current.addDependent(values);
   });
@@ -51,11 +52,155 @@ it('accepts null biological sex and sends explicit null in add and update reques
       biological_sex: null,
     });
   });
-  expect(fetchMock.mock.calls.slice(1).map(([, init]) => JSON.parse(init.body))).toEqual([
-    values,
-    { id: child.id, biological_sex: null },
-  ]);
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method).map(([, init]) => JSON.parse(init.body))
+  ).toEqual([values, { id: child.id, biological_sex: null }]);
   expect(result.current.dependents[0].biological_sex).toBeNull();
+});
+
+it('refreshes two independent consumers after a successful add, rename and removal', async () => {
+  let stored: Dependent[] = [];
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+    if (!init?.method) return json(stored);
+    if (init.method === 'POST') {
+      stored = [child];
+      return json(child, 201);
+    }
+    if (init.method === 'PATCH') {
+      stored = [{ ...child, ...JSON.parse(String(init.body)) }];
+      return json(stored[0]);
+    }
+    stored = [];
+    return new Response(null, { status: 204 });
+  });
+  const manager = renderHook(() => useDependents());
+  const picker = renderHook(() => useDependents());
+  await waitFor(() =>
+    expect(manager.result.current.loading || picker.result.current.loading).toBe(false)
+  );
+  await act(async () => {
+    await manager.result.current.addDependent(values);
+  });
+  await waitFor(() => expect(picker.result.current.dependents).toEqual([child]));
+  expect(manager.result.current.dependents).toEqual([child]);
+  await act(async () => {
+    await manager.result.current.updateDependent(child.id, { name: 'Renamed fictional child' });
+  });
+  await waitFor(() =>
+    expect(picker.result.current.dependents[0].name).toBe('Renamed fictional child')
+  );
+  expect(manager.result.current.dependents[0].name).toBe('Renamed fictional child');
+  await act(async () => {
+    await picker.result.current.deleteDependent(child.id);
+  });
+  await waitFor(() => expect(manager.result.current.dependents).toEqual([]));
+  expect(picker.result.current.dependents).toEqual([]);
+  // Reads stay session-scoped and bypass the browser's response cache.
+  for (const [url, init] of fetchMock.mock.calls.filter(([, init]) => !init?.method)) {
+    expect(url).toBe('/api/dependents');
+    expect(init).toEqual({ cache: 'no-store' });
+  }
+});
+
+it.each(['POST', 'PATCH', 'DELETE'])(
+  'does not broadcast or change either consumer after a failed %s write',
+  async (method) => {
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method ? json({ message: 'Fictional rejected write' }, 409) : json([child])
+    );
+    const manager = renderHook(() => useDependents());
+    const picker = renderHook(() => useDependents());
+    await waitFor(() =>
+      expect(manager.result.current.loading || picker.result.current.loading).toBe(false)
+    );
+    const readsBefore = fetchMock.mock.calls.length;
+    const originalValues = { ...values };
+    const mutate = () =>
+      method === 'POST'
+        ? manager.result.current.addDependent(values)
+        : method === 'PATCH'
+          ? manager.result.current.updateDependent(child.id, { name: 'Rejected rename' })
+          : manager.result.current.deleteDependent(child.id);
+    await act(async () => {
+      await mutate();
+    });
+    expect(manager.result.current.error).toBe('Fictional rejected write');
+    expect(manager.result.current.dependents).toEqual([child]);
+    expect(picker.result.current.dependents).toEqual([child]);
+    expect(picker.result.current.error).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(readsBefore + 1);
+    expect(values).toEqual(originalValues);
+    fetchMock.mockRejectedValueOnce(new Error('Offline'));
+    await act(async () => {
+      await mutate();
+    });
+    expect(manager.result.current.error).toContain('Failed to');
+    expect(manager.result.current.dependents).toEqual([child]);
+    expect(picker.result.current.dependents).toEqual([child]);
+    expect(fetchMock).toHaveBeenCalledTimes(readsBefore + 2);
+  }
+);
+
+it('ignores an older response body that finishes after another consumer changed the list', async () => {
+  let finishOldBody!: (data: Dependent[]) => void;
+  const oldBody = new Promise<Dependent[]>((resolve) => {
+    finishOldBody = resolve;
+  });
+  let stored: Dependent[] = [];
+  fetchMock.mockReset();
+  fetchMock.mockResolvedValueOnce({ ok: true, json: () => oldBody });
+  fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      stored = [child];
+      return json(child, 201);
+    }
+    return json(stored);
+  });
+  const stalePicker = renderHook(() => useDependents());
+  const manager = renderHook(() => useDependents());
+  await waitFor(() => expect(manager.result.current.loading).toBe(false));
+  await act(async () => {
+    await manager.result.current.addDependent(values);
+  });
+  await waitFor(() => expect(stalePicker.result.current.dependents).toEqual([child]));
+  await act(async () => {
+    finishOldBody([]);
+  });
+  expect(stalePicker.result.current.dependents).toEqual([child]);
+  expect(manager.result.current.dependents).toEqual([child]);
+  expect(stalePicker.result.current.loading).toBe(false);
+});
+
+it('removes unmounted subscribers and still refreshes mounted consumers if a successful write finishes after unmount', async () => {
+  let finishWrite!: (response: Response) => void;
+  let stored: Dependent[] = [];
+  fetchMock.mockReset();
+  fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+    if (init?.method)
+      return new Promise<Response>((resolve) => {
+        finishWrite = resolve;
+      });
+    return json(stored);
+  });
+  const manager = renderHook(() => useDependents());
+  const picker = renderHook(() => useDependents());
+  await waitFor(() =>
+    expect(manager.result.current.loading || picker.result.current.loading).toBe(false)
+  );
+  let saving!: ReturnType<typeof manager.result.current.addDependent>;
+  act(() => {
+    saving = manager.result.current.addDependent(values);
+  });
+  manager.unmount();
+  stored = [child];
+  await act(async () => {
+    finishWrite(json(child, 201));
+    await saving;
+  });
+  await waitFor(() => expect(picker.result.current.dependents).toEqual([child]));
+  expect(fetchMock.mock.calls.filter(([, init]) => !init?.method)).toHaveLength(3);
 });
 it.each(['add', 'update'])(
   'returns no success on failed %s responses and network errors',

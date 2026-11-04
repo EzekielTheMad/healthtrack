@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { CLINICAL_KINDS } from '@/lib/fidelity/contracts';
 import { requireUser } from '@/lib/auth/session';
 import { errorResponse } from '@/lib/api/respond';
 import { scopeFromParams } from '@/lib/repos/_scope';
@@ -9,7 +10,7 @@ export async function GET(request: NextRequest) {
     const user = await requireUser();
     const params = request.nextUrl.searchParams;
     const kind = z
-      .enum(['lab', 'medication', 'medication_event'])
+      .enum(CLINICAL_KINDS)
       .optional()
       .parse(params.get('kind') ?? undefined);
     const records = await listClinicalFacts(user.id, scopeFromParams(user.id, params), {

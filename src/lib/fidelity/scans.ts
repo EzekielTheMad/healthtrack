@@ -6,6 +6,7 @@ import { scanInputSchema, type BodyScan } from './contracts';
 import { contentRevision } from './security';
 import { normalizeScanMeasurements } from '@/lib/metrics/scan-normalization';
 import { compareScans } from './scan-selection';
+import { deriveScanMeasurements } from './scan-derivations';
 export { compareScans, selectCoherentScan } from './scan-selection';
 
 type ScanRow = {
@@ -20,12 +21,14 @@ type ScanRow = {
 export const MAX_SCAN_ROWS = 1000;
 export const MAX_SCAN_BYTES = 131072;
 function toScan(row: ScanRow): BodyScan {
+  const measurements: BodyScan['measurements'] = JSON.parse(row.normalized_json);
   return {
     id: row.id,
     user_id: row.user_id,
     dependent_id: row.dependent_id,
     scan: JSON.parse(row.payload_json),
-    measurements: JSON.parse(row.normalized_json),
+    measurements,
+    derived_measurements: deriveScanMeasurements(measurements),
     revision: row.revision,
     received_at: row.received_at,
   };
@@ -115,6 +118,7 @@ export async function createBodyScan(
           dependent_id: scope.dependentId,
           scan,
           measurements,
+          derived_measurements: deriveScanMeasurements(measurements),
           revision,
           received_at: received,
         },

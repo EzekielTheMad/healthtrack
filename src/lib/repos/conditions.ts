@@ -5,7 +5,7 @@
  * READ-ONLY with section + exact dependent match; delegates read (read_only+),
  * insert/update (read_write+), delete (admin).
  */
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { conditions } from '@/db/schema';
@@ -39,7 +39,7 @@ export interface ListConditionsOptions {
 export async function listConditions(
   actorId: string,
   scope: ListScope,
-  opts: ListConditionsOptions = {},
+  opts: ListConditionsOptions = {}
 ): Promise<ConditionRow[]> {
   await requireListAuthz(actorId, scope, 'conditions', 'read');
   return db
@@ -49,20 +49,21 @@ export async function listConditions(
       and(
         eq(conditions.userId, scope.ownerId),
         dependentFilter(conditions.dependentId, scope.dependentId),
-      ),
+        sql`NOT EXISTS(SELECT 1 FROM clinical_records wc WHERE wc.user_id=${conditions.userId} AND wc.dependent_id IS ${conditions.dependentId} AND wc.legacy_table='conditions' AND wc.legacy_id=${conditions.id})`
+      )
     )
     .orderBy(
       opts.orderBy === 'diagnosed_date'
         ? desc(conditions.diagnosedDate)
         : desc(conditions.createdAt),
-      asc(conditions.name),
+      asc(conditions.name)
     );
 }
 
 export async function createCondition(
   actorId: string,
   scope: { ownerId: string; dependentId: string | null },
-  input: unknown,
+  input: unknown
 ): Promise<ConditionRow> {
   await requireAuthz(actorId, scope, 'conditions', 'write');
   const values = conditionInputSchema.parse(input);
@@ -83,14 +84,14 @@ async function loadRow(id: string): Promise<ConditionRow> {
 export async function updateCondition(
   actorId: string,
   id: string,
-  updates: unknown,
+  updates: unknown
 ): Promise<ConditionRow> {
   const row = await loadRow(id);
   await requireAuthz(
     actorId,
     { ownerId: row.userId, dependentId: row.dependentId },
     'conditions',
-    'write',
+    'write'
   );
   const values = conditionUpdateSchema.parse(updates);
   const [updated] = await db
@@ -107,7 +108,7 @@ export async function deleteCondition(actorId: string, id: string): Promise<void
     actorId,
     { ownerId: row.userId, dependentId: row.dependentId },
     'conditions',
-    'delete',
+    'delete'
   );
   await db.delete(conditions).where(eq(conditions.id, id));
 }

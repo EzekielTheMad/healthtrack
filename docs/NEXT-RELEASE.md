@@ -1,23 +1,34 @@
 # HealthTrack next-release fidelity — proposal 1
 
+## Current web completion extension — Nov2,2026
+
+The approved **HealthTrack web completion — proposal1** adds all29 previously deferred clinical/scan feedback requirements and the four ordinary-form controls in [WEB-COMPLETION.md](WEB-COMPLETION.md). The final target is a **web-focused2.1.0** release. Earlier HF acceptance, IDs and version-labelled evidence remain historical and unchanged. Android AC-04 keeps its original wording/history but is **deferred and unverified**, outside the web release acceptance denominator. Other external release gates remain open. Implementation is active; this scope capture is not acceptance, publication or deployment.
+
+
+
 This is the single canonical goal record for HF-01 through HF-08. It supplements
 [v2](V2.md); existing AC requirements, accepted evidence and unfinished v2 gates
-remain separate. Current deployed baseline is source
-`9b05c165d8ffe8b2403113abc924909ef299e729`; no new deployment is authorized.
+remain separate. The earlier HF baseline was source
+`9b05c165d8ffe8b2403113abc924909ef299e729`, then the historical fidelity candidate
+used **2.1.0-alpha.1**. Those dated identities are not a current deployment feed.
 
-Local next-release application identity is **2.1.0-alpha.1**. This distinguishes
-the fidelity development candidate from the deployed v2 rc.6; it is not a stable
-version, publication or waiver of either goal's acceptance gates.
+The current local web completion candidate is **2.1.0**. Its implementation and
+source checks do not establish browser acceptance, stable publication or a new
+deployment, and do not waive the remaining release gates.
 
 ## User outcomes
 
-The active goal is **Import health records and compare body scans**: review qualified
+These original HF outcome statements retain their proposal context. The current
+web-completion clinical and scan outcomes are defined in [WEB-COMPLETION](WEB-COMPLETION.md);
+previous acceptance stays bound to its recorded source and evidence.
+
+The original HF goal was **Import health records and compare body scans**: review qualified
 lab results, medication schedules and explicitly reported dose events; preserve their
 source and date details; and read distinct body scans faithfully in the app and exports.
 The HF acceptance criteria below define this goal. Final browser/export checks and
 exact-candidate verification must finish before acceptance.
 
-The next proposed goal is **Publish the reviewed health-history update for source
+The historical next goal was **Publish the reviewed health-history update for source
 review**. It depends on this goal's accepted local candidate and separate publication
 approval. Source push, a new draft pull request and its actual checks are separate
 from merge, release publication and deployment. **Finish the v2 release checks and
@@ -316,20 +327,21 @@ UI→API→database→reload/export, PDF rendering, exact
 candidate upgrade/old-image restore, full suite/build and one independent reviewer
 remained pending. Production and existing v2 acceptance gates remained unchanged.
 
-## Deferred scope
+## Scope after web completion extension
 
-Encounter/historical-height, diagnostic sleep/PAP report models, questionnaires,
-broader conditions/procedures/allergy review, segmental/specialized/proprietary
-scanner outputs, vendor PDF/CSV parsers, expanded attachment management, causal or
-treatment recommendations, adherence reminders, vendor-driven nutrition changes,
-Hevy duplication and previously excluded v2 scope remain deferred. Minimal source
-references and existing protected originals are reused. Unsupported source content
-must be rejected/held with an explanation rather than silently discarded.
+WC1 includes the previously deferred encounters/historical height, diagnostic
+sleep/PAP reports, screenings, conditions/procedures/allergy review/genetics and
+regional/specialized/vendor scan evidence in [WEB-COMPLETION](WEB-COMPLETION.md).
+Vendor PDF/CSV/full-history parsers, expanded attachment management, automatic
+clinical interpretation/scoring, treatment recommendations, adherence reminders,
+vendor-driven nutrition/training targets and Hevy duplication remain deferred.
+Minimal source references and existing protected originals are reused. Unsupported
+content must be rejected/held with an explanation, never silently discarded.
 
 ## Feedback disposition ledger
 
 The source attachment is product input, not authority for all 85 entries. Stable
-FB numbers below follow its original order. The approved HF scope controls each
+FB numbers below follow its original order. The original HF scope and approved WC1 extension control each
 included/reused/deferred disposition; source details and real clinical records
 must not enter fixtures or publication.
 
@@ -360,27 +372,27 @@ Source SHA-256: `463b86c47ebd5ae99f3cf7d675efec43b591a3aef0f8bf24d4d2c0dfeb5f546
 | FB-021 | Provide previewable, idempotent clinical writes with exact readback                                                            | included         | HF-02/HF-04                                                                  |
 | FB-022 | Publish typed clinical read/write schemas and validation rules                                                                 | included         | HF-02/HF-04                                                                  |
 | FB-023 | Return per-item import outcomes and retain source identity                                                                     | included         | HF-02/HF-04                                                                  |
-| FB-024 | Add generic encounter heart rate, separate from `resting_hr`                                                                   | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-025 | Add historical height measurements, separate from profile height                                                               | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-026 | Tag measurement context such as office spot, home spot, or overnight aggregate                                                 | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-027 | Group observations by encounter or measurement session                                                                         | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-028 | Retain multiple legitimate same-day observations without overwriting                                                           | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-029 | Add diagnostic sleep-study records distinct from daily PAP metrics                                                             | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-030 | Capture study type, test date, and separately labeled AHI definitions                                                          | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-031 | Capture study-level oxygen statistics and time below labeled thresholds                                                        | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-032 | Add PAP summary-report windows with start/end dates                                                                            | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-033 | Preserve usage numerator, denominator, and threshold definition                                                                | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-034 | Record statistic type and averaging denominator when supplied                                                                  | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-035 | Support overlapping reports without double-counting their contents                                                             | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-036 | Add instrument-specific screening records with name/version and administration date                                            | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-037 | Support total scores, optional item responses, and functional-impact responses separately                                      | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-038 | Allow qualitative screening results without a numeric score or complete form                                                   | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-039 | Distinguish repeat administrations from copied screening history                                                               | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-040 | Separate ordered, planned, canceled/deferred, and completed procedures                                                         | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-041 | Preserve procedure event dates and coding systems independently                                                                | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-042 | Represent condition certainty, activity, and temporal scope separately                                                         | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-043 | Distinguish unknown allergy status from verified no-known-allergy status                                                       | deferred         | Broader clinical structures excluded from proposal 1                         |
-| FB-044 | Treat qualitative genetic results and counseling as suitable report/history records                                            | deferred         | Broader clinical structures excluded from proposal 1                         |
+| FB-024 | Add generic encounter heart rate, separate from `resting_hr`                                                                   | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-025 | Add historical height measurements, separate from profile height                                                               | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-026 | Tag measurement context such as office spot, home spot, or overnight aggregate                                                 | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-027 | Group observations by encounter or measurement session                                                                         | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-028 | Retain multiple legitimate same-day observations without overwriting                                                           | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-029 | Add diagnostic sleep-study records distinct from daily PAP metrics                                                             | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-030 | Capture study type, test date, and separately labeled AHI definitions                                                          | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-031 | Capture study-level oxygen statistics and time below labeled thresholds                                                        | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-032 | Add PAP summary-report windows with start/end dates                                                                            | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-033 | Preserve usage numerator, denominator, and threshold definition                                                                | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-034 | Record statistic type and averaging denominator when supplied                                                                  | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-035 | Support overlapping reports without double-counting their contents                                                             | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-036 | Add instrument-specific screening records with name/version and administration date                                            | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-037 | Support total scores, optional item responses, and functional-impact responses separately                                      | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-038 | Allow qualitative screening results without a numeric score or complete form                                                   | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-039 | Distinguish repeat administrations from copied screening history                                                               | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-040 | Separate ordered, planned, canceled/deferred, and completed procedures                                                         | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-041 | Preserve procedure event dates and coding systems independently                                                                | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-042 | Represent condition certainty, activity, and temporal scope separately                                                         | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-043 | Distinguish unknown allergy status from verified no-known-allergy status                                                       | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-044 | Treat qualitative genetic results and counseling as suitable report/history records                                            | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
 | FB-045 | `skeletal_muscle_mass` — mass                                                                                                  | included         | HF-05                                                                        |
 | FB-046 | `body_fat_mass` — mass                                                                                                         | included         | HF-05                                                                        |
 | FB-047 | `total_body_water` — mass                                                                                                      | included         | HF-05                                                                        |
@@ -388,8 +400,8 @@ Source SHA-256: `463b86c47ebd5ae99f3cf7d675efec43b591a3aef0f8bf24d4d2c0dfeb5f546
 | FB-049 | `extracellular_water` — mass                                                                                                   | included         | HF-05                                                                        |
 | FB-050 | `ecw_ratio` — dimensionless fraction                                                                                           | included         | HF-05                                                                        |
 | FB-051 | `visceral_fat_area` — cm²                                                                                                      | included         | HF-05                                                                        |
-| FB-052 | Lean mass for left/right arms, left/right legs, and trunk                                                                      | deferred         | Segmental outputs                                                            |
-| FB-053 | Fat mass for left/right arms, left/right legs, and trunk                                                                       | deferred         | Segmental outputs                                                            |
+| FB-052 | Lean mass for left/right arms, left/right legs, and trunk                                                                      | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-053 | Fat mass for left/right arms, left/right legs, and trunk                                                                       | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
 | FB-054 | Keep `fat_free_mass` distinct from skeletal muscle and soft lean mass                                                          | reused/clarified | HF-05/HF-06; preserve existing metric meanings                               |
 | FB-055 | Clarify the definition of `muscle_mass_pct` in documentation and UI                                                            | reused/clarified | HF-05/HF-06; preserve existing metric meanings                               |
 | FB-056 | Label the existing `visceral_fat` value as a source/device-specific level or score                                             | reused/clarified | HF-05/HF-06; preserve existing metric meanings                               |
@@ -407,18 +419,18 @@ Source SHA-256: `463b86c47ebd5ae99f3cf7d675efec43b591a3aef0f8bf24d4d2c0dfeb5f546
 | FB-068 | Display BIA outputs as estimates and flag noncomparable conditions                                                             | included         | HF-02/HF-03/HF-05/HF-06; no new nutrition targets                            |
 | FB-069 | Keep muscle and water compartments visibly overlapping in explanations                                                         | included         | HF-02/HF-03/HF-05/HF-06; no new nutrition targets                            |
 | FB-070 | Keep vendor calorie recommendations separate from intake, expenditure observations, and adopted targets                        | included         | HF-02/HF-03/HF-05/HF-06; no new nutrition targets                            |
-| FB-071 | Add soft lean mass when a source actually reports it                                                                           | deferred         | Specialized/proprietary outputs and new derivations                          |
-| FB-072 | Consider subcutaneous-fat mass and visceral-fat mass as separate optional metrics                                              | deferred         | Specialized/proprietary outputs and new derivations                          |
-| FB-073 | Preserve estimated protein mass, mineral mass, bone mineral content, and body cell mass as explicitly labeled optional outputs | deferred         | Specialized/proprietary outputs and new derivations                          |
-| FB-074 | Consider phase angle, skeletal muscle index, and regional ECW ratios when populated                                            | deferred         | Specialized/proprietary outputs and new derivations                          |
-| FB-075 | Archive proprietary scores, body-age outputs, reference bands, and vendor recommendations with their source identity           | deferred         | Specialized/proprietary outputs and new derivations                          |
+| FB-071 | Add soft lean mass when a source actually reports it                                                                           | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-072 | Consider subcutaneous-fat mass and visceral-fat mass as separate optional metrics                                              | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-073 | Preserve estimated protein mass, mineral mass, bone mineral content, and body cell mass as explicitly labeled optional outputs | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-074 | Consider phase angle, skeletal muscle index, and regional ECW ratios when populated                                            | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
+| FB-075 | Archive proprietary scores, body-age outputs, reference bands, and vendor recommendations with their source identity           | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
 | FB-076 | Provide protected original-report attachments or durable source references                                                     | reused/bounded   | HF-02; durable references/existing protected originals only                  |
-| FB-077 | Derive ratios where valid inputs exist, while preserving reported-only ratios as source evidence                               | deferred         | Specialized/proprietary outputs and new derivations                          |
+| FB-077 | Derive ratios where valid inputs exist, while preserving reported-only ratios as source evidence                               | included/WC1 | Approved web completion proposal1; docs/WEB-COMPLETION.md; implementation/acceptance in progress |
 | FB-078 | Provide a release capability matrix: storage, API read/write, UI entry, import, chart, and export                              | included         | HF-07/HF-08                                                                  |
 | FB-079 | Preserve old records, adapters, and API behavior during migration                                                              | included         | HF-07/HF-08                                                                  |
 | FB-080 | Normalize units in one server-side layer and preserve source units in provenance                                               | included         | HF-07/HF-08                                                                  |
 | FB-081 | Test missing, unknown, canceled, zero, and not-applicable states separately                                                    | included         | HF-07/HF-08                                                                  |
 | FB-082 | Verify representative imports through exact readback and export                                                                | included         | HF-07/HF-08                                                                  |
-| FB-083 | Exercise clinical edge cases from the reconciliation in tests                                                                  | included/bounded | HF-08 clinical fixtures; excluded screening/sleep structures remain deferred |
+| FB-083 | Exercise clinical edge cases from the reconciliation in tests                                                                  | included/WC1 | Existing HF fixtures retained; WC1 adds encounters, studies, PAP windows, screenings and clinical-history edges; acceptance pending |
 | FB-084 | Exercise multi-device and same-day repeat scans in tests                                                                       | included         | HF-07/HF-08                                                                  |
 | FB-085 | Keep detailed clinical source material private in fixtures and feedback workflows                                              | included         | HF-07/HF-08                                                                  |

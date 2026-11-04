@@ -59,10 +59,15 @@ export function selectCoherentScan(
     .filter(
       (row) =>
         ['day', 'instant'].includes(row.scan.measured_at.precision) &&
-        !row.scan.measured_at.approximate
+        !row.scan.measured_at.approximate &&
+        row.scan.provenance.verification !== 'conflict'
     )
     .sort(compareScans);
   const warnings: string[] = [];
+  if (scans.some((row) => row.scan.provenance.verification === 'conflict'))
+    warnings.push(
+      'Conflicting source evidence remains in scan history and is excluded from coherent latest selection.'
+    );
   if (!source && sources.length)
     warnings.push(
       'Choose a source; metric-wise source preferences cannot be combined into one scan.'

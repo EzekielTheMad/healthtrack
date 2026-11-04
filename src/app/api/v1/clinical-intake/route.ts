@@ -1,5 +1,11 @@
 import { NextRequest } from 'next/server';
 import { ZodError } from 'zod';
+import { hasScope, forbidden } from '@/lib/api-auth';
+import { intakeSchema } from '@/lib/fidelity/contracts';
+import {
+  clinicalReportGrantRequired,
+  clinicalBatchReportGrantRequired,
+} from '@/lib/fidelity/web-write-grants';
 import { requirePat, corsHeaders, fitnessErrorResponse } from '@/lib/api/v1-fitness';
 import { readClinicalJson } from '@/lib/fidelity/clinical-http';
 import { listClinicalIntakes, stageClinicalIntake } from '@/lib/fidelity/clinical';
@@ -16,9 +22,13 @@ export async function GET(request: NextRequest) {
       request.nextUrl.searchParams.has('owner_id')
     )
       return Response.json({ error: 'PAT intake is self-scoped.' }, { status: 400, headers });
+    const allBatches = await listClinicalIntakes(auth.userId, null);
+    const batches = hasScope(auth, 'write:clinical_reports')
+      ? allBatches
+      : allBatches.filter((batch) => !clinicalBatchReportGrantRequired(auth.userId, batch.id));
     return Response.json(
       {
-        batches: await listClinicalIntakes(auth.userId, null),
+        batches,
         approval: 'The account owner must approve each exact preview in the app.',
       },
       { headers }
@@ -31,12 +41,14 @@ export async function POST(request: NextRequest) {
   const auth = await requirePat(request, 'write:clinical_intake');
   if (auth instanceof Response) return auth;
   try {
+    const input = intakeSchema.parse(await readClinicalJson(request));
+    if (
+      clinicalReportGrantRequired(auth.userId, input) &&
+      !hasScope(auth, 'write:clinical_reports')
+    )
+      return forbidden('write:clinical_reports');
     return Response.json(
-      await stageClinicalIntake(
-        auth.userId,
-        { ownerId: auth.userId, dependentId: null },
-        await readClinicalJson(request)
-      ),
+      await stageClinicalIntake(auth.userId, { ownerId: auth.userId, dependentId: null }, input),
       { status: 201, headers }
     );
   } catch (error) {

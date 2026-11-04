@@ -4,6 +4,8 @@ import {
   type ClinicalFact,
   type FidelityRecord,
 } from '@/lib/fidelity/contracts';
+import { webClinicalSummaryRow } from '@/lib/fidelity/web-clinical-presentation';
+import { isWebClinicalKind } from './WebClinicalFactFields';
 const quantity = (q?: { value: number; unit: string }) =>
   q ? `${q.value} ${q.unit}` : 'Not reported';
 const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -12,7 +14,13 @@ export function clinicalFactTitle(fact: ClinicalFact) {
     ? fact.test_name
     : fact.kind === 'medication'
       ? fact.name
-      : `${fact.event.replaceAll('_', ' ')} · ${formatClinicalDate(fact.event_date)}`;
+      : fact.kind === 'medication_event'
+        ? `${fact.event.replaceAll('_', ' ')} · ${formatClinicalDate(fact.event_date)}`
+        : 'name' in fact
+          ? fact.name
+          : fact.kind === 'screening'
+            ? `${fact.instrument.name}${fact.instrument.version ? ` (${fact.instrument.version})` : ''}`
+            : `Allergy review: ${fact.review_status.replaceAll('_', ' ')}`;
 }
 export default function ClinicalFactDetails({
   fact,
@@ -21,6 +29,43 @@ export default function ClinicalFactDetails({
   fact: ClinicalFact;
   record?: FidelityRecord;
 }) {
+  if (isWebClinicalKind(fact.kind)) {
+    const row = webClinicalSummaryRow(
+      record ?? {
+        id: 'preview',
+        user_id: '',
+        dependent_id: null,
+        kind: fact.kind,
+        fact,
+        revision: '',
+        received_at: null,
+        updated_at: '',
+      }
+    );
+    return (
+      <div className="space-y-2 text-sm min-w-0">
+        <p className="font-medium break-words">{row.date}</p>
+        <ul className="space-y-2">
+          {row.lines.map((line, i) => (
+            <li className="break-words whitespace-pre-wrap" key={i}>
+              {line}
+            </li>
+          ))}
+        </ul>
+        {record && (
+          <p className="text-xs break-words" style={{ color: 'var(--color-text-muted)' }}>
+            Received: {record.received_at ?? 'Unknown for legacy record'} · Revision:{' '}
+            {record.revision.slice(0, 12)}
+          </p>
+        )}
+        {fact.provenance.sources.some((s) => s.document_id) && (
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            A source reference does not grant access to the original document.
+          </p>
+        )}
+      </div>
+    );
+  }
   const fields: Array<[string, string | undefined | null]> = [];
   if (fact.kind === 'lab')
     fields.push(

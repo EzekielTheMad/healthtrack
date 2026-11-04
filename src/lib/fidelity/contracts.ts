@@ -1,85 +1,19 @@
-/** HF v1 wire contracts. New facts never rewrite legacy numeric/day-normalized facts. */
+/** Shared typed fidelity contracts. Existing numeric/day interfaces remain compatible. */
 import { z } from 'zod';
-import { isValidDayKey } from '@/lib/dates';
-
+import { clinicalDateSchema, provenanceSchema } from './base-contracts';
+export * from './base-contracts';
+import { webClinicalFactSchemas, WEB_CLINICAL_KINDS } from './web-clinical-contracts';
+import { vendorScanResultsSchema, type DerivedScanMeasurement } from './web-scan-contracts';
+export * from './web-clinical-contracts';
+export * from './web-scan-contracts';
+export const CLINICAL_KINDS = [
+  'lab',
+  'medication',
+  'medication_event',
+  ...WEB_CLINICAL_KINDS,
+] as const;
 const text = z.string().trim().min(1).max(4000);
 const optionalText = text.nullish();
-const dateBase = {
-  original_text: z.string().max(1000).nullish(),
-  approximate: z.boolean().optional(),
-};
-export const clinicalDateSchema = z.discriminatedUnion('precision', [
-  z.object({ ...dateBase, precision: z.literal('unknown'), value: z.null() }).strict(),
-  z
-    .object({
-      ...dateBase,
-      precision: z.literal('year'),
-      value: z
-        .string()
-        .regex(/^\d{4}$/)
-        .refine((v) => Number(v) > 0),
-    })
-    .strict(),
-  z
-    .object({
-      ...dateBase,
-      precision: z.literal('month'),
-      value: z
-        .string()
-        .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
-        .refine((v) => Number(v.slice(0, 4)) > 0),
-    })
-    .strict(),
-  z
-    .object({ ...dateBase, precision: z.literal('day'), value: z.string().refine(isValidDayKey) })
-    .strict(),
-  z
-    .object({
-      ...dateBase,
-      precision: z.literal('instant'),
-      value: z.iso.datetime({ offset: true }),
-      timezone: z
-        .string()
-        .max(100)
-        .refine((v) => {
-          try {
-            new Intl.DateTimeFormat('en', { timeZone: v });
-            return true;
-          } catch {
-            return false;
-          }
-        })
-        .optional(),
-    })
-    .strict(),
-]);
-export type ClinicalDate = z.infer<typeof clinicalDateSchema>;
-export const unknownClinicalDate = (originalText?: string | null): ClinicalDate => ({
-  precision: 'unknown',
-  value: null,
-  ...(originalText ? { original_text: originalText } : {}),
-});
-export function formatClinicalDate(date?: ClinicalDate | null): string {
-  if (!date) return 'Date not reported';
-  if (date.precision === 'unknown')
-    return date.original_text ? `${date.original_text} (precision unknown)` : 'Date unknown';
-  return `${date.approximate ? 'Approximately ' : ''}${date.value}${date.precision === 'instant' && date.timezone ? ` (${date.timezone})` : ''}`;
-}
-export const sourceReferenceSchema = z
-  .object({
-    reference: text,
-    document_id: z.string().min(1).max(200).optional(),
-    page: z.number().int().min(1).max(100000).optional(),
-  })
-  .strict();
-export const provenanceSchema = z
-  .object({
-    basis: z.enum(['source_reported', 'patient_reported', 'derived', 'legacy_unknown']),
-    verification: z.enum(['unconfirmed', 'source_verified', 'conflict']).default('unconfirmed'),
-    sources: z.array(sourceReferenceSchema).max(30).default([]),
-    notes: optionalText,
-  })
-  .strict();
 const comparator = z.enum(['=', '<', '<=', '>', '>=']);
 export const labOutcomeSchema = z.discriminatedUnion('kind', [
   z
@@ -207,6 +141,7 @@ export const clinicalFactSchema = z.union([
   labFactSchema,
   medicationFactSchema,
   medicationEventSchema,
+  ...webClinicalFactSchemas,
 ]);
 export type ClinicalFact = z.infer<typeof clinicalFactSchema>;
 export const intakeItemSchema = z
@@ -244,7 +179,11 @@ export type FidelityRecord = {
   received_at: string | null;
   updated_at: string;
   legacy?: boolean;
-  supersedes_legacy?: { table: 'lab_results' | 'medications'; id: string; revision: string };
+  supersedes_legacy?: {
+    table: 'lab_results' | 'medications' | 'conditions' | 'procedures';
+    id: string;
+    revision: string;
+  };
   legacy_conflict?: boolean;
 };
 
@@ -283,12 +222,14 @@ export const scanInputSchema = z
             value: z.number().finite(),
             unit: z.string().min(1).max(100),
             raw_text: z.string().max(1000).optional(),
+            definition: z.string().trim().min(1).max(4000).optional(),
           })
           .strict()
       )
       .min(1)
       .max(50),
     provenance: provenanceSchema,
+    vendor_results: vendorScanResultsSchema.optional(),
   })
   .strict()
   .refine(
@@ -303,6 +244,7 @@ export type ScanMeasurement = {
   source_value: number;
   source_unit: string;
   raw_text?: string;
+  definition?: string;
   estimated: boolean;
 };
 export type BodyScan = {
@@ -311,6 +253,7 @@ export type BodyScan = {
   dependent_id: string | null;
   scan: ScanInput;
   measurements: ScanMeasurement[];
+  derived_measurements?: DerivedScanMeasurement[];
   revision: string;
   received_at: string;
 };
