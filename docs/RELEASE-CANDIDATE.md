@@ -4,9 +4,12 @@
 
 The unpublished web-focused 2.1.0 candidate is described in
 [WEB-COMPLETION](WEB-COMPLETION.md) and the [release notes](RELEASE-NOTES-2.1.md).
-Its corrected product source matches the locally tested code: 2,116 tests in
-226 files, zero lint errors and 15 warnings in unchanged paths. Prior full
-TypeScript checking matches the unchanged code hashes. The
+Its application code retains the local proof of 2,116 tests in 226 files, zero
+lint errors and 15 warnings in unchanged paths. Prior full TypeScript checking
+matches that unchanged application code. The new migration-artifact build rule
+has ten focused tests, including a synthetic fresh/restart ledger check, and
+actual CLI checks for both canonical-LF and already-pinned archive inputs. These
+focused checks are additional evidence, not a rerun of the combined full suite. The
 [candidate checklist](RELEASE-CHECKLIST.md) records the boundaries of the retained
 clinical/import/isolation/browser/API/PDF evidence and missing live checks.
 

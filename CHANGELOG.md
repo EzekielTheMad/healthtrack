@@ -30,6 +30,10 @@ with the remaining approved web workflows. It has not been publicly released.
   key. Authentication also rejects malformed stored non-null expiries. Parseable
   legacy dates and intentional null/no-expiry keys retain their existing behavior;
   no stored dates are rewritten and no keys are rotated automatically.
+- Verify known migration source/runtime checksums during the Docker build and
+  produce a separate pinned runtime copy. Git archives and different checkout
+  newline conventions now yield the same migration bytes; source SQL, migration
+  logic and applied database ledgers are unchanged. Unknown inputs stop the build.
 - Migration `0018_web_clinical_records` widens typed history constraints while
   preserving existing row IDs, source values and references. It does not backfill
   certainty or clinical dates. Keep the matching pre-upgrade image/data/config/key

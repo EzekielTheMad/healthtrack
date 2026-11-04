@@ -20,6 +20,14 @@ and upgrade compatibility.
 
 ## Container implementation
 
+- The build runs `scripts/prepare-migration-artifacts.mjs` before compiling and
+  copies its separate output into the final image. The manifest pins the known
+  source and runtime SHA-256 for each migration/journal file. Only an exact known
+  source or already-pinned runtime input is accepted; the declared conversion
+  must reproduce the runtime digest. This does not edit source SQL or a database.
+  Added migrations or changed inputs require a deliberate manifest review.
+  CI and release builds use this same Dockerfile rule, without a private overlay.
+
 - [Dockerfile](../Dockerfile) builds dependencies with Python/make/g++, then
   Next.js standalone output and an esbuild-bundled migration runner. The runtime
   stage adds `su-exec` and `wget`, not the native build toolchain.

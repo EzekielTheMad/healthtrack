@@ -28,6 +28,13 @@ opt-ins; `write:all` does not grant them. Android acceptance remains deferred an
 unverified; this web release includes no public APK. See [web scope](WEB-COMPLETION.md)
 and [release gates](RELEASE.md) for current limits.
 
+The Docker build now creates a separate, checksum-verified migration copy so
+checkout line endings do not change the runtime SQL/journal representation.
+The known historical bytes are preserved without changing SQL statements or
+rewriting applied ledger rows. Unknown source contents stop the build. This is a
+build compatibility correction, not a new schema migration; normal exact-image
+upgrade/restore verification and the complete backup above still apply.
+
 ### API-key expiry compatibility
 
 Malformed explicit expiry values are rejected before a new key is generated or

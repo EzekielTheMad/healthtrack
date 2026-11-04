@@ -45,9 +45,18 @@ isolation. Preserve and reconcile later writes before rollback; an old image mus
 use its matching old data. Existing integrations/API responses remain compatible;
 new report writes require explicit grants.
 
+The Docker build verifies known migration/journal inputs and produces a separate
+runtime copy with pinned historical bytes, independent of checkout line endings.
+Unknown contents fail the build. The source SQL and applied database ledger are
+not rewritten; this adds no schema migration. Public CI and release builds use
+the same rule.
+
 ## Verification and limits
 
-The corrected product source matches the local 2,116-test/226-file candidate.
+The application code matches the local 2,116-test/226-file candidate. The added
+migration-artifact rule passed ten focused tests and CLI checks, including exact
+synthetic ledger hashes preserved across repeat migration runs. The combined full
+suite has not been rerun solely for unchanged application files.
 Retained synthetic browser/API/import/correction/PDF/isolation evidence and focused
 expiry checks cover the applicable behavior. These are not clinical-accuracy
 claims. Final corrected images, native architecture execution, recovery and
