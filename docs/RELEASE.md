@@ -61,6 +61,17 @@ release. If anonymous installation is intended, verify an unauthenticated pull;
 a workflow push does not prove package visibility. Visibility changes and
 release-tag pushes require separate publication authority.
 
+Before either platform digest reaches the manifest job, the release verifier
+pulls that exact digest on its native runner and checks the source, architecture,
+all pinned migration bytes, fresh startup, unchanged ledger after restart and
+anonymous `401` responses. The fixture has no network, published ports, accounts,
+sessions or API keys; it has bounded memory/CPU and removes its labeled container
+and fresh volume. Failure, including failed cleanup, blocks named manifest tags.
+The digest itself was already pushed: a failed run may leave registry content.
+There is no automatic registry deletion, tag reset or deployment rollback.
+This gate does not replace an applicable isolated upgrade/compatible restore
+rehearsal or prove a provider, phone or real-user workflow.
+
 The non-publishing CI container smoke job uses the same native AMD64 and ARM64
 runner types, verifies the running Node architecture, and can also be dispatched
 manually. A passing build on one architecture does not clear the other. Running
