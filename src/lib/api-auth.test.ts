@@ -149,6 +149,27 @@ describe('validateApiKey', () => {
     insertKey({ tokenHash: hash, expiresAt: FUTURE });
     expect(await apiAuth.validateApiKey(`Bearer ${token}`)).not.toBeNull();
   });
+
+  it.each(['', ' ', 'not-a-date', 'NaN', 'Infinity'])(
+    'rejects a persisted invalid non-null expiry %j without recording use',
+    async (expiresAt) => {
+      const { token, hash } = apiAuth.generateApiKey();
+      const keyId = insertKey({ tokenHash: hash, expiresAt });
+      expect(await apiAuth.validateApiKey(`Bearer ${token}`)).toBeNull();
+      expect(
+        sqlite.prepare('select last_used_at from api_keys where id = ?').get(keyId),
+      ).toEqual({ last_used_at: null });
+    },
+  );
+
+  it.each(['2099-01-03', '2099-01-03T06:00:00-07:00', 'Sat, 03 Jan 2099 13:00:00 GMT'])(
+    'preserves a valid legacy expiry format %j',
+    async (expiresAt) => {
+      const { token, hash } = apiAuth.generateApiKey();
+      insertKey({ tokenHash: hash, expiresAt });
+      expect(await apiAuth.validateApiKey(`Bearer ${token}`)).not.toBeNull();
+    },
+  );
 });
 
 describe('hasScope', () => {

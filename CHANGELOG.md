@@ -2,6 +2,74 @@
 
 All notable changes to HealthTrack are documented here for GitHub releases.
 
+## 2.1.0 — web completion candidate (unpublished)
+
+This candidate combines the unshipped 2.0.0 work and the fidelity changes below
+with the remaining approved web workflows. It has not been publicly released.
+
+- Add ordinary and typed-JSON entry for encounters, diagnostic sleep studies,
+  aggregate PAP reports, instrument-specific screenings, procedure events,
+  condition certainty/activity/history, explicit allergy reviews and qualitative
+  genetic reports. Preserve dates, original text, zero, unknown and provenance.
+- Encounter heart rate and historical height stay separate from resting heart
+  rate and profile height. Same-day repeats survive. PAP windows remain aggregate
+  reports; overlapping windows are never summed or expanded into daily readings.
+- Add all ten regional lean/fat values and source-reported specialized scan
+  measurements, definitions, vendor scores/body age/reference bands and archived
+  recommendations. Compatible same-scan derived ratios remain separate from
+  reported values; vendor advice never changes targets.
+- Expose timezone, exact workout timestamp, authorized supplement links and source
+  document/page controls in normal forms. Comparisons reject incompatible units,
+  source/device/method, protocols and collection conditions.
+- Share the same scoped evidence across history, doctor PDFs, exports and app/API
+  context. Preserve selected corrections, prior values and conflict evidence.
+  New report-write grants are explicit; historical tokens gain no new mutations.
+- Refresh the person picker immediately after successful family-member changes;
+  keep failed edits and late responses from replacing current person lists.
+- Reject malformed explicit API-key expiry values before generating or storing a
+  key. Authentication also rejects malformed stored non-null expiries. Parseable
+  legacy dates and intentional null/no-expiry keys retain their existing behavior;
+  no stored dates are rewritten and no keys are rotated automatically.
+- Verify known migration source/runtime checksums during the Docker build and
+  produce a separate pinned runtime copy. Git archives and different checkout
+  newline conventions now yield the same migration bytes; source SQL, migration
+  logic and applied database ledgers are unchanged. Unknown inputs stop the build.
+- Migration `0018_web_clinical_records` widens typed history constraints while
+  preserving existing row IDs, source values and references. It does not backfill
+  certainty or clinical dates. Keep the matching pre-upgrade image/data/config/key
+  pair and reconcile later writes before any rollback.
+
+Android and all seven physical-phone acceptance groups remain **deferred and
+unverified**, outside this web release. No public APK is included. Existing generic
+lab PDF/image ingestion is retained; vendor-specific scan/history parsers and
+automatic clinical interpretation remain excluded. Provider, Oura, exact-candidate
+runtime/recovery and publication gates retain their own evidence requirements.
+See [web scope](docs/WEB-COMPLETION.md) and [release gates](docs/RELEASE.md).
+See the [release notes](docs/RELEASE-NOTES-2.1.md) for upgrade compatibility and
+the [candidate checklist](docs/RELEASE-CHECKLIST.md) for verification limits.
+
+## 2.1.0-alpha.1 — next-release fidelity candidate (unpublished)
+
+- Typed numeric, qualitative, censored and canceled labs retain source units,
+  comparators, reference evidence, printed/derived flags and honest date precision.
+- Structured medication/supplement courses separate strength, amount, prescribed
+  directions, reported use and explicitly reported administration/missed/skip events.
+- New clinical API intake stages an exact preview for owner approval in the app;
+  corrections retain prior source values and audits. New grants are explicit;
+  historical wildcard/device tokens cannot silently gain these write capabilities.
+- Identified body scans retain same-day repeats, raw units, source/device/method
+  and known conditions. Seven core mass/water/area metrics, manual/JSON entry,
+  bounded typed metadata and source-aware comparisons preserve estimate labels.
+- Context, doctor PDF inputs and owned exports retain typed evidence. Current
+  numeric projections omit explicitly superseded legacy values with coverage
+  warnings; changed records prevent stale cached/in-flight answers.
+- Additive migration `0017_fidelity_contracts` preserves legacy records. Restore
+  requires the matching pre-upgrade image/data/keys/configuration pair; preserve
+  subsequent writes before rollback. See [next-release notes](docs/NEXT-RELEASE.md).
+
+This is a local development candidate. Full-app/recovery/review evidence and
+separate publication/deployment authorization are required; v2 gates remain open.
+
 ## 2.0.0 — release candidate (unpublished)
 
 ### Added

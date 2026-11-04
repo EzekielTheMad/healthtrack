@@ -6,9 +6,13 @@ import { safeReturnTo } from '@/lib/auth/return-to';
 export default function HandoffAccountRecovery({
   returnTo,
   signedIn,
+  actionLabel,
+  description,
 }: {
   returnTo: string;
   signedIn: boolean;
+  actionLabel?: string;
+  description?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -32,8 +36,8 @@ export default function HandoffAccountRecovery({
   return (
     <div className="space-y-3">
       <p>
-        Use the same account that opened this browser handoff. The selected person will be checked
-        again after sign-in.
+        {description ??
+          'Use the same account that opened this browser handoff. The selected person will be checked again after sign-in.'}
       </p>
       {signedIn ? (
         <button
@@ -43,7 +47,7 @@ export default function HandoffAccountRecovery({
           style={{ borderColor: 'var(--border-card)' }}
           onClick={() => void restartSignIn()}
         >
-          {busy ? 'Signing out…' : 'Switch account'}
+          {busy ? 'Signing out…' : (actionLabel ?? 'Switch account')}
         </button>
       ) : (
         <a

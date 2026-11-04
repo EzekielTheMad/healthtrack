@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { dependentSchema, type DependentFormValues } from '@/lib/validations';
@@ -8,6 +8,7 @@ import { useDependents } from '@/hooks/useDependents';
 import type { Dependent } from '@/lib/types';
 import EmptyState from '@/components/shared/EmptyState';
 import Skeleton from '@/components/shared/Skeleton';
+import { formatDateOnly } from '@/lib/dates';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -270,6 +271,7 @@ function DependentForm({
   onCancel: () => void;
   submitLabel: string;
 }) {
+  const formId = useId();
   const {
     register,
     handleSubmit,
@@ -280,7 +282,7 @@ function DependentForm({
     defaultValues: {
       name: '',
       date_of_birth: '',
-      biological_sex: undefined,
+      biological_sex: null,
       relationship: 'child',
       transition_age: 18,
       ...defaultValues,
@@ -293,11 +295,16 @@ function DependentForm({
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       {/* Name */}
       <div>
-        <label className="block text-xs font-medium mb-1.5" style={labelStyle}>
+        <label
+          htmlFor={`${formId}-name`}
+          className="block text-xs font-medium mb-1.5"
+          style={labelStyle}
+        >
           Name
         </label>
         <input
           {...register('name')}
+          id={`${formId}-name`}
           type="text"
           placeholder="Full name"
           className="w-full rounded-lg px-3 py-2 text-sm outline-none"
@@ -312,11 +319,16 @@ function DependentForm({
 
       {/* Date of Birth */}
       <div>
-        <label className="block text-xs font-medium mb-1.5" style={labelStyle}>
+        <label
+          htmlFor={`${formId}-dob`}
+          className="block text-xs font-medium mb-1.5"
+          style={labelStyle}
+        >
           Date of Birth
         </label>
         <input
           {...register('date_of_birth')}
+          id={`${formId}-dob`}
           type="date"
           className="w-full rounded-lg px-3 py-2 text-sm outline-none"
           style={inputStyle}
@@ -330,11 +342,18 @@ function DependentForm({
 
       {/* Biological Sex */}
       <div>
-        <label className="block text-xs font-medium mb-1.5" style={labelStyle}>
+        <label
+          htmlFor={`${formId}-sex`}
+          className="block text-xs font-medium mb-1.5"
+          style={labelStyle}
+        >
           Biological Sex
         </label>
         <select
-          {...register('biological_sex')}
+          {...register('biological_sex', { setValueAs: (value) => (value === '' ? null : value) })}
+          id={`${formId}-sex`}
+          aria-invalid={Boolean(errors.biological_sex)}
+          aria-describedby={errors.biological_sex ? `${formId}-sex-error` : undefined}
           className="w-full rounded-lg px-3 py-2 text-sm outline-none appearance-none"
           style={inputStyle}
         >
@@ -345,15 +364,30 @@ function DependentForm({
             </option>
           ))}
         </select>
+        {errors.biological_sex && (
+          <p
+            id={`${formId}-sex-error`}
+            role="alert"
+            className="text-xs mt-1"
+            style={{ color: 'var(--color-terracotta)' }}
+          >
+            {errors.biological_sex.message}
+          </p>
+        )}
       </div>
 
       {/* Relationship */}
       <div>
-        <label className="block text-xs font-medium mb-1.5" style={labelStyle}>
+        <label
+          htmlFor={`${formId}-relationship`}
+          className="block text-xs font-medium mb-1.5"
+          style={labelStyle}
+        >
           Relationship
         </label>
         <select
           {...register('relationship')}
+          id={`${formId}-relationship`}
           className="w-full rounded-lg px-3 py-2 text-sm outline-none appearance-none"
           style={inputStyle}
         >
@@ -373,11 +407,16 @@ function DependentForm({
       {/* Transition Age (only for children) */}
       {relationship === 'child' && (
         <div>
-          <label className="block text-xs font-medium mb-1.5" style={labelStyle}>
+          <label
+            htmlFor={`${formId}-transition-age`}
+            className="block text-xs font-medium mb-1.5"
+            style={labelStyle}
+          >
             Transition Age
           </label>
           <input
             {...register('transition_age', { valueAsNumber: true })}
+            id={`${formId}-transition-age`}
             type="number"
             min={13}
             max={25}
@@ -464,7 +503,7 @@ function DependentCard({
               <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                 DOB:{' '}
                 <span className="font-mono" style={{ color: 'var(--color-text-primary)' }}>
-                  {new Date(dependent.date_of_birth).toLocaleDateString()}
+                  {formatDateOnly(dependent.date_of_birth)}
                 </span>
               </span>
               <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
@@ -577,8 +616,8 @@ export default function DependentManager() {
   }
 
   async function handleUpdate(id: string, data: DependentFormValues) {
-    await updateDependent(id, data);
-    setEditingId(null);
+    const updated = await updateDependent(id, data);
+    if (updated) setEditingId(null);
   }
 
   async function handleDelete() {
@@ -601,6 +640,7 @@ export default function DependentManager() {
     <div className="space-y-4" id="dependents">
       {error && (
         <div
+          role="alert"
           className="rounded-lg px-4 py-3 text-sm"
           style={{
             backgroundColor: '#2D1215',
@@ -651,7 +691,7 @@ export default function DependentManager() {
                     defaultValues={{
                       name: dep.name,
                       date_of_birth: dep.date_of_birth,
-                      biological_sex: dep.biological_sex as 'male' | 'female' | undefined,
+                      biological_sex: dep.biological_sex,
                       relationship: dep.relationship,
                       transition_age: dep.transition_age,
                     }}

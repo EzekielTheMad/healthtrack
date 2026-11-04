@@ -11,7 +11,7 @@
  * path (`<userId>/<uuid>.<ext>`) written by src/lib/storage and served by
  * GET /api/files/[...path].
  */
-import { and, desc, eq, gte, inArray, like } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, like, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db, getSqlite } from '@/db';
 import { randomUUID } from 'crypto';
@@ -86,9 +86,12 @@ export async function listLabVisitsWithResults(
     .select()
     .from(labResults)
     .where(
-      inArray(
-        labResults.labVisitId,
-        visits.map((v) => v.id)
+      and(
+        sql`NOT EXISTS(SELECT 1 FROM clinical_records hf WHERE hf.user_id=${labResults.userId} AND hf.dependent_id IS ${labResults.dependentId} AND hf.legacy_table='lab_results' AND hf.legacy_id=${labResults.id})`,
+        inArray(
+          labResults.labVisitId,
+          visits.map((v) => v.id)
+        )
       )
     );
   const byVisit = new Map<string, LabResultRow[]>();
@@ -254,6 +257,7 @@ export async function listLabResults(
     .where(
       and(
         eq(labResults.userId, scope.ownerId),
+        sql`NOT EXISTS(SELECT 1 FROM clinical_records hf WHERE hf.user_id=${labResults.userId} AND hf.dependent_id IS ${labResults.dependentId} AND hf.legacy_table='lab_results' AND hf.legacy_id=${labResults.id})`,
         dependentFilter(labResults.dependentId, scope.dependentId),
         opts.testNames && opts.testNames.length > 0
           ? inArray(labResults.testName, opts.testNames)
@@ -282,6 +286,7 @@ export async function listLabResultsV1(
   await requireAuthz(ownerId, { ownerId, dependentId: null }, 'labs', 'read');
   const conditions = [
     eq(labResults.userId, ownerId),
+    sql`NOT EXISTS(SELECT 1 FROM clinical_records hf WHERE hf.user_id=${labResults.userId} AND hf.dependent_id IS ${labResults.dependentId} AND hf.legacy_table='lab_results' AND hf.legacy_id=${labResults.id})`,
     dependentFilter(labResults.dependentId, null),
   ];
   if (opts.test) {

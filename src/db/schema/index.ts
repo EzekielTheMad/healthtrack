@@ -23,3 +23,4 @@ export * from './integrations';
 export * from './system';
 export * from './imports';
 export * from './context';
+export * from './fidelity';

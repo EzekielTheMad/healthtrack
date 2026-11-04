@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch } from '@/lib/api/client';
+import { apiFetch, ApiRequestError } from '@/lib/api/client';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { Profile, Dependent } from '@/lib/types';
 
@@ -12,6 +12,7 @@ export function useProfile() {
   const [error, setError] = useState<string | null>(null);
   const subject = `${delegateOwnerId ?? 'self'}:${dependentId ?? 'self'}`;
   const [loadedSubject, setLoadedSubject] = useState<string | null>(null);
+  const [missingSubject, setMissingSubject] = useState<string | null>(null);
   const currentSubject = useRef(subject);
   useEffect(() => {
     currentSubject.current = subject;
@@ -24,6 +25,7 @@ export function useProfile() {
       setLoading(true);
       setError(null);
       setProfile(null);
+      setMissingSubject(null);
 
       try {
         const ownerUrl = delegateOwnerId
@@ -53,7 +55,17 @@ export function useProfile() {
         setLoadedSubject(subject);
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load profile');
+        // An authenticated owner's own 404 means onboarding is incomplete.
+        // A delegated/dependent 404 can conceal an authorization denial.
+        if (
+          !dependentId &&
+          !delegateOwnerId &&
+          err instanceof ApiRequestError &&
+          err.status === 404
+        ) {
+          setLoadedSubject(subject);
+          setMissingSubject(subject);
+        } else setError(err instanceof Error ? err.message : 'Failed to load profile');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -80,6 +92,7 @@ export function useProfile() {
         if (currentSubject.current === 'self:self') {
           setProfile(data);
           setLoadedSubject('self:self');
+          setMissingSubject(null);
         }
       } catch (err) {
         if (currentSubject.current === 'self:self')
@@ -90,5 +103,11 @@ export function useProfile() {
     [dependentId, delegateOwnerId]
   );
 
-  return { profile: loadedSubject === subject ? profile : null, loading, error, updateProfile };
+  return {
+    profile: loadedSubject === subject ? profile : null,
+    missing: missingSubject === subject,
+    loading,
+    error,
+    updateProfile,
+  };
 }

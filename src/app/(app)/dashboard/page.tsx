@@ -11,6 +11,7 @@ import { useProviders } from '@/hooks/useProviders';
 import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useLabStatData } from '@/hooks/useLabStatData';
 import { useCapabilities } from '@/hooks/useCapabilities';
+import { useDetailedRecordPresence } from '@/hooks/useDetailedRecordPresence';
 import { useDateRangeContext } from '@/components/shared/DateRangeContext';
 import { getVitalRange } from '@/lib/reference-ranges';
 import { getMetricDefinition, buildLabResultDefinition } from '@/lib/dashboard-metrics';
@@ -115,7 +116,13 @@ function LabFlagRowSkeleton() {
 
 export default function DashboardPage() {
   const { dependentId, delegateOwnerId } = useActiveProfile();
+  return <DashboardContent key={JSON.stringify([delegateOwnerId, dependentId])} />;
+}
+
+function DashboardContent() {
+  const { dependentId, delegateOwnerId } = useActiveProfile();
   const { capabilities } = useCapabilities();
+  const detailedHistory = useDetailedRecordPresence();
   const { dateRange, setDateRange, reportingTimeZone } = useDateRangeContext();
   const {
     vitals,
@@ -132,9 +139,16 @@ export default function DashboardPage() {
     error: medsError,
   } = useMedications({ activeOnly: true });
   const { labVisits, loading: labsLoading, error: labsError } = useLabResults();
-  const { profile, loading: profileLoading } = useProfile();
-  const { conditions, loading: conditionsLoading } = useConditions();
-  const { providers, loading: providersLoading } = useProviders();
+  const { profile, loading: profileLoading, error: profileError } = useProfile();
+  const { conditions, loading: conditionsLoading, error: conditionsError } = useConditions();
+  const { providers, loading: providersLoading, error: providersError } = useProviders();
+  const historyUnavailable =
+    detailedHistory.unavailable ||
+    Boolean(
+      profileError || conditionsError || providersError || vitalsError || medsError || labsError
+    );
+  const hasLabHistory =
+    detailedHistory.labs === 'present' || labVisits.some((visit) => visit.lab_results.length > 0);
 
   // Dashboard stat preferences
   const {
@@ -245,10 +259,13 @@ export default function DashboardPage() {
       {/* Getting Started Checklist for new users */}
       <GettingStartedChecklist
         profile={profile}
-        medicationCount={medications.length}
+        medicationCount={Math.max(
+          medications.length,
+          detailedHistory.medications === 'present' ? 1 : 0
+        )}
         conditionCount={conditions.length}
-        vitalCount={vitals.length}
-        labVisitCount={labVisits.length}
+        vitalCount={Math.max(vitals.length, detailedHistory.scans === 'present' ? 1 : 0)}
+        labVisitCount={Math.max(labVisits.length, detailedHistory.labs === 'present' ? 1 : 0)}
         providerCount={providers.length}
         loading={
           profileLoading ||
@@ -256,9 +273,17 @@ export default function DashboardPage() {
           conditionsLoading ||
           vitalsLoading ||
           labsLoading ||
-          providersLoading
+          providersLoading ||
+          detailedHistory.loading ||
+          historyUnavailable
         }
       />
+      {!detailedHistory.loading && historyUnavailable && (
+        <p role="status" className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          Setup progress is unavailable because some history could not be checked for the selected
+          person. Existing records may still be present.
+        </p>
+      )}
 
       {/* AI Health Overview */}
       {!dependentId && !delegateOwnerId && <HealthSummaryCard />}
@@ -385,7 +410,9 @@ export default function DashboardPage() {
                           )}
                           {def.label}
                         </span>
-                        {hasData && <SourceBadge source={latest.source} metadata={latest.metadata} />}
+                        {hasData && (
+                          <SourceBadge source={latest.source} metadata={latest.metadata} />
+                        )}
                       </div>
                       <div className="flex items-baseline gap-1.5">
                         <span
@@ -546,9 +573,14 @@ export default function DashboardPage() {
                   />
                 </svg>
               }
-              title="No vitals recorded yet"
-              description="Connect a device or manually log vitals to see your health trends here."
+              title="No numeric vital trends shown"
+              description="Device readings or manually logged vitals can appear here. Body scan reports remain in scan history."
             />
+            {detailedHistory.scans === 'present' && (
+              <Link className="block text-center text-sm underline px-4 pb-4" href="/scans">
+                View body scan history
+              </Link>
+            )}
           </div>
         )}
 
@@ -695,12 +727,19 @@ export default function DashboardPage() {
             className="rounded-xl border overflow-hidden"
             style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
           >
-            {labsLoading ? (
+            {labsLoading || (detailedHistory.labs === 'loading' && !hasLabHistory) ? (
               <div className="divide-y" style={{ borderColor: 'var(--border-card)' }}>
                 {Array.from({ length: 3 }).map((_, i) => (
                   <LabFlagRowSkeleton key={i} />
                 ))}
               </div>
+            ) : flaggedResults.length === 0 &&
+              !hasLabHistory &&
+              (labsError || detailedHistory.labs === 'unavailable') ? (
+              <p role="status" className="p-5 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                Lab history could not be checked for the selected person. This does not mean there
+                are no results.
+              </p>
             ) : flaggedResults.length === 0 ? (
               <EmptyState
                 icon={
@@ -719,8 +758,12 @@ export default function DashboardPage() {
                     />
                   </svg>
                 }
-                title="No lab flags"
-                description="Flagged lab results will appear here when you upload lab reports."
+                title={hasLabHistory ? 'No numeric lab flags shown' : 'No lab results recorded'}
+                description={
+                  hasLabHistory
+                    ? 'Lab history is recorded. Review detailed results and source evidence in clinical history.'
+                    : 'Upload a lab report to review its results.'
+                }
               />
             ) : (
               <ul className="divide-y" style={{ borderColor: 'var(--border-card)' }}>
@@ -758,6 +801,15 @@ export default function DashboardPage() {
                   </li>
                 ))}
               </ul>
+            )}
+            {hasLabHistory && (
+              <p className="p-4 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                This card shows numeric lab flags. Detailed records may also contain qualitative
+                results, thresholds, canceled tests and uncertain dates.{' '}
+                <Link className="underline" href="/clinical-records">
+                  Detailed clinical records
+                </Link>
+              </p>
             )}
           </div>
         </section>

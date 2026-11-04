@@ -11,6 +11,7 @@ import { listVitals } from '@/lib/repos/vitals';
 import { listAppointments } from '@/lib/repos/appointments';
 import { listNotes } from '@/lib/repos/notes';
 import { listProviders } from '@/lib/repos/providers';
+import { exportFidelityData } from '@/lib/fidelity/export';
 
 export async function GET(request: NextRequest) {
   const info = await getSessionInfo();
@@ -78,6 +79,7 @@ export async function GET(request: NextRequest) {
     const exportDate = new Date().toISOString().split('T')[0];
 
     const exportPayload = {
+      fidelity: exportFidelityData(userId),
       metadata: {
         exported_at: new Date().toISOString(),
         user_id: userId,

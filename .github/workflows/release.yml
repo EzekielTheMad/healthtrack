@@ -66,6 +66,14 @@ jobs:
           cache-from: type=gha,scope=release-${{ env.PLATFORM_SLUG }}
           cache-to: type=gha,mode=max,scope=release-${{ env.PLATFORM_SLUG }}
 
+      - name: Verify immutable image on native runner
+        timeout-minutes: 8
+        env:
+          RELEASE_IMAGE: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          RELEASE_REVISION: ${{ github.sha }}
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+        run: node scripts/verify-release-image.mjs "$RELEASE_IMAGE" "$RELEASE_REVISION" "$RELEASE_PLATFORM"
+
       - name: Export digest
         run: |
           mkdir -p /tmp/digests

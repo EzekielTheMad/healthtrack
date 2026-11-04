@@ -10,6 +10,7 @@ import { errorResponse } from '@/lib/api/respond';
 import { bodyToCamel, rowToSnake, rowsToSnake } from '@/lib/api/snake';
 import { createScopeFromBody, scopeFromParams } from '@/lib/repos/_scope';
 import { findImportBatchBySource } from '@/lib/import/batches';
+import { clinicalProjectionCoverage, listClinicalFacts } from '@/lib/fidelity/clinical';
 import {
   createLabVisitWithResults,
   listLabVisitsWithResults,
@@ -26,8 +27,25 @@ export async function GET(request: NextRequest) {
   try {
     const user = await requireUser();
     const params = request.nextUrl.searchParams;
+    const scope = scopeFromParams(user.id, params);
+    if (params.get('format') === 'typed')
+      return NextResponse.json({
+        format: 'typed',
+        records: await listClinicalFacts(user.id, scope, { kind: 'lab' }),
+        coverage: {
+          warning:
+            'Typed outcomes and corrections; numeric-only trends exclude censored/text/canceled values.',
+        },
+      });
     const visits = await listLabVisitsWithResults(user.id, scopeFromParams(user.id, params));
-    return NextResponse.json(visits.map(visitToSnake));
+    return NextResponse.json(visits.map(visitToSnake), {
+      headers: {
+        'X-HealthTrack-Clinical-Coverage': JSON.stringify(
+          await clinicalProjectionCoverage(user.id, scope, 'lab')
+        ),
+        Link: '</api/labs?format=typed>; rel="alternate"',
+      },
+    });
   } catch (error) {
     return errorResponse(error);
   }

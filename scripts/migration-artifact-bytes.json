@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "purpose": "Verify known migration source bytes and materialize their pinned runtime representation without changing source SQL or stored ledgers.",
+  "entries": [
+    {
+      "path": "0000_odd_black_tarantula.sql",
+      "source_sha256": "6a8f6764a9ef50655667cc6a45d20c162be5ba4da2796358a566e73639458ab2",
+      "runtime_sha256": "b558c03ba656f89e903fc257f5c905fd3a37876ce616b58639a03a538bf78e75",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0001_hrv-rmssd-rename.sql",
+      "source_sha256": "ebfb48b3dd282b3a5195890fcec91398907b8265f32b99bd0ca1f9f04433fe60",
+      "runtime_sha256": "d8972c0f3a7784792fcaeb99175c1f0344aa0e70543a7da6197ec5ae6fdaf480",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0002_vitals-upsert-unique.sql",
+      "source_sha256": "c6f1597004ca307b4e30147234841e5c1568b02d5fc53fde84bb76dce737be56",
+      "runtime_sha256": "9eb3535d660c16d8760944d7a769e45dc4cdd0b519b9ebacb346749e32b4b8f7",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0003_fitness-domain.sql",
+      "source_sha256": "8319b4ae3047f9e0df873bdda5be6335bda9755842a48c05b01a90113d495d6f",
+      "runtime_sha256": "3195b5c1aa80e4145a85375a3dfed1acc6229a6661e404844e5aa084c8d5890c",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0004_lab-warning-dismissals.sql",
+      "source_sha256": "dff2ee1e76f1dd9b1872e1e1b8d62f2405aa7ec4a563e7e159f5606aeb228bd8",
+      "runtime_sha256": "2eeeb2071ebb1aeb2519cb1ae16ecc8b83447e64ad18b335f31fbd1751b0238a",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0005_daily-summaries.sql",
+      "source_sha256": "acea1b5d0426d1d9fe999ba01f53994a78ba9ea6eb20a355157b6bbc68a0eddb",
+      "runtime_sha256": "6fea853f70e40fa5294f1665ee987ed6a6078d182899cd8cf3a7d46b9569c5ab",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0006_interaction-snooze-status.sql",
+      "source_sha256": "614ebcad96452ab1a8ab35c4f83586a68e0e7479ab54c61af6c24f177ed14d2f",
+      "runtime_sha256": "8fc0af4bc6292a00b74970ba2f3cf89745124e1ace99aa621a81612d77e3d805",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0007_invites.sql",
+      "source_sha256": "f22d6fb21e800de7adda7f9b4e5d6f6db0a9a60393a49d0fc52849f06a9a9208",
+      "runtime_sha256": "2504601d011f5f95f23daf9061bd6b6498b1acbd07c4af3dffe792d6d683017e",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0008_health-connect-ingestion.sql",
+      "source_sha256": "fc0e67149134f75c346564ce85ed73224a634a4774ba023b9b589d322d3fea22",
+      "runtime_sha256": "da0c0082ca9eb575daffbe6ce69ebd4ebcc273ed8d8e553febba74658fcf68ef",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0009_nutrition-strategy-rename.sql",
+      "source_sha256": "ce4be0d5e64318cf2916a2675c3dcf1b03610e4e46a8d69cbbbf933c4812b8b1",
+      "runtime_sha256": "9a2266c5d6e5567e36a15cc8605ecc78ef9fa230265062d3e85274386f0b6564",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0010_import_reconciliation.sql",
+      "source_sha256": "efaa486601aaa2526d6f146d2de9717072b161de656ccd7bfa6c89ae0876c1cd",
+      "runtime_sha256": "b2774a4318fd19bf1a1629d9a7c4094005cb58fadc0899294728ddf77bc6315f",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0011_sync_freshness.sql",
+      "source_sha256": "2e09cf946528242431cb05f7c7a66581602242989ec490a7a7d4070e01838460",
+      "runtime_sha256": "7d34c787c702e7e87104ab505ec2a346ac604ad61a0702cb2c9d39e0ddb860a6",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0012_context_evidence.sql",
+      "source_sha256": "f60ef952210e1e9b5ead9119f9b7c3c727cc4d104b1be64e909e90036bf7b098",
+      "runtime_sha256": "3648c6ebb7f64c63ef57512e9a315bd46bf5666e8e1b7fc16c29ef42eb076b6c",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0013_mobile_devices.sql",
+      "source_sha256": "d08167ecce87017666bc3697acea7e8c5550b7360e8bc9afc32faacb3159ec8c",
+      "runtime_sha256": "2c146f9ac851167e3726deadff2f526bf9367a21c33a4911bd92bb9b4a1f91ff",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0014_native_health_records.sql",
+      "source_sha256": "732a7c8a6609bda4e8397f6a340cedec4fd2837a57359859389d9c6958e546e1",
+      "runtime_sha256": "221abd4d8c879a659a21a1abe493b14bda33e979d4221bcaccc077dcfc8eb5ba",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0015_account_ai.sql",
+      "source_sha256": "46689992b1604421f44372742475ed0b6414525114398ef535cb30761bbcccf8",
+      "runtime_sha256": "3e9e28880a681a90dc4f7b3f43990eae966e74ea294ecf720a5a31ce687a7f25",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0016_trusted_ai_context.sql",
+      "source_sha256": "c2c8e048abd8d37962c857822bcd5f8d41db604c037227bfffe6779ccb218452",
+      "runtime_sha256": "c0e9a655ae9664dbaf34d3025e2ceaca401d463c345e8b3d9161da39fdeb1900",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0017_fidelity_contracts.sql",
+      "source_sha256": "b0965eaa186b9f1f2786ff6f7247e007d2a42e47e635ac609b801f11f92749a4",
+      "runtime_sha256": "20a799b2e9cdfbecfe8b581383c8a4071f04964e4b18c0839a7c55562dada1af",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "0018_web_clinical_records.sql",
+      "source_sha256": "bfc1ab71a3a0c80740835171d6cfefa6cef10429a250bfe2fa6710671672db60",
+      "runtime_sha256": "011571d7a16921f802613dbb8954927876c20f18007351d3d31ab1b20fe1868e",
+      "representation": "lf-to-crlf"
+    },
+    {
+      "path": "meta/_journal.json",
+      "source_sha256": "df14b4554c56333d8ee52abec960a7adc54a8ed04ec8e3415178f9ed612c131f",
+      "runtime_sha256": "a277e6621413d57c454a2263ecdbd906cf0ed812ea07f2638a423ea624330910",
+      "representation": "lf-to-crlf"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useLabResults } from '@/hooks/useLabResults';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import type { ParsedLabResult } from '@/lib/claude/parse-lab';
@@ -12,6 +13,7 @@ import TrendCard from '@/components/labs/TrendCard';
 import VisitCard from '@/components/labs/VisitCard';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import ImportBatchReview from '@/components/settings/ImportBatchReview';
+import ClinicalRecordsPanel from '@/components/clinical-intake/ClinicalRecordsPanel';
 
 type View = 'trends' | 'visits';
 type Flow = 'idle' | 'import' | 'review';
@@ -206,6 +208,19 @@ export default function LabsPage() {
         )}
       </div>
 
+      <ClinicalRecordsPanel kind="lab" />
+      <div className="space-y-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        <h2 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          Numeric lab trends and visits
+        </h2>
+        <p>
+          These views may omit detailed results, including qualitative results, thresholds, canceled
+          tests and uncertain dates.{' '}
+          <Link className="underline" href="/clinical-records">
+            Detailed clinical records
+          </Link>
+        </p>
+      </div>
       {/* Tab toggle */}
       <div className="flex gap-2">
         {(['trends', 'visits'] as const).map((t) => (
@@ -268,12 +283,8 @@ export default function LabsPage() {
                 />
               </svg>
             }
-            title="No lab results yet"
-            description={
-              aiHidden || delegateOwnerId
-                ? 'Lab results imported on this instance will appear here.'
-                : "Upload a lab PDF to get started. We'll parse your results and track trends over time."
-            }
+            title="No numeric lab results in this view"
+            description="Detailed clinical history may still contain results and source evidence that do not appear in these numeric trends or visits."
             action={
               aiHidden || delegateOwnerId
                 ? undefined

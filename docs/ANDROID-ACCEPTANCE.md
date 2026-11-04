@@ -1,5 +1,10 @@
 # Android companion: local acceptance and rollout
 
+**Current web-focused2.1.0 boundary (Nov2,2026):** AC-04 and all seven physical
+phone acceptance groups are deferred and unverified, outside this web release.
+Their original criteria and dated evidence remain below; no public APK is part
+of this release. Web checks do not satisfy phone acceptance.
+
 ## Scope
 
 The private Android companion and its server support were initially delivered in HealthTrack `2.0.0-rc.4`. The website-first update is server `2.0.0-rc.5` with APK `0.1.1` (version code 2); its authorized private Unraid rollout completed on 2026-10-26. Android sources are in `android/`; the server contract is in [ANDROID-CONTRACT.md](ANDROID-CONTRACT.md). APKs are separate private artifacts, excluded from the web container and Git. Implementation, deployments and physical-phone checks are recorded separately below. Full phone acceptance, provider-specific consent testing and publication remain separate gates.

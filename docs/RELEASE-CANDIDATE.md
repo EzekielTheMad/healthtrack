@@ -1,5 +1,25 @@
 # v2 release candidate checkpoint
 
+## Current web candidate — 2.1.0
+
+The unpublished web-focused 2.1.0 candidate is described in
+[WEB-COMPLETION](WEB-COMPLETION.md) and the [release notes](RELEASE-NOTES-2.1.md).
+Its application code retains the local proof of 2,116 tests in 226 files, zero
+lint errors and 15 warnings in unchanged paths. Prior full TypeScript checking
+matches that unchanged application code. The new migration-artifact build rule
+has ten focused tests, including a synthetic fresh/restart ledger check, and
+actual CLI checks for both canonical-LF and already-pinned archive inputs. These
+focused checks are additional evidence, not a rerun of the combined full suite. The
+[candidate checklist](RELEASE-CHECKLIST.md) records the boundaries of the retained
+clinical/import/isolation/browser/API/PDF evidence and missing live checks.
+
+No new corrected image or architecture/recovery result is claimed. Historical
+rc.6/alpha/native-CI receipts below keep their original source and binary binding.
+Oura, corrected final artifacts and publication remain open. Physical Android
+acceptance is deferred/unverified, and no public APK is part of this web release.
+
+## Historical rc.6 checkpoint
+
 This is an unpublished `2.0.0-rc.6` checkpoint. It does not announce a public
 v2 release or a new deployment. [V2](V2.md) owns scope and dated product
 evidence; [release verification](RELEASE.md) owns the gates.

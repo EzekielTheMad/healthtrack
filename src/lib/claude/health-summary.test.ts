@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildHealthSnapshot,
-  extractSummaryJson,
-  type HealthSummaryInput,
-} from './health-summary';
+import { buildHealthSnapshot, extractSummaryJson, type HealthSummaryInput } from './health-summary';
 
 // Fixed clock for deterministic aggregate windows/dates.
 const NOW = new Date('2026-07-09T12:00:00Z');
@@ -17,6 +13,20 @@ const emptyInput: HealthSummaryInput = {
 };
 
 describe('buildHealthSnapshot', () => {
+  it('retains typed qualifiers/actual-use and estimate semantics without declaring an empty legacy projection complete', () => {
+    const snapshot = buildHealthSnapshot(
+      {
+        ...emptyInput,
+        fidelityContext:
+          '{"outcome":{"kind":"censored","value":5,"comparator":"<"},"patient_reported_use":"fictional"}',
+      },
+      NOW
+    );
+    expect(snapshot).toContain('"comparator":"<"');
+    expect(snapshot).toContain('patient_reported_use');
+    expect(snapshot).toContain('consult the typed clinical history');
+    expect(snapshot).toContain('compartments overlap');
+  });
   it('renders vitals as aggregate lines under the device-metrics section', () => {
     const input: HealthSummaryInput = {
       ...emptyInput,
@@ -35,7 +45,7 @@ describe('buildHealthSnapshot', () => {
     const snapshot = buildHealthSnapshot(input, NOW);
     expect(snapshot).toContain('Device & vital metrics (30-day aggregates):');
     expect(snapshot).toContain(
-      '- Deep Sleep: 104 min (Jul 7) | 7d avg 94 | 30d avg 94 | trend flat',
+      '- Deep Sleep: 104 min (Jul 7) | 7d avg 94 | 30d avg 94 | trend flat'
     );
     // Ordinal metrics keep their label in the prompt.
     expect(snapshot).toContain('- Resilience: solid (3/5, Jul 7)');
@@ -150,9 +160,7 @@ describe('extractSummaryJson', () => {
   });
 
   it('recovers JSON wrapped in a leading caveat sentence (the v0.3.0 regression)', () => {
-    expect(
-      extractSummaryJson("I'm not a doctor, but here is the summary:\n" + json),
-    ).toEqual(obj);
+    expect(extractSummaryJson("I'm not a doctor, but here is the summary:\n" + json)).toEqual(obj);
   });
 
   it('recovers JSON with trailing prose', () => {

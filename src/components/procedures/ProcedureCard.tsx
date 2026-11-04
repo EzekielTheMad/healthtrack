@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { formatDateOnly } from '@/lib/dates';
 import type { Procedure } from '@/lib/types';
 import AddProcedureForm, { type AddProcedureFormData } from './AddProcedureForm';
@@ -80,6 +81,18 @@ export default function ProcedureCard({ procedure, onUpdate, onDelete }: Procedu
               </span>
             )}
           </div>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-muted)' }}>
+            Completion status was not recorded.{' '}
+            <Link
+              className="underline"
+              href={
+                '/clinical-intake?record_id=' +
+                encodeURIComponent('legacy:procedure:' + procedure.id)
+              }
+            >
+              Review status and event history
+            </Link>
+          </p>
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
             {formatDate(procedure.procedure_date)}
           </p>

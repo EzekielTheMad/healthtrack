@@ -5,16 +5,22 @@ import { useState } from 'react';
 export function useExport() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requiresReauth, setRequiresReauth] = useState(false);
 
   async function exportData(format: 'json') {
     setExporting(true);
     setError(null);
+    setRequiresReauth(false);
 
     try {
       const response = await fetch(`/api/export-data?format=${format}`);
 
       if (!response.ok) {
         const body = await response.json().catch(() => null);
+        if (response.status === 403 && body?.error === 'reauth_required') {
+          setRequiresReauth(true);
+          return;
+        }
         throw new Error(body?.message ?? `Export failed (${response.status})`);
       }
 
@@ -41,5 +47,10 @@ export function useExport() {
     }
   }
 
-  return { exporting, error, exportData };
+  function confirmedAuthentication() {
+    setRequiresReauth(false);
+    setError(null);
+  }
+
+  return { exporting, error, requiresReauth, exportData, confirmedAuthentication };
 }
