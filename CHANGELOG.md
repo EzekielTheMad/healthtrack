@@ -26,6 +26,10 @@ with the remaining approved web workflows. It has not been publicly released.
   New report-write grants are explicit; historical tokens gain no new mutations.
 - Refresh the person picker immediately after successful family-member changes;
   keep failed edits and late responses from replacing current person lists.
+- Reject malformed explicit API-key expiry values before generating or storing a
+  key. Authentication also rejects malformed stored non-null expiries. Parseable
+  legacy dates and intentional null/no-expiry keys retain their existing behavior;
+  no stored dates are rewritten and no keys are rotated automatically.
 - Migration `0018_web_clinical_records` widens typed history constraints while
   preserving existing row IDs, source values and references. It does not backfill
   certainty or clinical dates. Keep the matching pre-upgrade image/data/config/key
@@ -37,6 +41,8 @@ lab PDF/image ingestion is retained; vendor-specific scan/history parsers and
 automatic clinical interpretation remain excluded. Provider, Oura, exact-candidate
 runtime/recovery and publication gates retain their own evidence requirements.
 See [web scope](docs/WEB-COMPLETION.md) and [release gates](docs/RELEASE.md).
+See the [release notes](docs/RELEASE-NOTES-2.1.md) for upgrade compatibility and
+the [candidate checklist](docs/RELEASE-CHECKLIST.md) for verification limits.
 
 ## 2.1.0-alpha.1 — next-release fidelity candidate (unpublished)
 

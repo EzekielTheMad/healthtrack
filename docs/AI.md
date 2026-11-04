@@ -84,6 +84,10 @@ and [Gemini generateContent](https://ai.google.dev/api/generate-content) and
 [model discovery](https://ai.google.dev/api/models). Endpoints are fixed on
 the server; credentials are sent in headers and redirects are refused.
 
-Local fixtures and mocked responses verify plumbing and safety boundaries.
-Real text/document requests for all three providers, provider extraction
-accuracy and complete physical-phone acceptance remain separate pending gates.
+Local fixtures and mocked responses cover all three adapters, account isolation,
+credential changes and setup failures. Earlier real OpenAI text, PDF and image
+requests exercised the unchanged provider paths. Live Anthropic/Gemini compatibility
+remains unverified for this candidate; their implementations and normal in-app
+setup tests are retained. This evidence does not establish a current model catalog
+or clinical extraction accuracy. See the [candidate checklist](RELEASE-CHECKLIST.md)
+for the remaining release and physical-phone limits.

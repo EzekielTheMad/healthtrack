@@ -28,6 +28,25 @@ opt-ins; `write:all` does not grant them. Android acceptance remains deferred an
 unverified; this web release includes no public APK. See [web scope](WEB-COMPLETION.md)
 and [release gates](RELEASE.md) for current limits.
 
+### API-key expiry compatibility
+
+Malformed explicit expiry values are rejected before a new key is generated or
+stored. Existing keys with a malformed non-null stored expiry are rejected during
+authentication. Parseable legacy dates and intentional null/no-expiry keys keep
+their existing behavior; this change adds no new lifetime policy or migration.
+
+No stored values are rewritten, keys rotated or replacements created automatically.
+If a client is affected, its account owner can explicitly revoke/replace only that
+key using a valid supported date, then update the client. Preserve the intended
+scope. The API Access display still uses the previous status calculation: a legacy
+malformed date may show Active alongside Invalid Date even though authentication
+rejects it. That display polish is not included in this correction.
+
+The UI still accepts a calendar expiry date, not a new minute-based duration.
+Date-only expiry values parse at UTC midnight; a localized label may display the
+preceding date. See the [release notes](RELEASE-NOTES-2.1.md) and
+[candidate checklist](RELEASE-CHECKLIST.md) before choosing a release image.
+
 ## Account AI candidate migrations
 
 The release-closure candidate adds migrations `0015_account_ai` and

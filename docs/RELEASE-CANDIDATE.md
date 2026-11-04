@@ -2,13 +2,18 @@
 
 ## Current web candidate — 2.1.0
 
-The current source target is the unpublished, web-focused2.1.0 candidate in
-[WEB-COMPLETION](WEB-COMPLETION.md). Its clinical/scan/forms changes require their
-own integrated browser/API/export/PDF/context, independent review and current
-runtime/upgrade/compatible-restore evidence. Older rc.6/alpha/native-CI receipts
-below remain dated historical evidence, not passes for changed source. Android
-AC-04/all seven physical groups remain deferred/unverified; no public APK is part
-of this release. Provider/Oura/private-login/publication gates are retained.
+The unpublished web-focused 2.1.0 candidate is described in
+[WEB-COMPLETION](WEB-COMPLETION.md) and the [release notes](RELEASE-NOTES-2.1.md).
+Its corrected product source matches the locally tested code: 2,116 tests in
+226 files, zero lint errors and 15 warnings in unchanged paths. Prior full
+TypeScript checking matches the unchanged code hashes. The
+[candidate checklist](RELEASE-CHECKLIST.md) records the boundaries of the retained
+clinical/import/isolation/browser/API/PDF evidence and missing live checks.
+
+No new corrected image or architecture/recovery result is claimed. Historical
+rc.6/alpha/native-CI receipts below keep their original source and binary binding.
+Oura, corrected final artifacts and publication remain open. Physical Android
+acceptance is deferred/unverified, and no public APK is part of this web release.
 
 ## Historical rc.6 checkpoint
 

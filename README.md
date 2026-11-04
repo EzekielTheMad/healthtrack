@@ -31,19 +31,18 @@ can be wrong and needs human review.
 
 ## Features
 
-The **web-focused2.1.0 candidate** adds owner-reviewed clinical history and complete,
-source-bound body-scan reports, with normal forms for dates, report metadata and
-protected source references. See [web completion](docs/WEB-COMPLETION.md) and the
-[capability matrix](docs/NEXT-RELEASE.md). It remains unpublished; historical private
-alpha deployments do not establish acceptance of this changed candidate. Android
-phone testing is deferred and unverified, and no public APK is included.
+The **web-focused 2.1.0 candidate** combines editable records, safe repeated and
+overlapping imports, integration status, measurements and weekly workflows with
+owner-reviewed clinical reports and detailed body scans. It also rejects malformed
+API-key expiries without rewriting existing records. See the
+[release notes](docs/RELEASE-NOTES-2.1.md), [web scope](docs/WEB-COMPLETION.md) and
+[capability matrix](docs/NEXT-RELEASE.md).
 
-Private v2 work includes [aligned metric comparisons](docs/V2.md#comparisons-and-oura-permission-review-200-rc3)
-and a [website-first Android companion](docs/ANDROID-ACCEPTANCE.md). The dated
-notes record private Unraid rollouts and bounded phone navigation checks; full
-phone sync/offline acceptance remains open. These notes do not announce a public
-GitHub or registry v2 release. See [current scope and evidence](docs/V2.md)
-for remaining verification limits.
+These are unpublished candidate notes. Final corrected images, architecture and
+recovery checks, Oura acceptance and publication remain pending; the
+[candidate checklist](docs/RELEASE-CHECKLIST.md) distinguishes completed local
+checks from remaining work. Android phone sync/offline acceptance is deferred
+and unverified, and this web release includes no public APK.
 
 - **Medications** — dosages, schedules, editable start/end dates, active/inactive history, AI interaction checks\*
 - **Conditions, allergies, procedures, vaccines** — full clinical history
