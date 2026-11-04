@@ -17,10 +17,11 @@ describe('buildSystemPrompt', () => {
   it('presents vitals under the device & vital metrics aggregate header', () => {
     const prompt = buildSystemPrompt({
       ...emptyContext,
-      vitals_data:
-        'Sleep:\n- Deep Sleep: 104 min (Jul 7) | 7d avg 92 | 30d avg 88 | trend up',
+      vitals_data: 'Sleep:\n- Deep Sleep: 104 min (Jul 7) | 7d avg 92 | 30d avg 88 | trend up',
     });
-    expect(prompt).toContain('DEVICE & VITAL METRICS (30-day aggregates):');
+    expect(prompt).toContain(
+      'DEVICE & VITAL METRICS (observed data within the stated context window):'
+    );
     expect(prompt).toContain('- Deep Sleep: 104 min (Jul 7) | 7d avg 92 | 30d avg 88 | trend up');
     // Old raw-dump header is retired.
     expect(prompt).not.toContain('RECENT VITALS');

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useLabResults } from '@/hooks/useLabResults';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import type { ParsedLabResult } from '@/lib/claude/parse-lab';
@@ -10,6 +11,9 @@ import LabImport from '@/components/labs/LabImport';
 import LabValidationReview from '@/components/labs/LabValidationReview';
 import TrendCard from '@/components/labs/TrendCard';
 import VisitCard from '@/components/labs/VisitCard';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
+import ImportBatchReview from '@/components/settings/ImportBatchReview';
+import ClinicalRecordsPanel from '@/components/clinical-intake/ClinicalRecordsPanel';
 
 type View = 'trends' | 'visits';
 type Flow = 'idle' | 'import' | 'review';
@@ -19,21 +23,19 @@ export default function LabsPage() {
   // PDF import runs through the AI parser — hide its entry points when the
   // instance has no ANTHROPIC_API_KEY configured.
   const aiHidden = capabilities?.ai === false;
-  const { labVisits, loading, error, saveLabVisit } = useLabResults();
+  const { labVisits, loading, error, saveLabVisit, updateLabVisit, refetch } = useLabResults();
+  const { delegateOwnerId } = useActiveProfile();
   const [tab, setTab] = useState<View>('visits');
   const [flow, setFlow] = useState<Flow>('idle');
   const [parsedData, setParsedData] = useState<ParsedLabResult | null>(null);
   const [storagePath, setStoragePath] = useState<string>('');
 
   // Handle parsed results from LabImport
-  const handleParsed = useCallback(
-    (results: ParsedLabResult, path: string) => {
-      setParsedData(results);
-      setStoragePath(path);
-      setFlow('review');
-    },
-    [],
-  );
+  const handleParsed = useCallback((results: ParsedLabResult, path: string) => {
+    setParsedData(results);
+    setStoragePath(path);
+    setFlow('review');
+  }, []);
 
   // Save validated results
   const handleSave = useCallback(
@@ -43,7 +45,7 @@ export default function LabsPage() {
       setParsedData(null);
       setStoragePath('');
     },
-    [saveLabVisit],
+    [saveLabVisit]
   );
 
   // Re-parse: go back to import
@@ -89,10 +91,7 @@ export default function LabsPage() {
 
     // Sort each test's results by visit_date
     for (const [, points] of map) {
-      points.sort(
-        (a, b) =>
-          new Date(a.visit_date).getTime() - new Date(b.visit_date).getTime(),
-      );
+      points.sort((a, b) => new Date(a.visit_date).getTime() - new Date(b.visit_date).getTime());
     }
 
     return map;
@@ -130,7 +129,7 @@ export default function LabsPage() {
         ...v,
         results: v.lab_results,
       })),
-    [labVisits],
+    [labVisits]
   );
 
   const hasResults = labVisits.length > 0;
@@ -163,13 +162,24 @@ export default function LabsPage() {
         <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
           Review Parsed Results
         </h1>
-        <LabValidationReview
-          parsedData={parsedData}
-          storagePath={storagePath}
-          onSave={handleSave}
-          onReparse={handleReparse}
-          onCancel={handleCancel}
-        />
+        {parsedData.import_batch_id ? (
+          <ImportBatchReview
+            batchId={parsedData.import_batch_id}
+            onComplete={async () => {
+              await refetch();
+              handleCancel();
+            }}
+            onCancel={handleCancel}
+          />
+        ) : (
+          <LabValidationReview
+            parsedData={parsedData}
+            storagePath={storagePath}
+            onSave={handleSave}
+            onReparse={handleReparse}
+            onCancel={handleCancel}
+          />
+        )}
       </div>
     );
   }
@@ -182,17 +192,35 @@ export default function LabsPage() {
         <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
           Lab Results
         </h1>
-        {!aiHidden && (
+        {!aiHidden && !delegateOwnerId && (
           <button
             onClick={() => setFlow('import')}
             className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors"
-            style={{ background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))', color: 'white', boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)' }}
+            style={{
+              background:
+                'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+              color: 'white',
+              boxShadow: '0 4px 14px rgba(224, 122, 95, 0.3)',
+            }}
           >
             Upload Lab PDF
           </button>
         )}
       </div>
 
+      <ClinicalRecordsPanel kind="lab" />
+      <div className="space-y-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
+        <h2 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          Numeric lab trends and visits
+        </h2>
+        <p>
+          These views may omit detailed results, including qualitative results, thresholds, canceled
+          tests and uncertain dates.{' '}
+          <Link className="underline" href="/clinical-records">
+            Detailed clinical records
+          </Link>
+        </p>
+      </div>
       {/* Tab toggle */}
       <div className="flex gap-2">
         {(['trends', 'visits'] as const).map((t) => (
@@ -255,14 +283,10 @@ export default function LabsPage() {
                 />
               </svg>
             }
-            title="No lab results yet"
-            description={
-              aiHidden
-                ? 'Lab results imported on this instance will appear here.'
-                : "Upload a lab PDF to get started. We'll parse your results and track trends over time."
-            }
+            title="No numeric lab results in this view"
+            description="Detailed clinical history may still contain results and source evidence that do not appear in these numeric trends or visits."
             action={
-              aiHidden
+              aiHidden || delegateOwnerId
                 ? undefined
                 : {
                     label: 'Upload Lab PDF',
@@ -278,7 +302,10 @@ export default function LabsPage() {
         <div className="space-y-8">
           {needsAttention.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--color-terracotta)' }}>
+              <h2
+                className="text-sm font-semibold uppercase tracking-wider"
+                style={{ color: 'var(--color-terracotta)' }}
+              >
                 Needs Attention
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -290,7 +317,10 @@ export default function LabsPage() {
           )}
           {withinRange.length > 0 && (
             <section className="space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wider" style={{ color: 'var(--color-sage)' }}>
+              <h2
+                className="text-sm font-semibold uppercase tracking-wider"
+                style={{ color: 'var(--color-sage)' }}
+              >
                 Within Range
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -307,7 +337,11 @@ export default function LabsPage() {
       {!loading && !error && hasResults && tab === 'visits' && (
         <div className="space-y-4">
           {visitCards.map((visit) => (
-            <VisitCard key={visit.id} visit={visit} />
+            <VisitCard
+              key={visit.id}
+              visit={visit}
+              onSave={delegateOwnerId ? undefined : updateLabVisit}
+            />
           ))}
         </div>
       )}

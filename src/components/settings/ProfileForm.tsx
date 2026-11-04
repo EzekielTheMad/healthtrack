@@ -7,7 +7,12 @@ import { profileSchema } from '@/lib/validations';
 import { apiFetch, ApiRequestError } from '@/lib/api/client';
 import type { Profile } from '@/lib/types';
 import type { UnitSystem } from '@/lib/units';
-import { inchesToDisplayHeight, lbsToDisplayWeight, heightToInches, weightToLbs } from '@/lib/units';
+import {
+  inchesToDisplayHeight,
+  lbsToDisplayWeight,
+  heightToInches,
+  weightToLbs,
+} from '@/lib/units';
 import { z } from 'zod';
 
 type ProfileFormData = z.infer<typeof profileSchema>;
@@ -15,6 +20,8 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 export function ProfileForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   // Track display values for height/weight separately so we can convert on unit change
   const [heightDisplay, setHeightDisplay] = useState(0);
@@ -25,23 +32,36 @@ export function ProfileForm() {
     handleSubmit,
     reset,
     setValue,
+    getValues,
     control,
     formState: { errors },
   } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { unit_system: 'imperial' },
+    defaultValues: {
+      unit_system: 'imperial',
+      biological_sex: 'prefer_not_to_say',
+      height_inches: 0,
+      weight_lbs: 0,
+    },
   });
 
-  const unitSystem = useWatch({ control, name: 'unit_system' }) as UnitSystem ?? 'imperial';
+  const unitSystem = (useWatch({ control, name: 'unit_system' }) as UnitSystem) ?? 'imperial';
 
   useEffect(() => {
     const fetchProfile = async () => {
+      setLoading(true);
+      setLoadFailed(false);
       let profile: Profile | null = null;
       try {
         profile = await apiFetch<Profile>('/api/profile');
       } catch (err) {
         // 404 = no profile row yet (fresh account) — start with defaults
         if (!(err instanceof ApiRequestError && err.status === 404)) {
+          setMessage({
+            type: 'error',
+            text: err instanceof Error ? err.message : 'Failed to load profile',
+          });
+          setLoadFailed(true);
           setLoading(false);
           return;
         }
@@ -52,7 +72,7 @@ export function ProfileForm() {
         reset({
           display_name: profile.display_name ?? '',
           date_of_birth: profile.date_of_birth ?? '',
-          biological_sex: profile.biological_sex ?? undefined,
+          biological_sex: profile.biological_sex ?? 'prefer_not_to_say',
           unit_system: sys,
           height_inches: profile.height_inches ?? 0,
           weight_lbs: profile.weight_lbs ?? 0,
@@ -63,12 +83,12 @@ export function ProfileForm() {
       setLoading(false);
     };
     fetchProfile();
-  }, [reset]);
+  }, [reset, retry]);
 
   // When unit system changes, recalculate display values from the stored DB values
   const handleUnitChange = (newSystem: UnitSystem) => {
-    const currentHeightInches = heightToInches(heightDisplay, unitSystem);
-    const currentWeightLbs = weightToLbs(weightDisplay, unitSystem);
+    const currentHeightInches = getValues('height_inches');
+    const currentWeightLbs = getValues('weight_lbs');
     setValue('unit_system', newSystem);
     setHeightDisplay(inchesToDisplayHeight(currentHeightInches, newSystem));
     setWeightDisplay(lbsToDisplayWeight(currentWeightLbs, newSystem));
@@ -78,20 +98,17 @@ export function ProfileForm() {
     setSaving(true);
     setMessage(null);
 
-    // Convert display values back to DB units (imperial)
-    const heightInches = heightToInches(heightDisplay, unitSystem);
-    const weightLbs = weightToLbs(weightDisplay, unitSystem);
-
     try {
       await apiFetch<Profile>('/api/profile', {
         method: 'PUT',
         body: JSON.stringify({
           display_name: formData.display_name,
           date_of_birth: formData.date_of_birth,
-          biological_sex: formData.biological_sex,
+          biological_sex:
+            formData.biological_sex === 'prefer_not_to_say' ? null : formData.biological_sex,
           unit_system: formData.unit_system,
-          height_inches: heightInches,
-          weight_lbs: weightLbs,
+          height_inches: formData.height_inches,
+          weight_lbs: formData.weight_lbs,
         }),
       });
       setMessage({ type: 'success', text: 'Profile saved!' });
@@ -106,6 +123,17 @@ export function ProfileForm() {
 
   if (loading) {
     return <div className="h-64 bg-bg-card rounded-xl animate-pulse" />;
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="space-y-3">
+        <p role="alert">{message?.text}</p>
+        <button type="button" onClick={() => setRetry((value) => value + 1)}>
+          Retry loading profile
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -137,6 +165,11 @@ export function ProfileForm() {
           {...register('date_of_birth')}
           className="w-full px-3 py-2.5 bg-bg-primary border border-border-card rounded-xl text-text-primary focus:outline-none focus:border-accent-green"
         />
+        {errors.date_of_birth && (
+          <p className="mt-1 text-sm text-accent-red" role="alert">
+            {errors.date_of_birth.message}
+          </p>
+        )}
       </div>
 
       <div>
@@ -144,20 +177,37 @@ export function ProfileForm() {
           <legend className="block text-sm font-medium text-text-muted mb-2">Biological Sex</legend>
           <div className="flex gap-4">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" value="male" {...register('biological_sex')} className="accent-accent-green" />
+              <input
+                type="radio"
+                value="male"
+                {...register('biological_sex')}
+                className="accent-accent-green"
+              />
               <span className="text-sm">Male</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" value="female" {...register('biological_sex')} className="accent-accent-green" />
+              <input
+                type="radio"
+                value="female"
+                {...register('biological_sex')}
+                className="accent-accent-green"
+              />
               <span className="text-sm">Female</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="radio" value="prefer_not_to_say" {...register('biological_sex')} className="accent-accent-green" />
+              <input
+                type="radio"
+                value="prefer_not_to_say"
+                {...register('biological_sex')}
+                className="accent-accent-green"
+              />
               <span className="text-sm">Prefer not to say</span>
             </label>
           </div>
           {errors.biological_sex && (
-            <p className="mt-1 text-sm text-accent-red" role="alert">{errors.biological_sex.message}</p>
+            <p className="mt-1 text-sm text-accent-red" role="alert">
+              {errors.biological_sex.message}
+            </p>
           )}
         </fieldset>
       </div>
@@ -165,13 +215,17 @@ export function ProfileForm() {
       {/* Unit system toggle */}
       <div>
         <span className="block text-sm font-medium text-text-muted mb-2">Unit System</span>
-        <div className="inline-flex rounded-lg overflow-hidden border" style={{ borderColor: 'var(--border-card)' }}>
+        <div
+          className="inline-flex rounded-lg overflow-hidden border"
+          style={{ borderColor: 'var(--border-card)' }}
+        >
           <button
             type="button"
             onClick={() => handleUnitChange('imperial')}
             className="px-4 py-2 text-sm font-medium transition-colors cursor-pointer"
             style={{
-              backgroundColor: unitSystem === 'imperial' ? 'var(--color-sage)' : 'var(--bg-primary)',
+              backgroundColor:
+                unitSystem === 'imperial' ? 'var(--color-sage)' : 'var(--bg-primary)',
               color: unitSystem === 'imperial' ? 'var(--color-bark)' : 'var(--color-text-muted)',
             }}
           >
@@ -193,23 +247,37 @@ export function ProfileForm() {
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <label htmlFor="height_display" className="block text-sm font-medium text-text-muted mb-1">
+          <label
+            htmlFor="height_display"
+            className="block text-sm font-medium text-text-muted mb-1"
+          >
             Height ({unitSystem === 'metric' ? 'cm' : 'total inches'})
           </label>
           <input
             id="height_display"
             type="number"
             value={heightDisplay}
-            onChange={(e) => setHeightDisplay(Number(e.target.value))}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              setHeightDisplay(value);
+              setValue('height_inches', heightToInches(value, unitSystem), {
+                shouldValidate: true,
+              });
+            }}
             className="w-full px-3 py-2.5 bg-bg-primary border border-border-card rounded-xl text-text-primary focus:outline-none focus:border-accent-green"
             placeholder={unitSystem === 'metric' ? 'e.g. 178' : 'e.g. 70'}
           />
           {errors.height_inches && (
-            <p className="mt-1 text-sm text-accent-red" role="alert">{errors.height_inches.message}</p>
+            <p className="mt-1 text-sm text-accent-red" role="alert">
+              {errors.height_inches.message}
+            </p>
           )}
         </div>
         <div>
-          <label htmlFor="weight_display" className="block text-sm font-medium text-text-muted mb-1">
+          <label
+            htmlFor="weight_display"
+            className="block text-sm font-medium text-text-muted mb-1"
+          >
             Weight ({unitSystem === 'metric' ? 'kg' : 'lbs'})
           </label>
           <input
@@ -217,11 +285,17 @@ export function ProfileForm() {
             type="number"
             step="0.1"
             value={weightDisplay}
-            onChange={(e) => setWeightDisplay(Number(e.target.value))}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              setWeightDisplay(value);
+              setValue('weight_lbs', weightToLbs(value, unitSystem), { shouldValidate: true });
+            }}
             className="w-full px-3 py-2.5 bg-bg-primary border border-border-card rounded-xl text-text-primary focus:outline-none focus:border-accent-green"
           />
           {errors.weight_lbs && (
-            <p className="mt-1 text-sm text-accent-red" role="alert">{errors.weight_lbs.message}</p>
+            <p className="mt-1 text-sm text-accent-red" role="alert">
+              {errors.weight_lbs.message}
+            </p>
           )}
         </div>
       </div>

@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-auth';
 import { getMetric } from '@/lib/metrics/registry';
 import { listVitals, type VitalRow } from '@/lib/repos/vitals';
+import { typedVitalLatest } from '@/lib/fidelity/vitals-typed';
+import { errorResponse } from '@/lib/api/respond';
 
 const MAX_METRICS = 25;
 
@@ -23,6 +25,7 @@ function toWire(v: VitalRow) {
     unit: v.unit,
     source: v.source,
     recorded_at: v.recordedAt,
+    last_received_at: v.lastReceivedAt,
   };
 }
 
@@ -37,6 +40,15 @@ export async function GET(request: NextRequest) {
   const ctx = await validateApiKey(request.headers.get('Authorization'));
   if (!ctx) return unauthorized();
   if (!hasScope(ctx, 'read:vitals')) return forbidden('read:vitals');
+  if (
+    request.nextUrl.searchParams.get('format') === 'typed' &&
+    (request.nextUrl.searchParams.has('owner_id') ||
+      request.nextUrl.searchParams.has('dependent_id'))
+  )
+    return Response.json(
+      { error: 'Typed PAT vitals access is self-scoped.' },
+      { status: 400, headers: corsHeaders }
+    );
 
   const raw = request.nextUrl.searchParams.get('metrics');
   const metrics = (raw ?? '')
@@ -45,14 +57,17 @@ export async function GET(request: NextRequest) {
     .filter((m) => m.length > 0);
   if (metrics.length === 0) {
     return Response.json(
-      { error: 'metrics is required — a comma-separated list of metric keys, e.g. ?metrics=weight,hrv_rmssd' },
-      { status: 400, headers: corsHeaders },
+      {
+        error:
+          'metrics is required — a comma-separated list of metric keys, e.g. ?metrics=weight,hrv_rmssd',
+      },
+      { status: 400, headers: corsHeaders }
     );
   }
   if (metrics.length > MAX_METRICS) {
     return Response.json(
       { error: `At most ${MAX_METRICS} metrics per request (got ${metrics.length}).` },
-      { status: 400, headers: corsHeaders },
+      { status: 400, headers: corsHeaders }
     );
   }
   const unknown = metrics.filter((m) => !getMetric(m));
@@ -61,22 +76,35 @@ export async function GET(request: NextRequest) {
       {
         error: `Unknown metric key${unknown.length > 1 ? 's' : ''} '${unknown.join("', '")}'. The metric registry is closed — see /docs/api for the list of supported metrics.`,
       },
-      { status: 400, headers: corsHeaders },
+      { status: 400, headers: corsHeaders }
     );
   }
 
   try {
     const out: Record<string, ReturnType<typeof toWire> | null> = {};
+    const typedRows: Record<string, VitalRow | null> = {};
     for (const metricKey of [...new Set(metrics)]) {
       const rows = await listVitals(
         ctx.userId,
         { ownerId: ctx.userId, dependentId: null },
-        { metricKey, limit: 1 },
+        { metricKey, limit: 1 }
       );
       out[metricKey] = rows[0] ? toWire(rows[0]) : null;
+      typedRows[metricKey] = rows[0] ?? null;
     }
+    if (request.nextUrl.searchParams.get('format') === 'typed')
+      return Response.json(
+        await typedVitalLatest(
+          ctx.userId,
+          typedRows,
+          [...new Set(metrics)],
+          request.nextUrl.searchParams.get('source') ?? undefined
+        ),
+        { headers: corsHeaders }
+      );
     return Response.json(out, { headers: corsHeaders });
   } catch (error) {
+    if (request.nextUrl.searchParams.get('format') === 'typed') return errorResponse(error);
     // Never reflect internal error details to API clients (respond.ts policy).
     console.error('v1 vitals latest GET error:', error);
     return Response.json({ error: 'internal_error' }, { status: 500, headers: corsHeaders });

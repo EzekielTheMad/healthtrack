@@ -8,6 +8,7 @@
  */
 import { AVAILABLE_SCOPES } from '@/lib/api-scopes';
 import { healthConnectEnvelopeSchema } from './health-connect-openapi';
+import { FIDELITY_PATHS, FIDELITY_SCHEMAS, FIDELITY_FORMAT_PARAMETER } from './fidelity-openapi';
 
 const SCOPE_DOC = AVAILABLE_SCOPES.map((s) => `- \`${s.value}\` — ${s.description}`).join('\n');
 
@@ -24,16 +25,26 @@ const AUTH_ERRORS = {
 } as const;
 
 function listOperation(summary: string, scope: string, parameters?: unknown[]) {
+  const clinical = scope === 'read:labs' || scope === 'read:medications';
   return {
     summary,
-    description: `Requires scope \`${scope}\` (or \`read:all\`).`,
-    ...(parameters ? { parameters } : {}),
+    description: `Requires scope \`${scope}\` (or \`read:all\`).${clinical ? ' Use format=typed for full outcomes/history. Default legacy projection omits explicitly superseded current records with X-HealthTrack-Clinical-Coverage and Link headers; unchanged records retain their existing shape.' : ''}`,
+    ...(parameters || clinical
+      ? { parameters: [...(parameters ?? []), ...(clinical ? [FIDELITY_FORMAT_PARAMETER] : [])] }
+      : {}),
     responses: {
       '200': {
         description: 'JSON array of records (snake_case fields)',
         content: {
           'application/json': {
-            schema: { type: 'array', items: { type: 'object' } },
+            schema: clinical
+              ? {
+                  anyOf: [
+                    { type: 'array', items: { type: 'object' } },
+                    { $ref: '#/components/schemas/ClinicalHistory' },
+                  ],
+                }
+              : { type: 'array', items: { type: 'object' } },
           },
         },
       },
@@ -90,7 +101,7 @@ export const OPENAPI_DOCUMENT = {
         type: 'http',
         scheme: 'bearer',
         description:
-          'Personal access token created in Settings → API Keys ' +
+          'Personal access token created in Settings → Advanced & about → API access ' +
           '(format `ohts_pat_...`), sent as `Authorization: Bearer <token>`. ' +
           'Each token carries a set of scopes:\n' +
           SCOPE_DOC +
@@ -98,6 +109,7 @@ export const OPENAPI_DOCUMENT = {
       },
     },
     schemas: {
+      ...FIDELITY_SCHEMAS,
       Error: {
         type: 'object',
         properties: { error: { type: 'string' } },
@@ -112,6 +124,11 @@ export const OPENAPI_DOCUMENT = {
           unit: { type: ['string', 'null'] },
           source: { type: 'string' },
           recorded_at: { type: 'string', description: 'ISO 8601 UTC' },
+          last_received_at: {
+            type: ['string', 'null'],
+            description:
+              'Server time of the latest accepted insert or upsert. Independent of recorded_at; null for legacy rows with unknown receipt time.',
+          },
         },
         required: ['id', 'metric_key', 'value', 'unit', 'source', 'recorded_at'],
       },
@@ -196,15 +213,30 @@ export const OPENAPI_DOCUMENT = {
           'every sync. A null nutrient means UNKNOWN, never zero.',
         properties: {
           date: { type: 'string', description: 'YYYY-MM-DD (America/Phoenix)' },
-          source_package: { type: 'string', description: 'Exact Android package, e.g. "com.sbs.diet"' },
+          source_package: {
+            type: 'string',
+            description: 'Exact Android package, e.g. "com.sbs.diet"',
+          },
           calories: { type: ['number', 'null'] },
           protein_grams: { type: ['number', 'null'] },
           carbs_grams: { type: ['number', 'null'] },
           fat_grams: { type: ['number', 'null'] },
-          fiber_grams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
-          sugar_grams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
-          sodium_milligrams: { type: ['number', 'null'], description: 'Reserved — the relay does not publish it yet' },
-          record_count: { type: 'integer', description: 'Raw source records this day was computed from' },
+          fiber_grams: {
+            type: ['number', 'null'],
+            description: 'Reserved — the relay does not publish it yet',
+          },
+          sugar_grams: {
+            type: ['number', 'null'],
+            description: 'Reserved — the relay does not publish it yet',
+          },
+          sodium_milligrams: {
+            type: ['number', 'null'],
+            description: 'Reserved — the relay does not publish it yet',
+          },
+          record_count: {
+            type: 'integer',
+            description: 'Raw source records this day was computed from',
+          },
           updated_at: { type: 'string' },
         },
         required: ['date', 'source_package', 'record_count'],
@@ -289,14 +321,7 @@ export const OPENAPI_DOCUMENT = {
           first_seen_at: { type: 'string' },
           last_seen_at: { type: 'string' },
         },
-        required: [
-          'id',
-          'record_type',
-          'source_package',
-          'source_uuid',
-          'identity_kind',
-          'record',
-        ],
+        required: ['id', 'record_type', 'source_package', 'source_uuid', 'identity_kind', 'record'],
       },
       HealthConnectRecordPage: {
         type: 'object',
@@ -336,7 +361,8 @@ export const OPENAPI_DOCUMENT = {
               nutrition_days_upserted: { type: 'integer' },
               skipped_unapproved: {
                 type: 'integer',
-                description: 'Retained raw but not written canonically (unsupported type, unapproved package, or inventory mode)',
+                description:
+                  'Retained raw but not written canonically (unsupported type, unapproved package, or inventory mode)',
               },
               invalid_records: {
                 type: 'integer',
@@ -775,6 +801,181 @@ export const OPENAPI_DOCUMENT = {
     },
   },
   paths: {
+    ...FIDELITY_PATHS,
+    '/api/v1/mobile/state': {
+      get: {
+        summary: 'Paired Android device state and live offline subject grants',
+        description:
+          'Requires a current paired-device PAT with write:health_connect. A generic PAT cannot access this route. Returns generation, next_sequence, grant_revision, allowed_subjects, integration_status, exact source approvals, configured timezone and accepted/read timestamps. Private no-store response.',
+        responses: {
+          '200': jsonResponse('Device state; never includes credentials', { type: 'object' }),
+          ...AUTH_ERRORS,
+        },
+      },
+    },
+    '/api/v1/mobile/disconnect': {
+      post: {
+        summary: 'Revoke this Android device credential',
+        description:
+          'Current paired-device PAT only, with write:health_connect. Preserves clinical/raw data and keeps legacy relay delivery fenced until the owner explicitly restores it.',
+        responses: {
+          '200': jsonResponse('Device revoked', {
+            type: 'object',
+            properties: { status: { const: 'revoked' } },
+          }),
+          ...AUTH_ERRORS,
+        },
+      },
+    },
+    '/api/v1/mobile/doctor-summary': {
+      get: {
+        summary: 'Doctor Essentials snapshot for an explicitly granted subject',
+        description:
+          'Current paired-device PAT with read:doctor_summary and an explicit current owner/dependent grant. A generic read:all PAT does not authorize this device-only route. Returns schema_version, subject, generated_at, content fingerprint, grant_revision and the shared doctor-summary DTO. Private no-store; ETag is the fingerprint.',
+        parameters: [
+          {
+            name: 'subject',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' },
+            description: 'self or the ID of an explicitly granted owned dependent',
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Authorized doctor summary', { type: 'object' }),
+          ...AUTH_ERRORS,
+          ...NOT_FOUND_404,
+          '409': { description: 'Grant changed during generation; refresh state' },
+        },
+      },
+    },
+    '/api/v1/mobile/doctor-summary/pdf': {
+      get: {
+        summary: 'PDF matching a Doctor Essentials JSON fingerprint',
+        description:
+          'Same live paired-device authorization and subject grants as the JSON endpoint. Uses the shared doctor-summary template. Cache the JSON and PDF as one bundle only after both succeed.',
+        parameters: [
+          { name: 'subject', in: 'query', required: true, schema: { type: 'string' } },
+          {
+            name: 'fingerprint',
+            in: 'query',
+            required: true,
+            schema: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Matching PDF, private no-store, fingerprint ETag',
+            content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },
+          },
+          ...AUTH_ERRORS,
+          ...NOT_FOUND_404,
+          '409': { description: 'Summary or grant changed; refresh the JSON snapshot first' },
+        },
+      },
+    },
+    '/api/v1/mobile/health-connect/sync': {
+      post: {
+        summary: 'Ordered, idempotent first-party Android Health Connect batch',
+        description:
+          'Current paired-device PAT with write:health_connect plus mandatory HMAC-SHA256 over exact UTF-8 request bytes. Protocol 2; one owner and one active delivery generation. At most 1 MiB and 500 records. The server transaction rechecks credential/generation and saves the batch outcome. Identical retries return that outcome; conflicting bytes/sequences return 409. Raw records retain exact package and Health Connect IDs. Approved projections only. Completed, authorized, contiguous bounded rescans alone can infer deletions.',
+        parameters: [
+          {
+            name: 'X-Signature',
+            in: 'header',
+            required: true,
+            schema: { type: 'string', pattern: '^sha256=[a-f0-9]{64}$' },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                required: [
+                  'protocol_version',
+                  'device_generation',
+                  'sequence',
+                  'batch_id',
+                  'read_at',
+                  'app_version',
+                  'events',
+                ],
+                properties: {
+                  protocol_version: { const: 2 },
+                  device_generation: { type: 'string', format: 'uuid' },
+                  sequence: { type: 'integer', minimum: 1 },
+                  batch_id: { type: 'string', format: 'uuid' },
+                  read_at: { type: 'string', format: 'date-time' },
+                  app_version: { type: 'string', maxLength: 64 },
+                  events: {
+                    type: 'array',
+                    maxItems: 500,
+                    items: {
+                      type: 'object',
+                      required: ['kind'],
+                      properties: {
+                        kind: {
+                          enum: [
+                            'upsert',
+                            'delete',
+                            'daily_snapshot',
+                            'rescan_begin',
+                            'rescan_page',
+                            'rescan_complete',
+                          ],
+                        },
+                      },
+                      description:
+                        'Executable per-event contract: native-schema.ts; scalar data uses value/unit, daily_snapshot is a full replacement, rescan requires explicit exact package/type/window and complete page count.',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          '200': jsonResponse(
+            'Committed or replayed original outcome; counts and server received_at',
+            { type: 'object' }
+          ),
+          ...AUTH_ERRORS,
+          ...VALIDATION_400,
+          '409': {
+            description:
+              'Generation, sequence, batch or rescan conflict; do not advance local cursors',
+          },
+          '413': { description: 'Body or record limit exceeded' },
+          '429': {
+            description: 'Delivery rate limit exceeded; retry the pending exact batch later',
+          },
+        },
+      },
+    },
+    '/api/v1/context': {
+      get: {
+        summary: 'Dated owner-only health context with source evidence and coverage',
+        description:
+          'Requires read:all. Includes medication history, selected-source vitals, labs by draw date, nutrition, training, and provenance. Missing data is never zero; competing sources stay separate.',
+        parameters: [
+          {
+            name: 'days',
+            in: 'query',
+            schema: { type: 'integer', enum: [30, 90, 365], default: 90 },
+          },
+        ],
+        responses: {
+          '200': jsonResponse('Health context, fingerprint, evidence, coverage and facts', {
+            type: 'object',
+          }),
+          ...AUTH_ERRORS,
+          ...VALIDATION_400,
+        },
+      },
+    },
     '/api/v1': {
       get: {
         summary: 'API index — endpoints and scopes',
@@ -800,8 +1001,22 @@ export const OPENAPI_DOCUMENT = {
     },
     '/api/v1/labs': {
       get: listOperation('List lab results', 'read:labs', [
-        { name: 'test', in: 'query', required: false, schema: { type: 'string' } },
-        { name: 'days', in: 'query', required: false, schema: { type: 'integer' } },
+        {
+          name: 'test',
+          in: 'query',
+          required: false,
+          schema: { type: 'string' },
+          description:
+            'Case-insensitive analyte-name substring, applied before the history limit in both formats.',
+        },
+        {
+          name: 'days',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer' },
+          description:
+            'Legacy format only. format=typed returns 400 if days is supplied because partial/unknown collection dates cannot safely be treated as exact dates. Typed history explicitly retains that uncertainty.',
+        },
       ]),
     },
     '/api/v1/procedures': {
@@ -1034,10 +1249,9 @@ export const OPENAPI_DOCUMENT = {
         ],
         requestBody: jsonBody('#/components/schemas/HealthConnectEnvelope'),
         responses: {
-          '200': jsonResponse(
-            'Committed (including a valid no-op retry)',
-            { $ref: '#/components/schemas/HealthConnectIngestResult' },
-          ),
+          '200': jsonResponse('Committed (including a valid no-op retry)', {
+            $ref: '#/components/schemas/HealthConnectIngestResult',
+          }),
           '400': {
             description: 'Malformed JSON or invalid envelope',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
@@ -1071,6 +1285,7 @@ export const OPENAPI_DOCUMENT = {
         summary: 'List vital signs',
         description: 'Requires scope `read:vitals` (or `read:all`).',
         parameters: [
+          FIDELITY_FORMAT_PARAMETER,
           { name: 'metric', in: 'query', required: false, schema: { type: 'string' } },
           { name: 'days', in: 'query', required: false, schema: { type: 'integer' } },
           {
@@ -1099,7 +1314,12 @@ export const OPENAPI_DOCUMENT = {
             description: 'Vitals, recorded_at descending',
             content: {
               'application/json': {
-                schema: { type: 'array', items: { $ref: '#/components/schemas/Vital' } },
+                schema: {
+                  anyOf: [
+                    { type: 'array', items: { $ref: '#/components/schemas/Vital' } },
+                    { $ref: '#/components/schemas/TypedVitalHistory' },
+                  ],
+                },
               },
             },
           },
@@ -1175,6 +1395,7 @@ export const OPENAPI_DOCUMENT = {
           'newest reading of each requested metric; metrics with no data map ' +
           'to null. Metric keys must exist in the registry (max 25 per call).',
         parameters: [
+          FIDELITY_FORMAT_PARAMETER,
           {
             name: 'metrics',
             in: 'query',
@@ -1185,10 +1406,15 @@ export const OPENAPI_DOCUMENT = {
         ],
         responses: {
           '200': jsonResponse('Object keyed by metric_key', {
-            type: 'object',
-            additionalProperties: {
-              oneOf: [{ $ref: '#/components/schemas/Vital' }, { type: 'null' }],
-            },
+            anyOf: [
+              {
+                type: 'object',
+                additionalProperties: {
+                  oneOf: [{ $ref: '#/components/schemas/Vital' }, { type: 'null' }],
+                },
+              },
+              { $ref: '#/components/schemas/TypedVitalLatest' },
+            ],
           }),
           ...VALIDATION_400,
           ...AUTH_ERRORS,
@@ -1354,7 +1580,7 @@ export const OPENAPI_DOCUMENT = {
         summary: 'Recent entries for one exercise (newest session first)',
         description:
           'Requires scope `read:fitness` (or `read:all`). Each item is the ' +
-          'entry (sets + derived stats) plus its session\'s when/what — ' +
+          "entry (sets + derived stats) plus its session's when/what — " +
           '"latest entry per exercise" in one call.',
         parameters: [
           pathParam('id', 'Exercise id'),
@@ -1495,7 +1721,7 @@ export const OPENAPI_DOCUMENT = {
         summary: 'Edit a goal (kind is immutable)',
         description:
           'Requires scope `write:fitness` (or `write:all`). Fields must ' +
-          'match the row\'s kind; re-activating re-checks the one-active rule.',
+          "match the row's kind; re-activating re-checks the one-active rule.",
         parameters: [pathParam('id', 'Goal id')],
         requestBody: jsonBody('#/components/schemas/GoalWrite'),
         responses: {

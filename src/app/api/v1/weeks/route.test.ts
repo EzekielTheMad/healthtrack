@@ -9,6 +9,14 @@
  * frequency-goal progress, the check-in row, prior-week deltas, the
  * Phoenix-timezone week-boundary pins for sessions, and the empty week.
  */
+import {
+  beforeEach as beforeCalendarFixture,
+  afterEach as afterCalendarFixture,
+  vi as calendarFixtureVi,
+} from 'vitest';
+beforeCalendarFixture(() => calendarFixtureVi.stubEnv('TZ', 'America/Phoenix'));
+afterCalendarFixture(() => calendarFixtureVi.unstubAllEnvs());
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { NextRequest } from 'next/server';
 import {
@@ -80,15 +88,25 @@ async function seedEverything(token: string) {
   await post({ type: 'strength', label: 'Day A', started_at: '2026-07-06T18:00:00Z', entries: [] });
   await post({ type: 'strength', label: 'Day B', started_at: '2026-07-08T18:00:00Z', entries: [] });
   // UTC Monday Jul 13 01:00 = Sunday Jul 12 18:00 in Phoenix → CURRENT week.
-  await post({ type: 'cardio', label: 'Treadmill', started_at: '2026-07-13T01:00:00Z', entries: [] });
+  await post({
+    type: 'cardio',
+    label: 'Treadmill',
+    started_at: '2026-07-13T01:00:00Z',
+    entries: [],
+  });
   // UTC Monday Jul 6 02:00 = Sunday Jul 5 19:00 in Phoenix → PRIOR week.
-  await post({ type: 'strength', label: 'Boundary', started_at: '2026-07-06T02:00:00Z', entries: [] });
+  await post({
+    type: 'strength',
+    label: 'Boundary',
+    started_at: '2026-07-06T02:00:00Z',
+    entries: [],
+  });
   // Plain prior-week session.
   await post({ type: 'strength', label: 'Day A', started_at: '2026-07-01T18:00:00Z', entries: [] });
 
   // --- Vitals (day-normalized) ------------------------------------------
   const records = [
-    // Current week weights: Jul 8 has TWO sources → per-day mean 200.6.
+    // Current week weights: competing manual values must not blend with the chosen scale.
     { metric_key: 'weight', value: 201.4, recorded_at: '2026-07-06', source: 'renpho' },
     { metric_key: 'weight', value: 200.2, recorded_at: '2026-07-08', source: 'renpho' },
     { metric_key: 'weight', value: 201.0, recorded_at: '2026-07-08', source: 'manual' },
@@ -113,23 +131,33 @@ async function seedEverything(token: string) {
     // and a centimetre submission that must be normalized before it lands.
     { metric_key: 'chest', value: 43.0, recorded_at: '2026-07-07', source: 'example_tape' },
     { metric_key: 'left_bicep', value: 14.1, recorded_at: '2026-07-07', source: 'example_tape' },
-    { metric_key: 'right_bicep', value: 36.3, unit: 'cm', recorded_at: '2026-07-07', source: 'example_tape' },
+    {
+      metric_key: 'right_bicep',
+      value: 36.3,
+      unit: 'cm',
+      recorded_at: '2026-07-07',
+      source: 'example_tape',
+    },
     // Stale reading from before the week - still current AS OF the week end.
     { metric_key: 'left_thigh', value: 23.0, recorded_at: '2026-05-04', source: 'example_tape' },
     // Future-only metric: recorded after the week, must never appear.
     { metric_key: 'shoulder', value: 48.0, recorded_at: '2026-07-20', source: 'example_tape' },
   ];
-  const batchRes = await vitalsBatch.POST(
-    req('/api/v1/vitals/batch', token, 'POST', { records }),
-  );
+  const batchRes = await vitalsBatch.POST(req('/api/v1/vitals/batch', token, 'POST', { records }));
   expect((await batchRes.json()).errors).toEqual([]);
+  const { setVitalSourcePreference } = await import('@/lib/repos/vitals');
+  await setVitalSourcePreference(OWNER, 'weight', 'renpho');
 
   // --- Goals ---------------------------------------------------------------
   await goals.POST(
-    req('/api/v1/goals', token, 'POST', { kind: 'frequency', session_type: 'strength', per_week: 3 }),
+    req('/api/v1/goals', token, 'POST', {
+      kind: 'frequency',
+      session_type: 'strength',
+      per_week: 3,
+    })
   );
   await goals.POST(
-    req('/api/v1/goals', token, 'POST', { kind: 'frequency', session_type: 'cardio', per_week: 1 }),
+    req('/api/v1/goals', token, 'POST', { kind: 'frequency', session_type: 'cardio', per_week: 1 })
   );
   // Inactive goals must not appear in the rollup.
   await goals.POST(
@@ -138,17 +166,21 @@ async function seedEverything(token: string) {
       session_type: 'mobility',
       per_week: 2,
       active: false,
-    }),
+    })
   );
   // Metric goals are not frequency progress.
   await goals.POST(
-    req('/api/v1/goals', token, 'POST', { kind: 'metric', metric_key: 'weight', direction: 'decrease' }),
+    req('/api/v1/goals', token, 'POST', {
+      kind: 'metric',
+      metric_key: 'weight',
+      direction: 'decrease',
+    })
   );
 
   // --- Check-in --------------------------------------------------------
   await checkin.PUT(
     req(`/api/v1/checkins/${WEEK}`, token, 'PUT', { working: 'consistency', days_logged: 6 }),
-    params(WEEK),
+    params(WEEK)
   );
 }
 
@@ -189,9 +221,9 @@ describe('rollup contract', () => {
     expect(body.sessions.by_type.mobility).toEqual({ count: 0, labels: [] });
     expect(body.sessions.by_type.other).toEqual({ count: 0, labels: [] });
 
-    // Body: avg of per-day means (Jul 8 collapses two sources to 200.6),
+    // Body: averages only the explicitly selected scale,
     // min of raw weigh-ins, distinct days weighed.
-    expect(body.body.weight_avg).toBe(200.6);
+    expect(body.body.weight_avg).toBe(200.47);
     expect(body.body.weight_min).toBe(199.8);
     expect(body.body.days_weighed).toBe(3);
     expect(body.body.body_fat_pct_avg).toBe(31.2);
@@ -210,17 +242,21 @@ describe('rollup contract', () => {
     // Frequency goals: active only, session counts vs per_week.
     expect(body.frequency_goals).toHaveLength(2);
     const byTypeGoal = Object.fromEntries(
-      body.frequency_goals.map((g: { session_type: string }) => [g.session_type, g]),
+      body.frequency_goals.map((g: { session_type: string }) => [g.session_type, g])
     );
     expect(byTypeGoal.strength).toMatchObject({ per_week: 3, completed: 2, met: false });
     expect(byTypeGoal.cardio).toMatchObject({ per_week: 1, completed: 1, met: true });
 
     // The check-in row rides along.
-    expect(body.checkin).toMatchObject({ week_start: WEEK, working: 'consistency', days_logged: 6 });
+    expect(body.checkin).toMatchObject({
+      week_start: WEEK,
+      working: 'consistency',
+      days_logged: 6,
+    });
 
     // Prior-week deltas (prior: weights 203/202, hrv 38, 2 sessions).
     expect(body.prior_week_deltas).toEqual({
-      weight_avg: -1.9,
+      weight_avg: -2.03,
       weight_min: -2.2,
       days_weighed: 1,
       body_fat_pct_avg: null,
@@ -247,7 +283,7 @@ describe('rollup contract', () => {
     expect(body.checkin).toBeNull();
     // Active goals still report progress (0 sessions logged).
     const strengthGoal = body.frequency_goals.find(
-      (g: { session_type: string }) => g.session_type === 'strength',
+      (g: { session_type: string }) => g.session_type === 'strength'
     );
     expect(strengthGoal).toMatchObject({ completed: 0, met: false });
     expect(body.prior_week_deltas).toMatchObject({
@@ -265,7 +301,7 @@ describe('rollup contract', () => {
 
     // Sparse map: only metrics with a reading on or before Sunday Jul 12.
     expect(Object.keys(latest).sort()).toEqual(
-      ['chest', 'left_bicep', 'left_thigh', 'right_bicep', 'waist'].sort(),
+      ['chest', 'left_bicep', 'left_thigh', 'right_bicep', 'waist'].sort()
     );
     // 'shoulder' was recorded Jul 20 and 'waist' has a Jul 15 reading - neither
     // future row leaks into this historical week.

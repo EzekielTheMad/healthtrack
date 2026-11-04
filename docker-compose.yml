@@ -29,7 +29,8 @@ services:
 
       ## Optional: AI features (health summaries, natural-language queries,
       ## PDF parsing, interaction checks). Hidden in the UI when unset.
-      # ANTHROPIC_API_KEY: sk-ant-...
+      # Configure account AI in Settings → AI; see docs/AI.md.
+      # ANTHROPIC_API_KEY: legacy migration source only (admin opt-in)
 
       ## Optional: "Sign in with Google".
       # GOOGLE_CLIENT_ID: xxxxxxxx.apps.googleusercontent.com

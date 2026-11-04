@@ -17,6 +17,43 @@ export async function GET() {
     openapi: '/api/v1/openapi.json',
     endpoints: [
       {
+        path: '/api/v1/mobile/state',
+        method: 'GET',
+        scope: 'write:health_connect',
+        params: [],
+        description:
+          'Current paired Android device state and explicit offline grants; generic PATs are excluded',
+      },
+      {
+        path: '/api/v1/mobile/disconnect',
+        method: 'POST',
+        scope: 'write:health_connect',
+        params: [],
+        description: 'Revoke the current paired Android device',
+      },
+      {
+        path: '/api/v1/mobile/health-connect/sync',
+        method: 'POST',
+        scope: 'write:health_connect',
+        params: [],
+        description:
+          'Paired Android protocol 2 delivery; exact raw-body HMAC and ordered idempotent batches',
+      },
+      {
+        path: '/api/v1/mobile/doctor-summary',
+        method: 'GET',
+        scope: 'read:doctor_summary',
+        params: ['subject'],
+        description: 'Paired-device-only Doctor Essentials for explicitly granted owner/dependents',
+      },
+      {
+        path: '/api/v1/mobile/doctor-summary/pdf',
+        method: 'GET',
+        scope: 'read:doctor_summary',
+        params: ['subject', 'fingerprint'],
+        description: 'PDF matching the Doctor Essentials JSON fingerprint',
+      },
+      {
         path: '/api/v1/metrics',
         method: 'GET',
         scope: null,
@@ -91,7 +128,8 @@ export async function GET() {
         method: 'POST',
         scope: 'write:fitness',
         params: [],
-        description: 'Create a workout session (+ entries); 409 carries the existing session on started_at collision',
+        description:
+          'Create a workout session (+ entries); 409 carries the existing session on started_at collision',
       },
       {
         path: '/api/v1/workouts/{id}',
@@ -168,7 +206,8 @@ export async function GET() {
         method: 'GET',
         scope: 'read:fitness',
         params: [],
-        description: 'Computed weekly rollup (sessions, body/recovery averages, goal progress, deltas)',
+        description:
+          'Computed weekly rollup (sessions, body/recovery averages, goal progress, deltas)',
       },
       {
         path: '/api/v1/goals',
@@ -245,8 +284,7 @@ export async function GET() {
         method: 'POST',
         scope: 'write:health_connect',
         params: [],
-        description:
-          'Health Connect webhook receiver (Life Dashboard companion; HMAC-signed)',
+        description: 'Health Connect webhook receiver (Life Dashboard companion; HMAC-signed)',
       },
     ],
     scopes,

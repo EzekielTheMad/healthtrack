@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dependent } from '@/lib/types';
 import type { DependentFormValues } from '@/lib/validations';
+
+const DEPENDENTS_CHANGED = 'healthtrack:dependents-changed';
 
 async function readError(res: Response): Promise<string> {
   const body = await res.json().catch(() => null);
@@ -13,86 +15,130 @@ export function useDependents() {
   const [dependents, setDependents] = useState<Dependent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const mounted = useRef(false);
+  const requestVersion = useRef(0);
+
+  useEffect(() => {
+    mounted.current = true;
+    const refresh = () => {
+      // Invalidate immediately, including responses still parsing their body.
+      requestVersion.current++;
+      setRefreshVersion((version) => version + 1);
+    };
+    window.addEventListener(DEPENDENTS_CHANGED, refresh);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener(DEPENDENTS_CHANGED, refresh);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const version = ++requestVersion.current;
+    const current = () => !cancelled && mounted.current && version === requestVersion.current;
 
     async function fetchDependents() {
       setLoading(true);
       setError(null);
 
       try {
-        const res = await fetch('/api/dependents');
-        if (cancelled) return;
+        const res = await fetch('/api/dependents', { cache: 'no-store' });
         if (!res.ok) {
-          setError(await readError(res));
+          const message = await readError(res);
+          if (current()) setError(message);
         } else {
-          setDependents((await res.json()) as Dependent[]);
+          const data = (await res.json()) as Dependent[];
+          if (current()) setDependents(data);
         }
       } catch {
-        if (!cancelled) setError('Failed to fetch dependents');
+        if (current()) setError('Failed to fetch dependents');
       }
-      if (!cancelled) setLoading(false);
+      if (current()) setLoading(false);
     }
 
     fetchDependents();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshVersion]);
 
   const addDependent = useCallback(async (values: DependentFormValues) => {
-    setError(null);
-    const res = await fetch('/api/dependents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(values),
-    });
-    if (!res.ok) {
-      setError(await readError(res));
+    if (mounted.current) setError(null);
+    try {
+      const res = await fetch('/api/dependents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+      });
+      if (!res.ok) {
+        const message = await readError(res);
+        if (mounted.current) setError(message);
+        return undefined;
+      }
+      const data = (await res.json()) as Dependent;
+      if (mounted.current) setDependents((prev) => [data, ...prev]);
+      // Send no person data; every consumer reloads using its current session.
+      window.dispatchEvent(new Event(DEPENDENTS_CHANGED));
+      return data;
+    } catch {
+      if (mounted.current)
+        setError('Failed to add dependent. Your entered values are still available.');
       return undefined;
     }
-    const data = (await res.json()) as Dependent;
-    setDependents((prev) => [data, ...prev]);
-    return data;
   }, []);
 
-  const updateDependent = useCallback(
-    async (id: string, updates: Partial<DependentFormValues>) => {
-      setError(null);
+  const updateDependent = useCallback(async (id: string, updates: Partial<DependentFormValues>) => {
+    if (mounted.current) setError(null);
+    try {
       const res = await fetch('/api/dependents', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, ...updates }),
       });
       if (!res.ok) {
-        setError(await readError(res));
-        return;
+        const message = await readError(res);
+        if (mounted.current) setError(message);
+        return undefined;
       }
       const data = (await res.json()) as Dependent;
-      setDependents((prev) => prev.map((d) => (d.id === id ? data : d)));
-    },
-    [],
-  );
+      if (mounted.current) setDependents((prev) => prev.map((d) => (d.id === id ? data : d)));
+      window.dispatchEvent(new Event(DEPENDENTS_CHANGED));
+      return data;
+    } catch {
+      if (mounted.current)
+        setError('Failed to update dependent. Your entered values are still available.');
+      return undefined;
+    }
+  }, []);
 
   const deleteDependent = useCallback(async (id: string) => {
-    setError(null);
-    const res = await fetch(`/api/dependents?id=${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    });
-    if (!res.ok) {
-      setError(await readError(res));
-    } else {
-      setDependents((prev) => prev.filter((d) => d.id !== id));
+    if (mounted.current) setError(null);
+    try {
+      const res = await fetch(`/api/dependents?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const message = await readError(res);
+        if (mounted.current) setError(message);
+      } else {
+        if (mounted.current) setDependents((prev) => prev.filter((d) => d.id !== id));
+        window.dispatchEvent(new Event(DEPENDENTS_CHANGED));
+      }
+    } catch {
+      if (mounted.current) setError('Failed to delete dependent. Please try again.');
     }
   }, []);
 
   const getAge = useCallback((dependent: Dependent): number => {
-    const dob = new Date(dependent.date_of_birth);
+    const [birthYear, birthMonth, birthDay] = dependent.date_of_birth
+      .slice(0, 10)
+      .split('-')
+      .map(Number);
     const today = new Date();
-    let age = today.getFullYear() - dob.getFullYear();
-    const monthDiff = today.getMonth() - dob.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    let age = today.getFullYear() - birthYear;
+    const monthDiff = today.getMonth() + 1 - birthMonth;
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDay)) {
       age--;
     }
     return age;
@@ -103,7 +149,7 @@ export function useDependents() {
       if (dependent.transitioned) return false;
       return getAge(dependent) >= dependent.transition_age;
     },
-    [getAge],
+    [getAge]
   );
 
   return {

@@ -5,15 +5,14 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 export type AutocompleteResult = {
   display: string;
   code: string;
-} & Record<string, unknown>;
+};
 
 interface MedicalAutocompleteProps {
   label: string;
   value: string;
   code: string | null;
   onChange: (value: string, code: string | null, result?: AutocompleteResult) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  searchFn: (query: string, signal?: AbortSignal) => Promise<Array<{ display: string; code: string } & Record<string, any>>>;
+  searchFn: (query: string, signal?: AbortSignal) => Promise<AutocompleteResult[]>;
   placeholder?: string;
   required?: boolean;
   error?: string;
@@ -46,6 +45,8 @@ export function MedicalAutocomplete({
 
   // Sync external value changes
   useEffect(() => {
+    // An externally reset form value must replace the autocomplete's editable draft.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInputValue(value);
   }, [value]);
 
@@ -109,7 +110,7 @@ export function MedicalAutocomplete({
         }
       }
     },
-    [searchFn],
+    [searchFn]
   );
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -1,0 +1,971 @@
+{
+  "profile": {
+    "display_name": "Your record"
+  },
+  "sections": ["medications", "conditions", "allergies", "vitals", "labs", "providers", "vaccines"],
+  "medications": [],
+  "conditions": [],
+  "allergies": [],
+  "vitals": [],
+  "labResults": [],
+  "providers": [],
+  "vaccines": [],
+  "typedClinical": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "dependent_id": null,
+      "kind": "medication_event",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:54:30.714Z",
+      "fact": {
+        "kind": "medication_event",
+        "medication_id": "00000000-0000-4000-8000-000000000006",
+        "event": "intentional_skip",
+        "event_date": {
+          "original_text": "Late October, uncertain day",
+          "approximate": true,
+          "precision": "month",
+          "value": "2026-10"
+        },
+        "notes": "Fictional intentional skip explicitly reported, distinct from missed dose.",
+        "provenance": {
+          "basis": "patient_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional dose diary"
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "dependent_id": null,
+      "kind": "medication_event",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:54:06.451Z",
+      "fact": {
+        "kind": "medication_event",
+        "medication_id": "00000000-0000-4000-8000-000000000006",
+        "event": "missed",
+        "event_date": {
+          "precision": "unknown",
+          "value": null
+        },
+        "notes": "Fictional missed dose explicitly reported; date unknown.",
+        "provenance": {
+          "basis": "patient_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional dose diary"
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "dependent_id": null,
+      "kind": "medication_event",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:53:23.918Z",
+      "fact": {
+        "kind": "medication_event",
+        "medication_id": "00000000-0000-4000-8000-000000000006",
+        "event": "administration",
+        "event_date": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "amount": {
+          "value": 0.25,
+          "unit": "mL"
+        },
+        "notes": "Fictional administration, explicitly reported.",
+        "provenance": {
+          "basis": "patient_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional dose diary"
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "dependent_id": null,
+      "kind": "lab",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:51:42.086Z",
+      "fact": {
+        "kind": "lab",
+        "test_name": "Fictional mobile zero",
+        "outcome": {
+          "kind": "censored",
+          "value": 5,
+          "comparator": "<"
+        },
+        "raw_result": "<5.00",
+        "source_unit": "mg/L",
+        "reference": {
+          "low": null,
+          "high": null,
+          "text": "Not established"
+        },
+        "printed_flags": ["instrument_note"],
+        "derived_flag": "unknown",
+        "collection_date": {
+          "precision": "day",
+          "value": "2026-10-30"
+        },
+        "report_date": {
+          "precision": "unknown",
+          "value": null
+        },
+        "report_id": "HF-UI-manual-lab",
+        "fasting_status": "unknown",
+        "provenance": {
+          "basis": "patient_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF manual clinical verification"
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "dependent_id": null,
+      "kind": "lab",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:50:23.337Z",
+      "fact": {
+        "kind": "lab",
+        "test_name": "Fictional browser assay 6",
+        "outcome": {
+          "kind": "numeric",
+          "value": 0,
+          "comparator": "="
+        },
+        "raw_result": "0",
+        "source_unit": "mg/L",
+        "reference": {
+          "text": "Not established"
+        },
+        "printed_flags": [],
+        "collection_date": {
+          "precision": "month",
+          "value": "2026-10"
+        },
+        "report_date": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "report_id": "HF-UI-report-A",
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "dependent_id": null,
+      "kind": "medication",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:50:23.337Z",
+      "fact": {
+        "kind": "medication",
+        "name": "Fictional browser regimen",
+        "supplement": false,
+        "status": "unconfirmed",
+        "product_strength": {
+          "value": 20,
+          "unit": "mg"
+        },
+        "concentration": {
+          "numerator": {
+            "value": 20,
+            "unit": "mg"
+          },
+          "denominator": {
+            "value": 1,
+            "unit": "mL"
+          }
+        },
+        "administered_amount": {
+          "value": 0.25,
+          "unit": "mL"
+        },
+        "route": "Fictional route",
+        "prn": true,
+        "prescribed_directions": "Prescribed twice weekly. Fictional verification only.",
+        "patient_reported_use": "Reports once weekly.",
+        "schedule": [
+          {
+            "weekday": 1,
+            "amount": {
+              "value": 0.25,
+              "unit": "mL"
+            }
+          },
+          {
+            "weekday": 4,
+            "amount": {
+              "value": 0.1,
+              "unit": "mL"
+            }
+          }
+        ],
+        "start_date": {
+          "original_text": "Around 2020",
+          "approximate": true,
+          "precision": "year",
+          "value": "2020"
+        },
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000007",
+      "dependent_id": null,
+      "kind": "lab",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:50:23.337Z",
+      "fact": {
+        "kind": "lab",
+        "test_name": "Fictional browser assay 5",
+        "outcome": {
+          "kind": "numeric",
+          "value": 0,
+          "comparator": "="
+        },
+        "raw_result": "0.00",
+        "source_unit": "mg/L",
+        "reference": {
+          "text": "Not established"
+        },
+        "printed_flags": [],
+        "collection_date": {
+          "precision": "day",
+          "value": "2026-10-30"
+        },
+        "report_date": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "report_id": "HF-UI-report-A",
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000008",
+      "dependent_id": null,
+      "kind": "lab",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:50:23.336Z",
+      "fact": {
+        "kind": "lab",
+        "test_name": "Fictional browser assay 3",
+        "outcome": {
+          "kind": "censored",
+          "value": 59,
+          "comparator": ">"
+        },
+        "raw_result": ">59",
+        "source_unit": "mg/L",
+        "reference": {
+          "text": "Not established"
+        },
+        "printed_flags": [],
+        "collection_date": {
+          "precision": "day",
+          "value": "2026-10-30"
+        },
+        "report_date": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "report_id": "HF-UI-report-A",
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000009",
+      "dependent_id": null,
+      "kind": "lab",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:50:23.336Z",
+      "fact": {
+        "kind": "lab",
+        "test_name": "Fictional browser assay 4",
+        "outcome": {
+          "kind": "canceled",
+          "reason": "specimen unavailable"
+        },
+        "raw_result": "Canceled: specimen unavailable",
+        "source_unit": "mg/L",
+        "reference": {
+          "text": "Not established"
+        },
+        "printed_flags": [],
+        "collection_date": {
+          "precision": "day",
+          "value": "2026-10-30"
+        },
+        "report_date": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "report_id": "HF-UI-report-A",
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000010",
+      "dependent_id": null,
+      "kind": "lab",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:50:23.335Z",
+      "fact": {
+        "kind": "lab",
+        "test_name": "Fictional browser assay 2",
+        "outcome": {
+          "kind": "censored",
+          "value": 5,
+          "comparator": "<"
+        },
+        "raw_result": "<5.00",
+        "source_unit": "mg/L",
+        "reference": {
+          "text": "Not established"
+        },
+        "printed_flags": [],
+        "collection_date": {
+          "precision": "day",
+          "value": "2026-10-30"
+        },
+        "report_date": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "report_id": "HF-UI-report-A",
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000011",
+      "dependent_id": null,
+      "kind": "lab",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "legacy_table": null,
+      "legacy_id": null,
+      "received_at": "2026-11-01T16:50:23.333Z",
+      "fact": {
+        "kind": "lab",
+        "test_name": "Fictional browser assay 1",
+        "outcome": {
+          "kind": "text",
+          "text": "Negative"
+        },
+        "raw_result": "Negative",
+        "source_unit": "mg/L",
+        "reference": {
+          "text": "Not established"
+        },
+        "printed_flags": [],
+        "collection_date": {
+          "precision": "day",
+          "value": "2026-10-30"
+        },
+        "report_date": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "report_id": "HF-UI-report-A",
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "user_id": "fictional-owner"
+    }
+  ],
+  "bodyScans": [
+    {
+      "id": "00000000-0000-4000-9000-000000000001",
+      "dependent_id": null,
+      "source": "Fictional Browser BIA",
+      "external_id": "HF-UI-json-A",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "received_at": "2026-11-01T17:01:22.522Z",
+      "scan": {
+        "external_id": "HF-UI-json-A",
+        "source": "Fictional Browser BIA",
+        "manufacturer": "Fictional",
+        "model": "ExampleA",
+        "method": "bia",
+        "measured_at": {
+          "original_text": "31Oct2026,09:30MST",
+          "precision": "instant",
+          "value": "2026-10-31T09:30:00-07:00",
+          "timezone": "America/Phoenix"
+        },
+        "conditions": {
+          "workout_status": "post_workout",
+          "workout_at": {
+            "precision": "instant",
+            "value": "2026-10-31T08:00:00-07:00",
+            "timezone": "America/Phoenix"
+          },
+          "fasting_status": "fed",
+          "notes": "Fictional conditions; hydration was not measured."
+        },
+        "supplement_record_ids": [],
+        "measurements": [
+          {
+            "metric_key": "weight",
+            "value": 80.12345,
+            "unit": "kg",
+            "raw_text": "80.123450 kg"
+          },
+          {
+            "metric_key": "skeletal_muscle_mass",
+            "value": 31.1234,
+            "unit": "kg",
+            "raw_text": "31.123400 kg"
+          },
+          {
+            "metric_key": "body_fat_mass",
+            "value": 20.234,
+            "unit": "kg",
+            "raw_text": "20.234 kg"
+          },
+          {
+            "metric_key": "total_body_water",
+            "value": 40.55,
+            "unit": "kg",
+            "raw_text": "40.550 kg"
+          },
+          {
+            "metric_key": "intracellular_water",
+            "value": 25.5,
+            "unit": "kg",
+            "raw_text": "25.50 kg"
+          },
+          {
+            "metric_key": "extracellular_water",
+            "value": 15.05,
+            "unit": "kg",
+            "raw_text": "15.050 kg"
+          },
+          {
+            "metric_key": "ecw_ratio",
+            "value": 37.11467,
+            "unit": "%",
+            "raw_text": "37.114670%"
+          },
+          {
+            "metric_key": "visceral_fat_area",
+            "value": 0,
+            "unit": "cm2",
+            "raw_text": "0.00 cm2"
+          },
+          {
+            "metric_key": "waist",
+            "value": 85.2,
+            "unit": "cm",
+            "raw_text": "85.20 cm"
+          }
+        ],
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "measurements": [
+        {
+          "metric_key": "weight",
+          "value": 176.6419704105693,
+          "unit": "lbs",
+          "source_value": 80.12345,
+          "source_unit": "kg",
+          "raw_text": "80.123450 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "skeletal_muscle_mass",
+          "value": 68.61535170884818,
+          "unit": "lbs",
+          "source_value": 31.1234,
+          "source_unit": "kg",
+          "raw_text": "31.123400 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "body_fat_mass",
+          "value": 44.60833413048813,
+          "unit": "lbs",
+          "source_value": 20.234,
+          "source_unit": "kg",
+          "raw_text": "20.234 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "total_body_water",
+          "value": 89.39744731596785,
+          "unit": "lbs",
+          "source_value": 40.55,
+          "source_unit": "kg",
+          "raw_text": "40.550 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "intracellular_water",
+          "value": 56.21787685714378,
+          "unit": "lbs",
+          "source_value": 25.5,
+          "source_unit": "kg",
+          "raw_text": "25.50 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "extracellular_water",
+          "value": 33.179570458824074,
+          "unit": "lbs",
+          "source_value": 15.05,
+          "source_unit": "kg",
+          "raw_text": "15.050 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "ecw_ratio",
+          "value": 0.37114669999999994,
+          "unit": "fraction",
+          "source_value": 37.11467,
+          "source_unit": "%",
+          "raw_text": "37.114670%",
+          "estimated": true
+        },
+        {
+          "metric_key": "visceral_fat_area",
+          "value": 0,
+          "unit": "cm\u00b2",
+          "source_value": 0,
+          "source_unit": "cm2",
+          "raw_text": "0.00 cm2",
+          "estimated": true
+        },
+        {
+          "metric_key": "waist",
+          "value": 33.54330708661417,
+          "unit": "in",
+          "source_value": 85.2,
+          "source_unit": "cm",
+          "raw_text": "85.20 cm",
+          "estimated": true
+        }
+      ],
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-9000-000000000002",
+      "dependent_id": null,
+      "source": "Fictional Browser BIA",
+      "external_id": "HF-UI-manual-A",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "received_at": "2026-11-01T16:49:24.586Z",
+      "scan": {
+        "external_id": "HF-UI-manual-A",
+        "source": "Fictional Browser BIA",
+        "manufacturer": "Fictional",
+        "model": "ExampleA",
+        "method": "bia",
+        "measured_at": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "conditions": {
+          "workout_status": "pre_workout",
+          "fasting_status": "fasted"
+        },
+        "measurements": [
+          {
+            "metric_key": "skeletal_muscle_mass",
+            "value": 31.2,
+            "unit": "kg",
+            "raw_text": "31.200 kg"
+          },
+          {
+            "metric_key": "visceral_fat_area",
+            "value": 0,
+            "unit": "cm2",
+            "raw_text": "0.00 cm2"
+          }
+        ],
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF manual report A, page 1"
+            }
+          ]
+        }
+      },
+      "measurements": [
+        {
+          "metric_key": "skeletal_muscle_mass",
+          "value": 68.7842258016818,
+          "unit": "lbs",
+          "source_value": 31.2,
+          "source_unit": "kg",
+          "raw_text": "31.200 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "visceral_fat_area",
+          "value": 0,
+          "unit": "cm\u00b2",
+          "source_value": 0,
+          "source_unit": "cm2",
+          "raw_text": "0.00 cm2",
+          "estimated": true
+        }
+      ],
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-9000-000000000003",
+      "dependent_id": null,
+      "source": "Fictional Browser BIA",
+      "external_id": "HF-UI-json-B",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "received_at": "2026-11-01T17:02:44.413Z",
+      "scan": {
+        "external_id": "HF-UI-json-B",
+        "source": "Fictional Browser BIA",
+        "manufacturer": "Fictional",
+        "model": "ExampleB",
+        "method": "bia",
+        "measured_at": {
+          "precision": "day",
+          "value": "2026-10-31"
+        },
+        "conditions": {
+          "workout_status": "unknown",
+          "fasting_status": "unknown",
+          "notes": "Fictional collection conditions were not reported."
+        },
+        "supplement_record_ids": [],
+        "measurements": [
+          {
+            "metric_key": "weight",
+            "value": 82.12345,
+            "unit": "kg",
+            "raw_text": "82.123450 kg"
+          },
+          {
+            "metric_key": "skeletal_muscle_mass",
+            "value": 31.1234,
+            "unit": "kg",
+            "raw_text": "31.123400 kg"
+          },
+          {
+            "metric_key": "body_fat_mass",
+            "value": 20.234,
+            "unit": "kg",
+            "raw_text": "20.234 kg"
+          },
+          {
+            "metric_key": "total_body_water",
+            "value": 40.55,
+            "unit": "kg",
+            "raw_text": "40.550 kg"
+          },
+          {
+            "metric_key": "intracellular_water",
+            "value": 25.5,
+            "unit": "kg",
+            "raw_text": "25.50 kg"
+          },
+          {
+            "metric_key": "extracellular_water",
+            "value": 15.05,
+            "unit": "kg",
+            "raw_text": "15.050 kg"
+          },
+          {
+            "metric_key": "ecw_ratio",
+            "value": 37.11467,
+            "unit": "%",
+            "raw_text": "37.114670%"
+          },
+          {
+            "metric_key": "visceral_fat_area",
+            "value": 0,
+            "unit": "cm2",
+            "raw_text": "0.00 cm2"
+          },
+          {
+            "metric_key": "waist",
+            "value": 85.2,
+            "unit": "cm",
+            "raw_text": "85.20 cm"
+          }
+        ],
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional browser report",
+              "page": 2
+            }
+          ]
+        }
+      },
+      "measurements": [
+        {
+          "metric_key": "weight",
+          "value": 181.05121565426685,
+          "unit": "lbs",
+          "source_value": 82.12345,
+          "source_unit": "kg",
+          "raw_text": "82.123450 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "skeletal_muscle_mass",
+          "value": 68.61535170884818,
+          "unit": "lbs",
+          "source_value": 31.1234,
+          "source_unit": "kg",
+          "raw_text": "31.123400 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "body_fat_mass",
+          "value": 44.60833413048813,
+          "unit": "lbs",
+          "source_value": 20.234,
+          "source_unit": "kg",
+          "raw_text": "20.234 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "total_body_water",
+          "value": 89.39744731596785,
+          "unit": "lbs",
+          "source_value": 40.55,
+          "source_unit": "kg",
+          "raw_text": "40.550 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "intracellular_water",
+          "value": 56.21787685714378,
+          "unit": "lbs",
+          "source_value": 25.5,
+          "source_unit": "kg",
+          "raw_text": "25.50 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "extracellular_water",
+          "value": 33.179570458824074,
+          "unit": "lbs",
+          "source_value": 15.05,
+          "source_unit": "kg",
+          "raw_text": "15.050 kg",
+          "estimated": true
+        },
+        {
+          "metric_key": "ecw_ratio",
+          "value": 0.37114669999999994,
+          "unit": "fraction",
+          "source_value": 37.11467,
+          "source_unit": "%",
+          "raw_text": "37.114670%",
+          "estimated": true
+        },
+        {
+          "metric_key": "visceral_fat_area",
+          "value": 0,
+          "unit": "cm\u00b2",
+          "source_value": 0,
+          "source_unit": "cm2",
+          "raw_text": "0.00 cm2",
+          "estimated": true
+        },
+        {
+          "metric_key": "waist",
+          "value": 33.54330708661417,
+          "unit": "in",
+          "source_value": 85.2,
+          "source_unit": "cm",
+          "raw_text": "85.20 cm",
+          "estimated": true
+        }
+      ],
+      "user_id": "fictional-owner"
+    },
+    {
+      "id": "00000000-0000-4000-9000-000000000004",
+      "dependent_id": null,
+      "source": "Fictional Manual",
+      "external_id": "HF-UI-manual-01",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "received_at": "2026-11-01T17:04:27.623Z",
+      "scan": {
+        "external_id": "HF-UI-manual-01",
+        "source": "Fictional Manual",
+        "manufacturer": "Fictional",
+        "model": "ExampleM",
+        "method": "bia",
+        "measured_at": {
+          "precision": "month",
+          "value": "2026-10"
+        },
+        "conditions": {
+          "workout_status": "unknown",
+          "fasting_status": "unknown"
+        },
+        "measurements": [
+          {
+            "metric_key": "skeletal_muscle_mass",
+            "value": 0,
+            "unit": "kg",
+            "raw_text": "0.000 kg"
+          }
+        ],
+        "provenance": {
+          "basis": "source_reported",
+          "verification": "unconfirmed",
+          "sources": [
+            {
+              "reference": "HF fictional month-only manual report"
+            }
+          ]
+        }
+      },
+      "measurements": [
+        {
+          "metric_key": "skeletal_muscle_mass",
+          "value": 0,
+          "unit": "lbs",
+          "source_value": 0,
+          "source_unit": "kg",
+          "raw_text": "0.000 kg",
+          "estimated": true
+        }
+      ],
+      "user_id": "fictional-owner"
+    }
+  ],
+  "timezone": "America/Phoenix",
+  "warnings": [
+    "Labs with partial or unknown collection dates are shown as uncertain history, not ranked as latest exact results.",
+    "Choose a source; metric-wise source preferences cannot be combined into one scan.",
+    "No unambiguous latest scan is available; the displayed scans are separate history, not a combined current assessment."
+  ]
+}

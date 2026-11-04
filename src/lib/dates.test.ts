@@ -14,7 +14,27 @@ import {
   shiftDayKey,
   dayKeyToUtcIso,
   localDayKey,
+  formatDateOnly,
+  isValidDayKey,
 } from './dates';
+
+describe('clinical calendar dates', () => {
+  it('preserves the printed day, including a year boundary, without timezone conversion', () => {
+    expect(formatDateOnly('2026-10-22')).toBe('Oct 22, 2026');
+    expect(formatDateOnly('2026-01-01')).toBe('Jan 1, 2026');
+    expect(formatDateOnly('2024-02-29', { month: 'long', day: 'numeric', year: 'numeric' })).toBe(
+      'February 29, 2024'
+    );
+  });
+
+  it('keeps unknown and invalid calendar dates explicit', () => {
+    expect(formatDateOnly(null)).toBe('—');
+    expect(formatDateOnly('not a date')).toBe('not a date');
+    expect(isValidDayKey('2026-02-30')).toBe(false);
+    expect(isValidDayKey('2026-02-29')).toBe(false);
+    expect(isValidDayKey('2024-02-29')).toBe(true);
+  });
+});
 
 describe('formatUtcDay', () => {
   it('formats from UTC date parts regardless of local timezone', () => {
@@ -57,9 +77,7 @@ describe('formatVitalDate', () => {
 
 describe('formatVitalDateLong', () => {
   it('includes the year for non-intraday rows (UTC parts)', () => {
-    expect(formatVitalDateLong('2026-07-08T00:00:00Z', 'sleep_score')).toBe(
-      'Jul 8, 2026',
-    );
+    expect(formatVitalDateLong('2026-07-08T00:00:00Z', 'sleep_score')).toBe('Jul 8, 2026');
   });
 
   it('renders intraday rows as full local datetime', () => {
@@ -87,6 +105,48 @@ describe('formatLocalTime', () => {
 });
 
 describe('getVitalDayKey', () => {
+  it('uses the configured instance day across a browser-timezone midnight disagreement', () => {
+    const instant = '2026-10-23T06:30:00Z';
+    expect(getVitalDayKey(instant, 'bp_systolic', 'America/Phoenix')).toBe('2026-10-22');
+    expect(getVitalDayKey(instant, 'bp_systolic', 'America/New_York')).toBe('2026-10-23');
+    expect(localDayKey(new Date(instant), 'America/Phoenix')).toBe('2026-10-22');
+    // Day-normalized metrics retain the provider's printed calendar date.
+    expect(getVitalDayKey('2026-10-23T00:00:00Z', 'sleep_score', 'America/Phoenix')).toBe(
+      '2026-10-23'
+    );
+    expect(formatVitalDateLong(instant, 'bp_systolic', 'America/Phoenix')).toBe(
+      new Date(instant).toLocaleString(undefined, {
+        timeZone: 'America/Phoenix',
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    );
+  });
+
+  it('keeps the same reporting day across the DST spring clock jump', () => {
+    const before = '2026-03-08T06:59:00Z';
+    const after = '2026-03-08T07:00:00Z';
+    expect(getVitalDayKey(before, 'blood_glucose', 'America/New_York')).toBe('2026-03-08');
+    expect(getVitalDayKey(after, 'blood_glucose', 'America/New_York')).toBe('2026-03-08');
+    expect(formatLocalTime(before, 'America/New_York')).toBe(
+      new Date(before).toLocaleTimeString(undefined, {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    );
+    expect(formatLocalTime(after, 'America/New_York')).toBe(
+      new Date(after).toLocaleTimeString(undefined, {
+        timeZone: 'America/New_York',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    );
+  });
+
   it('keys non-intraday rows by UTC date parts', () => {
     expect(getVitalDayKey('2026-07-08T00:00:00Z', 'sleep_score')).toBe('2026-07-08');
     // Even a non-midnight timestamp on a non-intraday metric keys by UTC day.

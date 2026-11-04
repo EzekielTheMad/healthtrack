@@ -44,7 +44,7 @@ export async function getSignupPolicy(): Promise<SignupPolicy> {
 
 function buildAuth() {
   const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-  const isProd = process.env.NODE_ENV === 'production';
+  const useSecureCookies = new URL(appUrl).protocol === 'https:';
 
   // Session cookies only get the Secure flag when the base URL is https. Behind
   // a TLS-terminating proxy/tunnel that forwards plain http, an http APP_URL
@@ -52,7 +52,7 @@ function buildAuth() {
   if (!appUrl.startsWith('https://') && !appUrl.startsWith('http://localhost')) {
     console.warn(
       '[auth] APP_URL is not https — session cookies will NOT be marked Secure. ' +
-        'Set APP_URL to your public https origin (the address behind your reverse proxy/tunnel).',
+        'Set APP_URL to your public https origin (the address behind your reverse proxy/tunnel).'
     );
   }
 
@@ -66,10 +66,10 @@ function buildAuth() {
     baseURL: appUrl,
     trustedOrigins: [appUrl],
     telemetry: { enabled: false },
-    // Force the Secure cookie flag in production regardless of how the proxy
-    // presents the scheme to the app.
+    // APP_URL is the browser-facing origin, including when TLS terminates at
+    // a proxy. NODE_ENV cannot distinguish HTTPS from an HTTP LAN install.
     advanced: {
-      useSecureCookies: isProd,
+      useSecureCookies,
       cookies: {
         // Better Auth defaults the OAuth `state` cookie to Max-Age=300 while
         // the matching state record it is checked against lives for 600s.
@@ -161,11 +161,7 @@ function buildAuth() {
             // implicit signup via a social callback. Email signups were
             // already invite-gated by hooks.before; anything else can only
             // create an account when the policy is open (or bootstrap).
-            if (
-              n > 0 &&
-              process.env.SIGNUPS_ENABLED !== 'true' &&
-              ctx?.path !== '/sign-up/email'
-            ) {
+            if (n > 0 && process.env.SIGNUPS_ENABLED !== 'true' && ctx?.path !== '/sign-up/email') {
               throw new APIError('FORBIDDEN', {
                 message:
                   'Sign-ups on this instance are invite-only. Ask the administrator for an invite link, then register with email and password.',

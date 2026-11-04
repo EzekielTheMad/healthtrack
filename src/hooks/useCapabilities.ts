@@ -1,44 +1,41 @@
 'use client';
-
 import { useEffect, useState } from 'react';
+import { useSession } from '@/lib/auth/client';
 import type { Capabilities } from '@/lib/capabilities';
 
-/**
- * Client-side instance capabilities (GET /api/capabilities).
- *
- * `capabilities` is null until the first fetch resolves; gate UI with
- * `capabilities?.<flag> === false` so nothing flickers out of existence on
- * configured instances while the fetch is in flight. The result is cached
- * module-wide — capabilities are static for the life of the server process.
- */
-
-let cachedFetch: Promise<Capabilities | null> | null = null;
-
-function fetchCapabilities(): Promise<Capabilities | null> {
-  cachedFetch ??= fetch('/api/capabilities')
-    .then((res) => (res.ok ? (res.json() as Promise<Capabilities>) : null))
-    .catch(() => {
-      cachedFetch = null; // allow a retry on the next mount
-      return null;
-    });
-  return cachedFetch;
-}
-
+/** Never share account capabilities across logins; refresh after settings changes. */
 export function useCapabilities() {
-  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
-  const [loading, setLoading] = useState(true);
-
+  const { data: session } = useSession();
+  const accountId = session?.user.id;
+  const [state, setState] = useState<{
+    accountId: string | undefined;
+    value: Capabilities | null;
+    loading: boolean;
+  }>({ accountId: undefined, value: null, loading: true });
   useEffect(() => {
     let cancelled = false;
-    fetchCapabilities().then((caps) => {
-      if (cancelled) return;
-      if (caps) setCapabilities(caps);
-      setLoading(false);
-    });
+    let generation = 0;
+    const refresh = async () => {
+      const id = ++generation;
+      try {
+        const res = await fetch('/api/capabilities', { cache: 'no-store' });
+        const value = res.ok ? ((await res.json()) as Capabilities) : null;
+        if (!cancelled && id === generation) setState({ accountId, value, loading: false });
+      } catch {
+        if (!cancelled && id === generation) setState({ accountId, value: null, loading: false });
+      }
+    };
+    void refresh();
+    window.addEventListener('healthtrack:ai-settings', refresh);
+    window.addEventListener('focus', refresh);
     return () => {
       cancelled = true;
+      window.removeEventListener('healthtrack:ai-settings', refresh);
+      window.removeEventListener('focus', refresh);
     };
-  }, []);
-
-  return { capabilities, loading };
+  }, [accountId]);
+  return {
+    capabilities: state.accountId === accountId ? state.value : null,
+    loading: state.accountId === accountId ? state.loading : true,
+  };
 }

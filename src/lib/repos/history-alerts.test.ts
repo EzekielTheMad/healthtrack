@@ -51,7 +51,7 @@ describe('query-history repo', () => {
     expect(await history.listQueryHistory(VIEWER)).toHaveLength(0);
 
     await expect(
-      history.createQueryHistoryEntry(OWNER, { queryText: '', responseText: 'x' }),
+      history.createQueryHistoryEntry(OWNER, { queryText: '', responseText: 'x' })
     ).rejects.toThrow();
   });
 });
@@ -62,7 +62,7 @@ describe('interaction-alerts repo', () => {
     ctx.sqlite
       .prepare(
         `insert into medications (id, user_id, name, active, created_at, updated_at)
-         values (?, ?, 'Med', 1, ?, ?)`,
+         values (?, ?, 'Med', 1, ?, ?)`
       )
       .run(id, userId, new Date().toISOString(), new Date().toISOString());
     return id;
@@ -96,7 +96,7 @@ describe('interaction-alerts repo', () => {
       await alerts.listActiveInteractionAlerts(VIEWER, {
         ownerId: OWNER,
         dependentId: 'all',
-      }),
+      })
     ).toEqual([]);
 
     // non-owner snooze is a silent no-op (returns null, changes nothing)
@@ -112,8 +112,20 @@ describe('interaction-alerts repo', () => {
   it('snooze clamps warning to 7 days but honors 30 for info', async () => {
     const medId = insertMedication(OWNER);
     const [warnId, infoId] = await alerts.createInteractionAlerts(OWNER, [
-      { triggerMedicationId: medId, alertText: 'w', severity: 'warning', medicationSnapshot: {}, signature: 'w' },
-      { triggerMedicationId: medId, alertText: 'i', severity: 'info', medicationSnapshot: {}, signature: 'i' },
+      {
+        triggerMedicationId: medId,
+        alertText: 'w',
+        severity: 'warning',
+        medicationSnapshot: {},
+        signature: 'w',
+      },
+      {
+        triggerMedicationId: medId,
+        alertText: 'i',
+        severity: 'info',
+        medicationSnapshot: {},
+        signature: 'i',
+      },
     ]);
     const now = Date.now();
     const warnUntil = new Date((await alerts.snoozeInteractionAlert(OWNER, warnId, 30))!).getTime();
@@ -140,7 +152,9 @@ describe('interaction-alerts repo', () => {
     expect(await alerts.listActiveInteractionAlerts(OWNER, own)).toHaveLength(2);
 
     // snooze the a|b alert
-    const ab = (await alerts.listActiveInteractionAlerts(OWNER, own)).find((r) => r.signature === 'a|b')!;
+    const ab = (await alerts.listActiveInteractionAlerts(OWNER, own)).find(
+      (r) => r.signature === 'a|b'
+    )!;
     await alerts.snoozeInteractionAlert(OWNER, ab.id, 7);
     expect(await alerts.listActiveInteractionAlerts(OWNER, own)).toHaveLength(1); // only c|d active
 
@@ -149,7 +163,9 @@ describe('interaction-alerts repo', () => {
     expect(await alerts.listActiveInteractionAlerts(OWNER, own)).toHaveLength(0);
     expect(await alerts.countSnoozedInteractionAlerts(OWNER, own)).toBe(1);
     const rows = ctx.sqlite
-      .prepare('select signature, alert_text, snoozed_until from interaction_alerts where user_id = ?')
+      .prepare(
+        'select signature, alert_text, snoozed_until from interaction_alerts where user_id = ?'
+      )
       .all(OWNER) as { signature: string; alert_text: string; snoozed_until: string | null }[];
     expect(rows).toHaveLength(1);
     expect(rows[0].signature).toBe('a|b');
@@ -189,8 +205,8 @@ describe('interaction-alerts repo', () => {
     ctx.sqlite
       .prepare(
         `insert into interaction_alerts
-           (id, user_id, trigger_medication_id, alert_text, severity, dismissed, checked_at, medication_snapshot, dependent_id)
-         values (?, ?, ?, 'dep alert', 'warning', 0, ?, '{}', ?)`,
+           (id, user_id, trigger_medication_id, alert_text, severity, dismissed, checked_at, medication_snapshot, dependent_id, context_version)
+         values (?, ?, ?, 'dep alert', 'warning', 0, ?, '{}', ?, 1)`
       )
       .run(crypto.randomUUID(), OWNER, medId, new Date().toISOString(), depId);
 
@@ -198,19 +214,19 @@ describe('interaction-alerts repo', () => {
       await alerts.listActiveInteractionAlerts(OWNER, {
         ownerId: OWNER,
         dependentId: depId,
-      }),
+      })
     ).toHaveLength(1);
     expect(
       await alerts.listActiveInteractionAlerts(OWNER, {
         ownerId: OWNER,
         dependentId: null,
-      }),
+      })
     ).toHaveLength(0);
     expect(
       await alerts.listActiveInteractionAlerts(OWNER, {
         ownerId: OWNER,
         dependentId: 'all',
-      }),
+      })
     ).toHaveLength(1);
   });
 });

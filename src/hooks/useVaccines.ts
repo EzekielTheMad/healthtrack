@@ -21,6 +21,8 @@ export function useVaccines() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { dependentId, delegateOwnerId } = useActiveProfile();
+  const [reload, setReload] = useState(0);
+  const refetch = useCallback(() => setReload((value) => value + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +47,7 @@ export function useVaccines() {
     return () => {
       cancelled = true;
     };
-  }, [dependentId, delegateOwnerId]);
+  }, [dependentId, delegateOwnerId, reload]);
 
   const addVaccine = useCallback(
     async (vaccine: Omit<Vaccine, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
@@ -61,39 +63,37 @@ export function useVaccines() {
           body: JSON.stringify(payload),
         });
         setVaccines((prev) =>
-          [data, ...prev].sort(
-            (a, b) => (b.vaccine_date ?? '').localeCompare(a.vaccine_date ?? ''),
-          ),
+          [data, ...prev].sort((a, b) => (b.vaccine_date ?? '').localeCompare(a.vaccine_date ?? ''))
         );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add vaccine');
       }
     },
-    [dependentId, delegateOwnerId],
+    [dependentId, delegateOwnerId]
   );
 
   const updateVaccine = useCallback(
     async (
       id: string,
-      updates: Partial<Omit<Vaccine, 'id' | 'user_id' | 'created_at' | 'updated_at'>>,
+      updates: Partial<Omit<Vaccine, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
     ) => {
       setError(null);
 
       try {
-        const data = await apiFetch<Vaccine>(
-          `/api/vaccines/${encodeURIComponent(id)}`,
-          { method: 'PATCH', body: JSON.stringify(updates) },
-        );
+        const data = await apiFetch<Vaccine>(`/api/vaccines/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        });
         setVaccines((prev) =>
           prev
             .map((v) => (v.id === id ? data : v))
-            .sort((a, b) => (b.vaccine_date ?? '').localeCompare(a.vaccine_date ?? '')),
+            .sort((a, b) => (b.vaccine_date ?? '').localeCompare(a.vaccine_date ?? ''))
         );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to update vaccine');
       }
     },
-    [],
+    []
   );
 
   const deleteVaccine = useCallback(async (id: string) => {
@@ -109,5 +109,5 @@ export function useVaccines() {
     }
   }, []);
 
-  return { vaccines, loading, error, addVaccine, updateVaccine, deleteVaccine };
+  return { vaccines, loading, error, addVaccine, updateVaccine, deleteVaccine, refetch };
 }

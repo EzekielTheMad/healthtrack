@@ -3,10 +3,13 @@
  * single inline expanded chart panel per page (click card to open, one at a
  * time, close affordance).
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import TrendsView from './TrendsView';
 import type { Vital } from '@/lib/types';
+vi.mock('@/components/shared/DateRangeContext', () => ({
+  useDateRangeContext: () => ({ reportingTimeZone: 'Etc/UTC', calendarLoading: false }),
+}));
 
 let idCounter = 0;
 function vital(metric_key: string, value: number, recorded_at: string): Vital {
@@ -88,10 +91,7 @@ describe('TrendsView', () => {
 
   it('clamps card values to registry decimals and renders one-sided ranges honestly', () => {
     render(
-      <TrendsView
-        vitals={[vital('ahi', 3.3333333333, '2026-07-08T00:00:00Z')]}
-        {...baseProps}
-      />,
+      <TrendsView vitals={[vital('ahi', 3.3333333333, '2026-07-08T00:00:00Z')]} {...baseProps} />
     );
     // Raw stored float renders at AHI's 1 decimal (card value + range row).
     expect(screen.getAllByText('3.3').length).toBeGreaterThan(0);
@@ -99,7 +99,7 @@ describe('TrendsView', () => {
     // AHI normal range is one-sided: "≤ 4.9", never a fabricated 0–4.9 band.
     expect(screen.getByText('≤ 4.9')).toBeInTheDocument();
     expect(
-      screen.getByRole('img', { name: '3.3 events/hr, normal range 4.9 or below' }),
+      screen.getByRole('img', { name: '3.3 events/hr, normal range 4.9 or below' })
     ).toBeInTheDocument();
   });
 
@@ -111,7 +111,7 @@ describe('TrendsView', () => {
           vital('sleep_duration', 7.5, '2026-07-08T00:00:00Z'),
         ]}
         {...baseProps}
-      />,
+      />
     );
     expect(screen.getByText('7h 42m')).toBeInTheDocument();
     expect(screen.queryByText('462')).not.toBeInTheDocument();
@@ -128,7 +128,7 @@ describe('TrendsView', () => {
     const { container, rerender } = render(<TrendsView vitals={rising} {...baseProps} />);
     expect(container.querySelector('polyline')).toHaveAttribute(
       'stroke',
-      'var(--color-terracotta)',
+      'var(--color-terracotta)'
     );
 
     // An active increase goal flips the same line to sage.
@@ -137,12 +137,9 @@ describe('TrendsView', () => {
         vitals={rising}
         {...baseProps}
         metricGoals={[{ metricKey: 'weight', direction: 'increase' }]}
-      />,
+      />
     );
-    expect(container.querySelector('polyline')).toHaveAttribute(
-      'stroke',
-      'var(--color-sage)',
-    );
+    expect(container.querySelector('polyline')).toHaveAttribute('stroke', 'var(--color-sage)');
 
     // A maintain goal reads any real move as a warning (amber).
     rerender(
@@ -150,21 +147,14 @@ describe('TrendsView', () => {
         vitals={rising}
         {...baseProps}
         metricGoals={[{ metricKey: 'weight', direction: 'maintain' }]}
-      />,
+      />
     );
-    expect(container.querySelector('polyline')).toHaveAttribute(
-      'stroke',
-      'var(--color-warning)',
-    );
+    expect(container.querySelector('polyline')).toHaveAttribute('stroke', 'var(--color-warning)');
   });
 
   it('labels long-range bar panels as weekly aggregates', () => {
     render(
-      <TrendsView
-        vitals={fixture()}
-        {...baseProps}
-        rangeFrom={new Date('2026-01-08T00:00:00Z')}
-      />,
+      <TrendsView vitals={fixture()} {...baseProps} rangeFrom={new Date('2026-01-08T00:00:00Z')} />
     );
     fireEvent.click(screen.getByRole('button', { name: /Sleep Score — show chart/ }));
     expect(screen.getByText('(weekly averages)')).toBeInTheDocument();

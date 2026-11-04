@@ -9,6 +9,8 @@ import { requireUser } from '@/lib/auth/session';
 import { errorResponse } from '@/lib/api/respond';
 import { bodyToCamel, rowToSnake, rowsToSnake } from '@/lib/api/snake';
 import { createScopeFromBody, scopeFromParams } from '@/lib/repos/_scope';
+import { findImportBatchBySource } from '@/lib/import/batches';
+import { clinicalProjectionCoverage, listClinicalFacts } from '@/lib/fidelity/clinical';
 import {
   createLabVisitWithResults,
   listLabVisitsWithResults,
@@ -25,11 +27,25 @@ export async function GET(request: NextRequest) {
   try {
     const user = await requireUser();
     const params = request.nextUrl.searchParams;
-    const visits = await listLabVisitsWithResults(
-      user.id,
-      scopeFromParams(user.id, params),
-    );
-    return NextResponse.json(visits.map(visitToSnake));
+    const scope = scopeFromParams(user.id, params);
+    if (params.get('format') === 'typed')
+      return NextResponse.json({
+        format: 'typed',
+        records: await listClinicalFacts(user.id, scope, { kind: 'lab' }),
+        coverage: {
+          warning:
+            'Typed outcomes and corrections; numeric-only trends exclude censored/text/canceled values.',
+        },
+      });
+    const visits = await listLabVisitsWithResults(user.id, scopeFromParams(user.id, params));
+    return NextResponse.json(visits.map(visitToSnake), {
+      headers: {
+        'X-HealthTrack-Clinical-Coverage': JSON.stringify(
+          await clinicalProjectionCoverage(user.id, scope, 'lab')
+        ),
+        Link: '</api/labs?format=typed>; rel="alternate"',
+      },
+    });
   } catch (error) {
     return errorResponse(error);
   }
@@ -40,10 +56,21 @@ export async function POST(request: NextRequest) {
     const user = await requireUser();
     const body = bodyToCamel(await request.json());
     // nested results arrive snake_case; convert each row (bodyToCamel is shallow)
-    const results = Array.isArray(body.results)
-      ? (body.results as unknown[]).map(bodyToCamel)
-      : [];
+    const results = Array.isArray(body.results) ? (body.results as unknown[]).map(bodyToCamel) : [];
     const scope = createScopeFromBody(user.id, body);
+    if (scope.ownerId === user.id && typeof body.sourcePdfPath === 'string') {
+      const staged = await findImportBatchBySource(user.id, scope.dependentId, body.sourcePdfPath);
+      if (staged)
+        return NextResponse.json(
+          {
+            error: 'review_required',
+            message:
+              'This document has a saved import review. Apply its item decisions before saving.',
+            batch_id: staged.id,
+          },
+          { status: 409 }
+        );
+    }
     const visit = await createLabVisitWithResults(user.id, scope, {
       ...body,
       results,

@@ -14,10 +14,7 @@ export default function TermsOfServicePage() {
         }}
       >
         <Link href="/" className="flex items-center gap-2 no-underline">
-          <span
-            className="text-xl font-bold"
-            style={{ color: 'var(--color-sage)' }}
-          >
+          <span className="text-xl font-bold" style={{ color: 'var(--color-sage)' }}>
             Health
           </span>
           <span className="text-xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
@@ -49,11 +46,11 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="text-xl md:text-2xl font-bold mb-4">1. Acceptance of Terms</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-              By accessing or using this HealthTrack instance (the &quot;Service&quot;), you
-              agree to be bound by these Terms of Service (&quot;Terms&quot;). If you do not
-              agree to these Terms, you may not use the Service. HealthTrack is self-hosted
-              software; this instance is operated by its administrator (&quot;we,&quot;
-              &quot;our,&quot; or &quot;us&quot;).
+              By accessing or using this HealthTrack instance (the &quot;Service&quot;), you agree
+              to be bound by these Terms of Service (&quot;Terms&quot;). If you do not agree to
+              these Terms, you may not use the Service. HealthTrack is self-hosted software; this
+              instance is operated by its administrator (&quot;we,&quot; &quot;our,&quot; or
+              &quot;us&quot;).
             </p>
           </section>
 
@@ -61,13 +58,13 @@ export default function TermsOfServicePage() {
           <section>
             <h2 className="text-xl md:text-2xl font-bold mb-4">2. Description of Service</h2>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
-              HealthTrack is a health data tracking progressive web application (PWA) that allows you
-              to record and organize medications, medical conditions, allergies, procedures, lab
+              HealthTrack is a health data tracking progressive web application (PWA) that allows
+              you to record and organize medications, medical conditions, allergies, procedures, lab
               results, vital signs, appointments, and personal health notes. The Service also
               provides AI-powered health insights, lab PDF parsing, wearable device integration, and
               health data sharing features. HealthTrack is designed to help you organize and
-              understand your health data. It does not provide medical advice, diagnoses, or treatment
-              recommendations.
+              understand your health data. It does not provide medical advice, diagnoses, or
+              treatment recommendations.
             </p>
           </section>
 
@@ -86,11 +83,10 @@ export default function TermsOfServicePage() {
                 style={{ color: 'var(--color-text-primary)' }}
               >
                 HealthTrack is not a medical device. HealthTrack is NOT a substitute for
-                professional medical advice, diagnosis, or treatment. Always seek the advice of
-                your physician or other qualified health
-                provider with any questions you may have regarding a medical condition. Never
-                disregard professional medical advice or delay in seeking it because of something
-                you have read or received through HealthTrack.
+                professional medical advice, diagnosis, or treatment. Always seek the advice of your
+                physician or other qualified health provider with any questions you may have
+                regarding a medical condition. Never disregard professional medical advice or delay
+                in seeking it because of something you have read or received through HealthTrack.
               </p>
             </div>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
@@ -103,12 +99,17 @@ export default function TermsOfServicePage() {
 
           {/* 4. Account Registration & Security */}
           <section>
-            <h2 className="text-xl md:text-2xl font-bold mb-4">4. Account Registration &amp; Security</h2>
+            <h2 className="text-xl md:text-2xl font-bold mb-4">
+              4. Account Registration &amp; Security
+            </h2>
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               To use HealthTrack, you must create an account using either an email address and
               password or Google OAuth. You are responsible for:
             </p>
-            <ul className="list-disc list-inside space-y-2" style={{ color: 'var(--color-text-muted)' }}>
+            <ul
+              className="list-disc list-inside space-y-2"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               <li>Providing accurate and complete registration information</li>
               <li>Maintaining the security and confidentiality of your login credentials</li>
               <li>All activities that occur under your account</li>
@@ -126,7 +127,10 @@ export default function TermsOfServicePage() {
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               You agree not to use HealthTrack to:
             </p>
-            <ul className="list-disc list-inside space-y-2" style={{ color: 'var(--color-text-muted)' }}>
+            <ul
+              className="list-disc list-inside space-y-2"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               <li>Violate any applicable law or regulation</li>
               <li>Upload malicious content, viruses, or harmful code</li>
               <li>Attempt to gain unauthorized access to other users&apos; data or accounts</li>
@@ -150,10 +154,10 @@ export default function TermsOfServicePage() {
               >
                 MIT License
               </a>
-              . The MIT License governs your rights to the software itself, including your rights
-              to use, copy, modify, and distribute it. Content you store on an instance of the
-              Service remains yours (see Section 8, Data Ownership). Nothing in these Terms limits
-              the rights granted to you by the MIT License.
+              . The MIT License governs your rights to the software itself, including your rights to
+              use, copy, modify, and distribute it. Content you store on an instance of the Service
+              remains yours (see Section 8, Data Ownership). Nothing in these Terms limits the
+              rights granted to you by the MIT License.
             </p>
           </section>
 
@@ -163,7 +167,10 @@ export default function TermsOfServicePage() {
             <p className="leading-relaxed mb-3" style={{ color: 'var(--color-text-muted)' }}>
               HealthTrack integrates with third-party services including:
             </p>
-            <ul className="list-disc list-inside space-y-2 mb-3" style={{ color: 'var(--color-text-muted)' }}>
+            <ul
+              className="list-disc list-inside space-y-2 mb-3"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               <li>
                 <strong>Oura Ring</strong> — for syncing vitals and sleep data with your consent
               </li>
@@ -171,7 +178,8 @@ export default function TermsOfServicePage() {
                 <strong>Google</strong> — for OAuth authentication
               </li>
               <li>
-                <strong>Anthropic Claude</strong> — for AI-powered health analysis and lab parsing
+                <strong>Anthropic, OpenAI or Gemini</strong> — your account’s chosen API for
+                optional health analysis and document parsing
               </li>
             </ul>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
@@ -187,9 +195,9 @@ export default function TermsOfServicePage() {
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
               You own your health data. HealthTrack does not claim ownership of any health
               information you enter into the Service. You may export your data in JSON format at any
-              time, and you may delete your data or your entire account whenever you choose. By using
-              the Service, you grant us a limited license to process, store, and display your data
-              solely for the purpose of providing the Service to you.
+              time, and you may delete your data or your entire account whenever you choose. By
+              using the Service, you grant us a limited license to process, store, and display your
+              data solely for the purpose of providing the Service to you.
             </p>
           </section>
 
@@ -224,11 +232,11 @@ export default function TermsOfServicePage() {
             </p>
             <p className="leading-relaxed" style={{ color: 'var(--color-text-muted)' }}>
               HealthTrack is self-hosted software. Each instance of the Service is operated
-              independently by whoever deploys it (&quot;the operator&quot;). The operator — not
-              the software authors or contributors — is responsible for the instance&apos;s
-              security, availability, backups, lawful operation, and any data stored on it. You use
-              any instance at your own risk. The software authors provide the code &quot;as
-              is&quot; in accordance with the MIT License.
+              independently by whoever deploys it (&quot;the operator&quot;). The operator — not the
+              software authors or contributors — is responsible for the instance&apos;s security,
+              availability, backups, lawful operation, and any data stored on it. You use any
+              instance at your own risk. The software authors provide the code &quot;as is&quot; in
+              accordance with the MIT License.
             </p>
           </section>
 
@@ -251,10 +259,10 @@ export default function TermsOfServicePage() {
               These Terms shall be governed by and construed in accordance with the laws of the
               United States. Any disputes arising from these Terms or the Service shall be resolved
               through good-faith negotiation. If negotiation fails, disputes shall be submitted to
-              binding arbitration in accordance with applicable rules. Because self-hosted
-              instances are operated independently, individual operators may be subject to the laws
-              of their own jurisdiction; the governing-law and arbitration provisions above apply
-              to the software project itself.
+              binding arbitration in accordance with applicable rules. Because self-hosted instances
+              are operated independently, individual operators may be subject to the laws of their
+              own jurisdiction; the governing-law and arbitration provisions above apply to the
+              software project itself.
             </p>
           </section>
 
@@ -298,10 +306,18 @@ export default function TermsOfServicePage() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <Link href="/privacy" className="no-underline hover:underline" style={{ color: 'var(--color-text-muted)' }}>
+            <Link
+              href="/privacy"
+              className="no-underline hover:underline"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               Privacy Policy
             </Link>
-            <Link href="/terms" className="no-underline hover:underline" style={{ color: 'var(--color-text-muted)' }}>
+            <Link
+              href="/terms"
+              className="no-underline hover:underline"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               Terms of Service
             </Link>
           </div>

@@ -16,7 +16,7 @@ function row(
   metric_key: string,
   value: number,
   recorded_at: string,
-  extra: Partial<ViewVitalRow> = {},
+  extra: Partial<ViewVitalRow> = {}
 ): ViewVitalRow {
   return {
     metric_key,
@@ -50,6 +50,24 @@ describe('defaultDayKey', () => {
 });
 
 describe('buildDailySections', () => {
+  it('groups intraday readings and their baseline under the configured instance day', () => {
+    const rows = [
+      row('bp_systolic', 120, '2026-10-23T06:30:00Z'), // Oct 22, Phoenix
+      row('bp_systolic', 130, '2026-10-23T07:30:00Z'), // Oct 23, Phoenix
+      row('bp_systolic', 110, '2026-10-22T06:30:00Z'), // Oct 21, Phoenix
+    ];
+    const [
+      {
+        entries: [bp],
+      },
+    ] = buildDailySections(rows, '2026-10-22', [], 'America/Phoenix');
+    expect(bp.dayValue).toBe(120);
+    expect(bp.delta?.amount).toBe(10);
+    expect(bp.readings.map((reading) => reading.recordedAt)).toEqual(['2026-10-23T06:30:00Z']);
+    expect(defaultDayKey(rows.slice(0, 1), 'America/Phoenix')).toBe('2026-10-22');
+    expect(defaultDayKey(rows.slice(0, 1), 'America/New_York')).toBe('2026-10-23');
+  });
+
   it('includes only metrics with data on the selected day, grouped by category in order', () => {
     const rows = [
       row('sleep_score', 82, day('2026-07-08')),
@@ -79,7 +97,11 @@ describe('buildDailySections', () => {
       row('resting_hr', 53, day('2026-07-01')), // still inside the 7-day window
       row('resting_hr', 99, day('2026-06-30')), // outside — ignored
     ];
-    const [{ entries: [hr] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [hr],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(hr.dayValue).toBe(60);
     // baseline = (55 + 57 + 53) / 3 = 55
     expect(hr.delta).not.toBeNull();
@@ -88,14 +110,18 @@ describe('buildDailySections', () => {
     expect(hr.delta!.display).toBe('5');
   });
 
-  it("compares sum metrics against the 7-day daily average (total / 7)", () => {
+  it('compares sum metrics against the 7-day daily average (total / 7)', () => {
     const rows = [
       row('steps', 10000, day('2026-07-08')),
       row('steps', 7000, day('2026-07-07')),
       row('steps', 7000, day('2026-07-06')),
       // 4 days without data still count in the /7 denominator
     ];
-    const [{ entries: [steps] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [steps],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(steps.dayValue).toBe(10000);
     // baseline = 14000 / 7 = 2000 → delta +8000
     expect(steps.delta!.amount).toBeCloseTo(8000);
@@ -108,13 +134,21 @@ describe('buildDailySections', () => {
       row('steps', 6000, day('2026-07-08')),
       row('steps', 7000, day('2026-07-05')),
     ];
-    const [{ entries: [steps] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [steps],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(steps.dayValue).toBe(10000);
   });
 
   it('returns a null delta when the prior 7 days have no data', () => {
     const rows = [row('resting_hr', 60, day('2026-07-08'))];
-    const [{ entries: [hr] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [hr],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(hr.delta).toBeNull();
   });
 
@@ -123,7 +157,11 @@ describe('buildDailySections', () => {
       row('resting_hr', 60, day('2026-07-08')),
       row('resting_hr', 60.2, day('2026-07-07')), // decimals: 0 → |Δ|=0.2 rounds to 0
     ];
-    const [{ entries: [hr] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [hr],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(hr.delta!.direction).toBe('flat');
   });
 
@@ -142,9 +180,7 @@ describe('buildDailySections', () => {
   });
 
   it('prefers metadata.label for ordinal readings when present', () => {
-    const rows = [
-      row('mood', 4, day('2026-07-08'), { metadata: { label: 'pretty good' } }),
-    ];
+    const rows = [row('mood', 4, day('2026-07-08'), { metadata: { label: 'pretty good' } })];
     const sections = buildDailySections(rows, '2026-07-08');
     expect(sections[0].entries[0].readings[0].display).toBe('pretty good');
   });
@@ -155,11 +191,12 @@ describe('buildDailySections', () => {
       const d = new Date(2026, 6, 8, h, 30, 0); // local Jul 8
       return d.toISOString();
     };
-    const rows = [
-      row('blood_glucose', 140, local(18)),
-      row('blood_glucose', 95, local(7)),
-    ];
-    const [{ entries: [bg] }] = buildDailySections(rows, '2026-07-08');
+    const rows = [row('blood_glucose', 140, local(18)), row('blood_glucose', 95, local(7))];
+    const [
+      {
+        entries: [bg],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(bg.intraday).toBe(true);
     expect(bg.readings.map((r) => r.value)).toEqual([95, 140]); // chronological
     expect(bg.dayValue).toBeCloseTo(117.5); // mean aggregate
@@ -170,7 +207,11 @@ describe('buildDailySections', () => {
       row('resting_hr', 58, day('2026-07-08')),
       row('resting_hr', 62, day('2026-07-08')),
     ];
-    const [{ entries: [hr] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [hr],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(hr.readings).toHaveLength(1);
     expect(hr.dayValue).toBe(60);
     expect(hr.readings[0].display).toBe('60');
@@ -178,7 +219,11 @@ describe('buildDailySections', () => {
 
   it('formats numeric displays at registry decimals', () => {
     const rows = [row('sleep_duration', 7.25, day('2026-07-08'))];
-    const [{ entries: [dur] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [dur],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(dur.readings[0].display).toBe('7.3'); // decimals: 1
   });
 
@@ -186,7 +231,7 @@ describe('buildDailySections', () => {
     const build = (key: string, today: number, prior: number) => {
       const sections = buildDailySections(
         [row(key, today, day('2026-07-08')), row(key, prior, day('2026-07-07'))],
-        '2026-07-08',
+        '2026-07-08'
       );
       return sections.flatMap((s) => s.entries).find((e) => e.key === key)!.delta!;
     };
@@ -203,7 +248,11 @@ describe('buildDailySections', () => {
 
   it('renders minute-based sleep metrics as h/m durations', () => {
     const rows = [row('deep_sleep', 462, day('2026-07-08'))];
-    const [{ entries: [deep] }] = buildDailySections(rows, '2026-07-08');
+    const [
+      {
+        entries: [deep],
+      },
+    ] = buildDailySections(rows, '2026-07-08');
     expect(deep.duration).toBe(true);
     expect(deep.readings[0].display).toBe('7h 42m');
   });
@@ -213,12 +262,12 @@ describe('buildDailySections', () => {
       key: string,
       today: number,
       prior: number,
-      goals: Parameters<typeof buildDailySections>[2],
+      goals: Parameters<typeof buildDailySections>[2]
     ) => {
       const sections = buildDailySections(
         [row(key, today, day('2026-07-08')), row(key, prior, day('2026-07-07'))],
         '2026-07-08',
-        goals,
+        goals
       );
       return sections.flatMap((s) => s.entries).find((e) => e.key === key)!.delta!;
     };

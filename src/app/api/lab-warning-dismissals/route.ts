@@ -11,10 +11,7 @@ import { z } from 'zod';
 import { requireUser, UnauthorizedError } from '@/lib/auth/session';
 import { apiError } from '@/lib/api-error';
 import { safeError } from '@/lib/safe-log';
-import {
-  dismissLabWarnings,
-  NoLabDataError,
-} from '@/lib/repos/lab-warning-dismissals';
+import { dismissLabWarnings, NoLabDataError } from '@/lib/repos/lab-warning-dismissals';
 
 export async function POST(request: Request) {
   let userId: string;
@@ -30,7 +27,10 @@ export async function POST(request: Request) {
   let tests: unknown;
   try {
     const body = await request.json();
-    tests = body.tests;
+    tests = z
+      .object({ tests: z.array(z.string()) })
+      .strict()
+      .parse(body).tests;
   } catch {
     return apiError(400, 'invalid_body', 'Invalid JSON request body');
   }

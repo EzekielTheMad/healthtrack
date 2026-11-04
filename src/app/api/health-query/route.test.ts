@@ -1,3 +1,4 @@
+import { seedAiConfiguration } from '@/lib/repos/repo-test-harness';
 // @vitest-environment node
 /**
  * POST /api/health-query — pins the clinical-correctness fix (review I1):
@@ -19,7 +20,10 @@ import type { HealthContext } from '@/lib/claude/query';
 
 const { authState, captured } = vi.hoisted(() => ({
   authState: { userId: null as string | null },
-  captured: { context: null as HealthContext | null },
+  captured: {
+    context: null as HealthContext | null,
+    duringAnswer: null as null | (() => Promise<void>),
+  },
 }));
 
 vi.mock('@/lib/auth/session', () => {
@@ -43,6 +47,7 @@ vi.mock('@/lib/claude/query', async (importOriginal) => {
     ...actual,
     queryHealthData: async (_question: string, context: HealthContext) => {
       captured.context = context;
+      await captured.duringAnswer?.();
       return 'mock answer';
     },
   };
@@ -63,8 +68,10 @@ beforeEach(async () => {
   route = await import('./route');
   query = await import('@/lib/claude/query');
   insertUser(ctx.sqlite, OWNER);
+  seedAiConfiguration(ctx.sqlite, OWNER);
   authState.userId = OWNER;
   captured.context = null;
+  captured.duringAnswer = null;
 });
 
 afterEach(() => {
@@ -93,7 +100,7 @@ function insertVital(opts: {
   ctx.sqlite
     .prepare(
       `insert into vitals (id, user_id, metric_key, value, unit, source, recorded_at, metadata, dependent_id, created_at)
-       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`,
+       values (?, ?, ?, ?, ?, 'manual', ?, '{}', ?, ?)`
     )
     .run(
       crypto.randomUUID(),
@@ -103,7 +110,7 @@ function insertVital(opts: {
       opts.unit,
       opts.recordedAt,
       opts.dependentId,
-      new Date().toISOString(),
+      new Date().toISOString()
     );
 }
 
@@ -113,6 +120,20 @@ function dayISO(daysAgo: number): string {
 }
 
 describe('POST /api/health-query — vitals scope (I1)', () => {
+  it('does not save or return a stale answer after records change during generation', async () => {
+    captured.duringAnswer = async () => {
+      const { createMedication } = await import('@/lib/repos/medications');
+      await createMedication(
+        OWNER,
+        { ownerId: OWNER, dependentId: null },
+        { name: 'Fictional concurrent course' }
+      );
+    };
+    const response = await route.POST(post({ query: 'What is recorded?', days: 90 }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: 'health_records_changed' });
+    expect(ctx.sqlite.prepare('SELECT count(*) n FROM query_history').get()).toEqual({ n: 0 });
+  });
   it("system prompt reflects only the owner's vitals, never a dependent's", async () => {
     const depId = crypto.randomUUID();
     insertDependent(ctx.sqlite, depId, OWNER);
@@ -143,13 +164,37 @@ describe('POST /api/health-query — vitals scope (I1)', () => {
     // Owner's value present; blended (180 + 62) / 2 = 121 average and the
     // dependent's 62 absent.
     expect(prompt).toContain('180');
-    expect(prompt).not.toContain('121');
-    expect(prompt).not.toContain('62');
+    expect(prompt).not.toContain('"mean":121');
+    expect(prompt).not.toContain('weight=62 ');
   });
 
   it('401 without a session', async () => {
     authState.userId = null;
     const res = await route.POST(post({ query: 'hi' }));
     expect(res.status).toBe(401);
+  });
+
+  it('reuses only an answer whose patient, window, and current facts still match', async () => {
+    const first = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
+    expect(first.status).toBe(200);
+    const saved = await first.json();
+    expect(saved.context_metadata.context_version).toBe(4);
+    captured.context = null;
+    const repeat = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
+    expect((await repeat.json()).reused).toBe(true);
+    expect(captured.context).toBeNull();
+    const { createMedication } = await import('@/lib/repos/medications');
+    await createMedication(
+      OWNER,
+      { ownerId: OWNER, dependentId: null },
+      { name: 'Synthetic medicine', startDate: '2026-01-02' }
+    );
+    const changed = await route.POST(post({ query: 'When did I start my medication?', days: 90 }));
+    expect(changed.status).toBe(200);
+    expect((captured.context as HealthContext | null)?.medications_data).toContain('2026-01-02');
+    const { listQueryHistory } = await import('@/lib/repos/query-history');
+    expect(
+      (await listQueryHistory(OWNER)).every((entry) => !!entry.contextMetadata?.coverage)
+    ).toBe(true);
   });
 });

@@ -17,8 +17,10 @@ import { VitalWriteError } from '@/lib/repos/vitals';
 import { FitnessWriteError, FitnessConflictError } from '@/lib/repos/_fitness';
 import { apiError } from '@/lib/api-error';
 import type { ApiError } from '@/lib/types';
+import { AiError } from '@/lib/ai/errors';
 
 export function errorResponse(error: unknown): NextResponse<ApiError> {
+  if (error instanceof AiError) return apiError(error.status, `ai_${error.code}`, error.message);
   if (error instanceof UnauthorizedError) {
     return apiError(401, 'unauthorized', 'You must be signed in.');
   }

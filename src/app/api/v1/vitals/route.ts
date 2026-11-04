@@ -3,6 +3,8 @@ import { validateApiKey, hasScope, unauthorized, forbidden } from '@/lib/api-aut
 import { db } from '@/db';
 import { bodyToCamel } from '@/lib/api/snake';
 import { inclusiveDayUpperBound } from '@/lib/api/v1-fitness';
+import { typedVitalHistory } from '@/lib/fidelity/vitals-typed';
+import { errorResponse } from '@/lib/api/respond';
 import {
   findOwnVital,
   listVitals,
@@ -28,6 +30,14 @@ export async function GET(request: NextRequest) {
   if (!hasScope(ctx, 'read:vitals')) return forbidden('read:vitals');
 
   const { searchParams } = request.nextUrl;
+  if (
+    searchParams.get('format') === 'typed' &&
+    (searchParams.has('owner_id') || searchParams.has('dependent_id'))
+  )
+    return Response.json(
+      { error: 'Typed PAT vitals access is self-scoped.' },
+      { status: 400, headers: corsHeaders }
+    );
   const metric = searchParams.get('metric');
   const days = parseInt(searchParams.get('days') ?? '0', 10) || null;
   // Clamp to [1, 1000] — negative/zero values must not become "unlimited"
@@ -58,8 +68,23 @@ export async function GET(request: NextRequest) {
     const rows = await listVitals(
       ctx.userId,
       { ownerId: ctx.userId, dependentId: null },
-      { metricKey: metric ?? undefined, startDate, endDate, limit },
+      { metricKey: metric ?? undefined, startDate, endDate, limit }
     );
+
+    if (searchParams.get('format') === 'typed') {
+      return Response.json(
+        await typedVitalHistory(ctx.userId, rows, {
+          metric: metric ?? undefined,
+          startDate,
+          endDate,
+          limit,
+          fromDay: Boolean(from && /^\d{4}-\d{2}-\d{2}$/.test(from)),
+          toDay: Boolean(to && /^\d{4}-\d{2}-\d{2}$/.test(to)),
+          source: searchParams.get('source') ?? undefined,
+        }),
+        { headers: corsHeaders }
+      );
+    }
 
     // Response shape byte-identical to the legacy PostgREST select: same fields,
     // same key order.
@@ -71,10 +96,12 @@ export async function GET(request: NextRequest) {
         unit: v.unit,
         source: v.source,
         recorded_at: v.recordedAt,
+        last_received_at: v.lastReceivedAt,
       })),
-      { headers: corsHeaders },
+      { headers: corsHeaders }
     );
   } catch (error) {
+    if (searchParams.get('format') === 'typed') return errorResponse(error);
     // Never reflect internal error details to API clients (respond.ts policy).
     console.error('v1 vitals GET error:', error);
     return Response.json({ error: 'internal_error' }, { status: 500, headers: corsHeaders });
@@ -100,7 +127,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return Response.json(
       { error: 'Request body must be valid JSON' },
-      { status: 400, headers: corsHeaders },
+      { status: 400, headers: corsHeaders }
     );
   }
 
@@ -118,10 +145,11 @@ export async function POST(request: NextRequest) {
           unit: row.unit,
           source: row.source,
           recorded_at: row.recordedAt,
+          last_received_at: row.lastReceivedAt,
           metadata: row.metadata,
         },
       },
-      { status: 201, headers: corsHeaders },
+      { status: 201, headers: corsHeaders }
     );
   } catch (error) {
     if (error instanceof VitalWriteError) {

@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  let body: { name?: string; scopes?: string[]; expires_at?: string };
+  let body: { name?: string; scopes?: string[]; expires_at?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -74,6 +74,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (
+    expires_at !== undefined &&
+    expires_at !== null &&
+    (typeof expires_at !== 'string' || !Number.isFinite(Date.parse(expires_at)))
+  ) {
+    return NextResponse.json(
+      { error: 'expires_at must be a valid date string or null' },
+      { status: 400 },
+    );
+  }
+
   const { token, prefix, hash } = generateApiKey();
 
   try {
@@ -82,7 +93,7 @@ export async function POST(request: NextRequest) {
       prefix,
       tokenHash: hash,
       scopes,
-      expiresAt: expires_at || null,
+      expiresAt: expires_at ?? null,
     });
     return NextResponse.json({ key: rowToSnake(key), token }, { status: 201 });
   } catch (error) {

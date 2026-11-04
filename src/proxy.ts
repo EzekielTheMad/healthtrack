@@ -28,8 +28,9 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { getSessionCookie } from 'better-auth/cookies';
 import { canonicalHostRedirect } from '@/lib/canonical-host';
+import { safeReturnTo } from '@/lib/auth/return-to';
 
-const PUBLIC_EXACT = new Set(['/', '/privacy', '/terms', '/docs/api', '/login', '/signup']);
+const PUBLIC_EXACT = new Set(['/', '/privacy', '/terms', '/docs/api', '/login', '/signup', '/.well-known/assetlinks.json', '/offline.html', '/sw.js']);
 const PUBLIC_PREFIXES = ['/shared/', '/api/'];
 
 function isPublicPath(pathname: string): boolean {
@@ -49,7 +50,9 @@ export function proxy(request: NextRequest) {
   // Signed-in users don't need the auth pages
   if (hasSessionCookie && (pathname === '/login' || pathname === '/signup')) {
     const url = request.nextUrl.clone();
-    url.pathname = '/dashboard';
+    const target = new URL(safeReturnTo(request.nextUrl.searchParams.get('returnTo')), url.origin);
+    url.pathname = target.pathname;
+    url.search = target.search;
     return NextResponse.redirect(url);
   }
 
@@ -57,6 +60,7 @@ export function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.search = '';
+    url.searchParams.set('returnTo', safeReturnTo(`${pathname}${request.nextUrl.search}`));
     return NextResponse.redirect(url);
   }
 

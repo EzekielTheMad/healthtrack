@@ -16,6 +16,7 @@
  * verbatim in the raw layer and never becomes normalized health data.
  */
 import { z } from 'zod';
+import { NATIVE_RECORD_TYPES } from './native-schema';
 
 /** Upstream schema pin, surfaced in the docs and asserted by tests. */
 export const UPSTREAM_SCHEMA_COMMIT = 'b94f7453a2d61a69bf9866d15e37ae4fb5343e21';
@@ -162,6 +163,12 @@ export function getRecordType(type: string): RecordTypeDef | undefined {
 export const NORMALIZABLE_TYPES: readonly string[] = RECORD_TYPES.filter(
   (r) => r.normalized,
 ).map((r) => r.type);
+
+/** Settings may approve native projections without changing the legacy
+ * relay's deliberately narrower normalization contract. */
+export const CONFIGURABLE_NORMALIZABLE_TYPES: readonly string[] = [
+  ...new Set([...NORMALIZABLE_TYPES, ...NATIVE_RECORD_TYPES]),
+];
 
 /**
  * Source package recorded for `daily_totals`. Those entries come from Health

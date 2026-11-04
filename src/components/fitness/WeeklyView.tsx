@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useWeekRollup } from '@/hooks/useWeekRollup';
 import { priorWeekStart, weekStartOf } from '@/lib/fitness/weeks';
 import { shiftDayKey, formatUtcDay, formatUtcDayYear } from '@/lib/dates';
 import { formatMetricValue } from '@/lib/metrics/format';
-import { getMetric } from '@/lib/metrics/registry';
+import { buildWeeklyMeasurementSummary } from '@/lib/metrics/measurements';
+import { vitalsViewHref } from '@/lib/metrics/vitals-view-param';
 import {
   SESSION_TYPE_OPTIONS,
   type LatestBodyMeasurementsWire,
@@ -13,6 +15,9 @@ import {
 } from '@/lib/fitness/api-types';
 import LoadingSpinner from '@/components/shared/LoadingSpinner';
 import CheckinForm from './CheckinForm';
+import { apiFetch } from '@/lib/api/client';
+import { isValidDayKey } from '@/lib/dates';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 
 // ---------------------------------------------------------------------------
 // Weekly tab — Monday-week navigator over the computed rollup
@@ -60,7 +65,10 @@ function StatRows({ rows }: { rows: StatRowSpec[] }) {
                 {formatValue(row.value, decimals, row.unit)}
               </span>
               {delta && (
-                <span className="block text-[11px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
+                <span
+                  className="block text-[11px] font-mono"
+                  style={{ color: 'var(--color-text-muted)' }}
+                >
                   {delta}
                 </span>
               )}
@@ -115,41 +123,64 @@ function GoalProgressBar({
 }
 
 /**
- * Latest circumferences, grouped by the day they were recorded (newest group
- * first). `measurements_latest` is sparse — unmeasured metrics are absent — so
- * this renders only what exists and never a wall of blanks. Grouping keeps the
- * mobile line count low when a whole tape session lands on one day, and makes
- * a stale reading obvious: it carries its own older date.
+ * Compact measurement summary: the measurement date, the first few populated
+ * circumferences in registry order, and a count of the rest behind a link to
+ * the full Measurements view.
+ *
+ * `measurements_latest` is sparse — unmeasured metrics are absent — so this
+ * renders only what exists and never a wall of blanks. Measurements are
+ * point-in-time readings taken occasionally, so nothing here compares them to
+ * the previous calendar week; a reading older than the newest one keeps its
+ * own date rather than borrowing the header's.
  */
-function MeasurementLines({ measurements }: { measurements: LatestBodyMeasurementsWire }) {
-  const entries = Object.entries(measurements);
-  if (entries.length === 0) return null;
-
-  const byDay = new Map<string, string[]>();
-  for (const [key, m] of entries) {
-    // Labels and display precision come from the registry, so a new
-    // circumference metric renders here the moment it is registered.
-    const metric = getMetric(key);
-    const text = `${metric?.label ?? key} ${formatMetricValue(m.value, metric?.decimals ?? 1)}${
-      m.unit ? ` ${m.unit}` : ''
-    }`;
-    const group = byDay.get(m.recorded_at) ?? [];
-    group.push(text);
-    byDay.set(m.recorded_at, group);
-  }
-  const days = [...byDay.keys()].sort().reverse();
+export function MeasurementSummary({ measurements }: { measurements: LatestBodyMeasurementsWire }) {
+  const summary = buildWeeklyMeasurementSummary(measurements);
+  if (!summary) return null;
 
   return (
-    <dl className="mt-3 space-y-1">
-      {days.map((day) => (
-        <div key={day} className="text-[11px] leading-snug" style={{ color: 'var(--color-text-muted)' }}>
-          <dt className="inline font-medium">
-            As of <time dateTime={day.slice(0, 10)}>{formatUtcDay(day)}</time>:{' '}
-          </dt>
-          <dd className="inline">{byDay.get(day)!.join(' · ')}</dd>
-        </div>
-      ))}
-    </dl>
+    <div
+      className="mt-3 pt-3 border-t text-[11px] leading-snug"
+      style={{ borderColor: 'var(--border-card)', color: 'var(--color-text-muted)' }}
+    >
+      <p className="font-medium">
+        Measurements &middot;{' '}
+        <time dateTime={summary.asOf.slice(0, 10)}>{formatUtcDay(summary.asOf)}</time>
+      </p>
+      <p className="mt-0.5">
+        {summary.items.map((item, i) => (
+          <React.Fragment key={item.key}>
+            {i > 0 && ' · '}
+            <span style={{ color: 'var(--color-text-primary)' }}>
+              {item.label} {item.display}
+              {item.unit ? ` ${item.unit}` : ''}
+            </span>
+            {item.stale && (
+              <>
+                {' '}
+                <time dateTime={item.recordedAt.slice(0, 10)}>
+                  ({formatUtcDay(item.recordedAt)})
+                </time>
+              </>
+            )}
+          </React.Fragment>
+        ))}
+      </p>
+      <p className="mt-0.5">
+        {summary.moreCount > 0 && (
+          <>
+            {summary.moreCount} more measurement{summary.moreCount === 1 ? '' : 's'}
+            {' · '}
+          </>
+        )}
+        <Link
+          href={vitalsViewHref('measurements')}
+          className="underline underline-offset-2"
+          style={{ color: 'var(--color-sage)' }}
+        >
+          View details
+        </Link>
+      </p>
+    </div>
   );
 }
 
@@ -177,7 +208,10 @@ export function WeekSummary({ rollup }: WeekSummaryProps) {
             {sessions.total}
           </span>
           {deltas.sessions_total !== null && deltas.sessions_total !== 0 && (
-            <span className="ml-2 text-[11px] font-mono font-normal" style={{ color: 'var(--color-text-muted)' }}>
+            <span
+              className="ml-2 text-[11px] font-mono font-normal"
+              style={{ color: 'var(--color-text-muted)' }}
+            >
               {deltas.sessions_total > 0 ? '+' : ''}
               {deltas.sessions_total} vs prior week
             </span>
@@ -193,7 +227,10 @@ export function WeekSummary({ rollup }: WeekSummaryProps) {
               const bucket = sessions.by_type[t];
               return (
                 <li key={t} className="text-sm flex items-baseline gap-2">
-                  <span className="font-mono font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  <span
+                    className="font-mono font-semibold"
+                    style={{ color: 'var(--color-text-primary)' }}
+                  >
                     {bucket.count}×
                   </span>
                   <span style={{ color: 'var(--color-text-primary)' }}>{t}</span>
@@ -210,7 +247,10 @@ export function WeekSummary({ rollup }: WeekSummaryProps) {
 
         {/* Frequency-goal progress */}
         {goals.length > 0 && (
-          <div className="mt-4 pt-4 border-t space-y-3" style={{ borderColor: 'var(--border-card)' }}>
+          <div
+            className="mt-4 pt-4 border-t space-y-3"
+            style={{ borderColor: 'var(--border-card)' }}
+          >
             {goals.map((g) => (
               <GoalProgressBar
                 key={g.goal_id}
@@ -253,7 +293,7 @@ export function WeekSummary({ rollup }: WeekSummaryProps) {
             },
           ]}
         />
-        <MeasurementLines measurements={body.measurements_latest ?? {}} />
+        <MeasurementSummary measurements={body.measurements_latest ?? {}} />
       </section>
 
       {/* Recovery */}
@@ -297,11 +337,31 @@ export function WeekSummary({ rollup }: WeekSummaryProps) {
 
 /** Data-fetching Weekly tab with the Monday navigator. */
 export default function WeeklyView() {
-  const [currentWeek] = useState(() =>
-    weekStartOf(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone),
+  const [currentWeek, setCurrentWeek] = useState(() =>
+    weekStartOf(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone)
   );
   const [weekStart, setWeekStart] = useState(currentWeek);
+  const [savedFor, setSavedFor] = useState<string | null>(null);
+  const { delegateOwnerId } = useActiveProfile();
+  const saveScope = `${delegateOwnerId ?? 'self'}:${weekStart}`;
+  const navigated = useRef(false);
   const { rollup, loading, error, saveCheckin } = useWeekRollup(weekStart);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch<{ current_week_start: string }>('/api/build')
+      .then((config) => {
+        if (!active || !isValidDayKey(config.current_week_start)) return;
+        setCurrentWeek(config.current_week_start);
+        if (!navigated.current) setWeekStart(config.current_week_start);
+      })
+      .catch(() => {
+        /* Keep the local fallback when instance settings are unavailable. */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const isCurrent = weekStart === currentWeek;
   const weekEnd = shiftDayKey(weekStart, 6);
@@ -312,7 +372,10 @@ export default function WeeklyView() {
       <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
-          onClick={() => setWeekStart(priorWeekStart(weekStart))}
+          onClick={() => {
+            navigated.current = true;
+            setWeekStart(priorWeekStart(weekStart));
+          }}
           aria-label="Previous week"
           className="px-3 py-1.5 rounded-lg text-sm cursor-pointer"
           style={{ border: '1px solid var(--border-card)', color: 'var(--color-text-primary)' }}
@@ -329,7 +392,10 @@ export default function WeeklyView() {
         </span>
         <button
           type="button"
-          onClick={() => setWeekStart(shiftDayKey(weekStart, 7))}
+          onClick={() => {
+            navigated.current = true;
+            setWeekStart(shiftDayKey(weekStart, 7));
+          }}
           disabled={isCurrent}
           aria-label="Next week"
           className="px-3 py-1.5 rounded-lg text-sm cursor-pointer disabled:opacity-30"
@@ -340,7 +406,10 @@ export default function WeeklyView() {
         {!isCurrent && (
           <button
             type="button"
-            onClick={() => setWeekStart(currentWeek)}
+            onClick={() => {
+              navigated.current = true;
+              setWeekStart(currentWeek);
+            }}
             className="px-3 py-1.5 rounded-lg text-sm cursor-pointer"
             style={{ border: '1px solid var(--border-card)', color: 'var(--color-sage)' }}
           >
@@ -363,6 +432,12 @@ export default function WeeklyView() {
         </div>
       )}
 
+      {savedFor === saveScope && (
+        <p role="status" className="text-sm" style={{ color: 'var(--color-sage)' }}>
+          Check-in saved.
+        </p>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-12">
           <LoadingSpinner size="lg" />
@@ -376,8 +451,14 @@ export default function WeeklyView() {
               initial={rollup.checkin}
               neckLatest={rollup.body.neck_latest}
               waistLatest={rollup.body.waist_latest}
+              importedNutrition={rollup.nutrition}
+              nutritionUnavailable={rollup.nutrition_unavailable}
+              bodySummary={rollup.body}
+              showSaveConfirmation={false}
               onSave={async (body) => {
+                setSavedFor(null);
                 await saveCheckin(body);
+                setSavedFor(saveScope);
               }}
             />
           </div>

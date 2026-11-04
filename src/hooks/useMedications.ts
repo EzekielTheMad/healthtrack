@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { Medication } from '@/lib/types';
@@ -12,7 +12,7 @@ interface UseMedicationsOptions {
 function listUrl(
   dependentId: string | null,
   delegateOwnerId: string | null,
-  activeOnly: boolean | undefined,
+  activeOnly: boolean | undefined
 ): string {
   const params = new URLSearchParams();
   if (delegateOwnerId) {
@@ -31,9 +31,13 @@ export function useMedications(options: UseMedicationsOptions = {}) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { dependentId, delegateOwnerId } = useActiveProfile();
+  const scopeKey = `${delegateOwnerId ?? 'self'}:${dependentId ?? 'self'}`;
+  const [loadedScope, setLoadedScope] = useState<string | null>(null);
+  const activeScope = useRef(scopeKey);
 
   useEffect(() => {
     let cancelled = false;
+    activeScope.current = scopeKey;
 
     async function fetchMedications() {
       setLoading(true);
@@ -41,10 +45,11 @@ export function useMedications(options: UseMedicationsOptions = {}) {
 
       try {
         const data = await apiFetch<Medication[]>(
-          listUrl(dependentId, delegateOwnerId, activeOnly),
+          listUrl(dependentId, delegateOwnerId, activeOnly)
         );
         if (cancelled) return;
         setMedications(data);
+        setLoadedScope(scopeKey);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to load medications');
@@ -54,8 +59,10 @@ export function useMedications(options: UseMedicationsOptions = {}) {
     }
 
     fetchMedications();
-    return () => { cancelled = true; };
-  }, [activeOnly, dependentId, delegateOwnerId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeOnly, dependentId, delegateOwnerId, scopeKey]);
 
   const addMedication = useCallback(
     async (med: Omit<Medication, 'id' | 'user_id' | 'created_at' | 'updated_at'>) => {
@@ -70,32 +77,45 @@ export function useMedications(options: UseMedicationsOptions = {}) {
           method: 'POST',
           body: JSON.stringify(payload),
         });
-        setMedications((prev) => [data, ...prev]);
+        if (activeScope.current === scopeKey) setMedications((prev) => [data, ...prev]);
         return data;
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to add medication');
-        return undefined;
+        if (activeScope.current === scopeKey)
+          setError(err instanceof Error ? err.message : 'Failed to add medication');
+        throw err;
       }
     },
-    [dependentId, delegateOwnerId],
+    [dependentId, delegateOwnerId, scopeKey]
   );
 
   const updateMedication = useCallback(
-    async (id: string, updates: Partial<Omit<Medication, 'id' | 'user_id' | 'created_at' | 'updated_at'>>) => {
+    async (
+      id: string,
+      updates: Partial<Omit<Medication, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
+    ) => {
       setError(null);
 
       try {
-        const data = await apiFetch<Medication>(
-          `/api/medications/${encodeURIComponent(id)}`,
-          { method: 'PATCH', body: JSON.stringify(updates) },
-        );
-        setMedications((prev) => prev.map((m) => (m.id === id ? data : m)));
+        const data = await apiFetch<Medication>(`/api/medications/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        });
+        if (activeScope.current === scopeKey)
+          setMedications((prev) => prev.map((m) => (m.id === id ? data : m)));
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to update medication');
+        if (activeScope.current === scopeKey)
+          setError(err instanceof Error ? err.message : 'Failed to update medication');
+        throw err;
       }
     },
-    [],
+    [scopeKey]
   );
 
-  return { medications, loading, error, addMedication, updateMedication };
+  return {
+    medications: loadedScope === scopeKey ? medications : [],
+    loading,
+    error,
+    addMedication,
+    updateMedication,
+  };
 }

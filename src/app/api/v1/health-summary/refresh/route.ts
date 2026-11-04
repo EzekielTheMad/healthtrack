@@ -1,3 +1,5 @@
+import { AiError } from '@/lib/ai/errors';
+import { hasAiConfiguration } from '@/lib/ai/settings';
 /**
  * POST /api/v1/health-summary/refresh — PAT-authenticated cache warm.
  *
@@ -12,7 +14,7 @@
  */
 import { NextRequest } from 'next/server';
 import { validateApiKey, unauthorized, forbidden } from '@/lib/api-auth';
-import { AI_NOT_CONFIGURED, getCapabilities } from '@/lib/capabilities';
+import { AI_NOT_CONFIGURED } from '@/lib/capabilities';
 import { generateAndCacheSummary, ownerLocalDayKey } from '@/lib/claude/summary-cache';
 
 const corsHeaders = {
@@ -33,7 +35,7 @@ export async function POST(request: NextRequest) {
     return forbidden('write:all');
   }
 
-  if (!getCapabilities().ai) {
+  if (!hasAiConfiguration(ctx.userId)) {
     return Response.json({ error: AI_NOT_CONFIGURED }, { status: 501, headers: corsHeaders });
   }
 
@@ -44,6 +46,11 @@ export async function POST(request: NextRequest) {
     // welcome message is intentionally never cached).
     return Response.json({ generated: cached, date }, { headers: corsHeaders });
   } catch (error) {
+    if (error instanceof AiError)
+      return Response.json(
+        { error: `ai_${error.code}`, message: error.message },
+        { status: error.status, headers: corsHeaders }
+      );
     // Never reflect internal error details to API clients (respond.ts policy).
     console.error('v1 health-summary refresh error:', error);
     return Response.json({ error: 'internal_error' }, { status: 500, headers: corsHeaders });

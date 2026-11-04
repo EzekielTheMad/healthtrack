@@ -6,12 +6,13 @@
  *   match; delegates read (read_only+), insert/update (read_write+), delete
  *   (admin). Unfiltered listings ('all') are owner/delegate only.
  */
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { medications } from '@/db/schema';
 import { requireAuthz, NotFoundError } from '@/lib/authz';
 import { dependentFilter, requireListAuthz, type ListScope } from './_scope';
+import { invalidateInteractionCheck } from './interaction-alerts';
 
 export type MedicationRow = typeof medications.$inferSelect;
 
@@ -46,7 +47,7 @@ export interface ListMedicationsOptions {
 export async function listMedications(
   actorId: string,
   scope: ListScope,
-  opts: ListMedicationsOptions = {},
+  opts: ListMedicationsOptions = {}
 ): Promise<MedicationRow[]> {
   await requireListAuthz(actorId, scope, 'medications', 'read');
   return db
@@ -55,27 +56,30 @@ export async function listMedications(
     .where(
       and(
         eq(medications.userId, scope.ownerId),
+        sql`NOT EXISTS(SELECT 1 FROM clinical_records hf WHERE hf.user_id=${medications.userId} AND hf.dependent_id IS ${medications.dependentId} AND hf.legacy_table='medications' AND hf.legacy_id=${medications.id})`,
         dependentFilter(medications.dependentId, scope.dependentId),
-        opts.active === undefined ? undefined : eq(medications.active, opts.active),
-      ),
+        opts.active === undefined ? undefined : eq(medications.active, opts.active)
+      )
     )
-    .orderBy(
-      opts.orderBy === 'name' ? asc(medications.name) : desc(medications.createdAt),
-    );
+    .orderBy(opts.orderBy === 'name' ? asc(medications.name) : desc(medications.createdAt));
 }
 
 export async function createMedication(
   actorId: string,
   scope: { ownerId: string; dependentId: string | null },
-  input: unknown,
+  input: unknown
 ): Promise<MedicationRow> {
   await requireAuthz(actorId, scope, 'medications', 'write');
   const values = medicationInputSchema.parse(input);
-  const [row] = await db
-    .insert(medications)
-    .values({ ...values, userId: scope.ownerId, dependentId: scope.dependentId })
-    .returning();
-  return row;
+  return db.transaction((tx) => {
+    const [row] = tx
+      .insert(medications)
+      .values({ ...values, userId: scope.ownerId, dependentId: scope.dependentId })
+      .returning()
+      .all();
+    if (row.active) invalidateInteractionCheck(row.userId, row.dependentId, tx);
+    return row;
+  });
 }
 
 /** Row scope comes from the row itself (RLS parity for by-id operations). */
@@ -88,22 +92,35 @@ async function loadRow(id: string): Promise<MedicationRow> {
 export async function updateMedication(
   actorId: string,
   id: string,
-  updates: unknown,
+  updates: unknown
 ): Promise<MedicationRow> {
   const row = await loadRow(id);
   await requireAuthz(
     actorId,
     { ownerId: row.userId, dependentId: row.dependentId },
     'medications',
-    'write',
+    'write'
   );
   const values = medicationUpdateSchema.parse(updates);
-  const [updated] = await db
-    .update(medications)
-    .set({ ...values, updatedAt: new Date().toISOString() })
-    .where(eq(medications.id, id))
-    .returning();
-  return updated;
+  return db.transaction((tx) => {
+    const previous = tx.select().from(medications).where(eq(medications.id, id)).get();
+    if (!previous) throw new NotFoundError();
+    const [updated] = tx
+      .update(medications)
+      .set({ ...values, updatedAt: new Date().toISOString() })
+      .where(eq(medications.id, id))
+      .returning()
+      .all();
+    if (
+      (previous.active || updated.active) &&
+      (['name', 'dosage', 'frequency', 'active', 'rxcui'] as const).some(
+        (key) => previous[key] !== updated[key]
+      )
+    ) {
+      invalidateInteractionCheck(updated.userId, updated.dependentId, tx);
+    }
+    return updated;
+  });
 }
 
 export async function deleteMedication(actorId: string, id: string): Promise<void> {
@@ -112,7 +129,10 @@ export async function deleteMedication(actorId: string, id: string): Promise<voi
     actorId,
     { ownerId: row.userId, dependentId: row.dependentId },
     'medications',
-    'delete',
+    'delete'
   );
-  await db.delete(medications).where(eq(medications.id, id));
+  db.transaction((tx) => {
+    tx.delete(medications).where(eq(medications.id, id)).run();
+    if (row.active) invalidateInteractionCheck(row.userId, row.dependentId, tx);
+  });
 }

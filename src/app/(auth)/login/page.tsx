@@ -1,6 +1,7 @@
 import { getCapabilities } from '@/lib/capabilities';
 import { getSignupPolicy } from '@/lib/auth';
 import LoginForm from './login-form';
+import { safeReturnTo } from '@/lib/auth/return-to';
 
 /**
  * Must render per-request: getCapabilities() reads process.env (GOOGLE_*,
@@ -19,7 +20,7 @@ export const dynamic = 'force-dynamic';
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invite?: string }>;
+  searchParams: Promise<{ invite?: string; returnTo?: string }>;
 }) {
   const { googleAuth } = getCapabilities();
   const [policy, params] = await Promise.all([getSignupPolicy(), searchParams]);
@@ -29,6 +30,7 @@ export default async function LoginPage({
       googleEnabled={googleAuth}
       signupPolicy={policy}
       inviteToken={typeof params.invite === 'string' ? params.invite : null}
+      returnTo={safeReturnTo(params.returnTo)}
     />
   );
 }

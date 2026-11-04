@@ -4,12 +4,7 @@
  * Sources: 001_initial_schema.sql, 004_dependents.sql, 013_api_keys.sql.
  */
 import { sql } from 'drizzle-orm';
-import {
-  sqliteTable,
-  text,
-  integer,
-  index,
-} from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { user } from './auth';
 import { dependents } from './users';
 import { medications } from './clinical';
@@ -26,6 +21,11 @@ export const connectedSources = sqliteTable('connected_sources', {
   refreshTokenEncrypted: text('refresh_token_encrypted'),
   tokenExpiresAt: text('token_expires_at'),
   lastSyncAt: text('last_sync_at'),
+  lastAttemptAt: text('last_attempt_at'),
+  lastSuccessAt: text('last_success_at'),
+  lastOutcome: text('last_outcome'),
+  lastErrorCode: text('last_error_code'),
+  nextRetryAt: text('next_retry_at'),
   status: text('status').notNull().default('active'),
   createdAt: timestampNow('created_at'),
 });
@@ -62,6 +62,7 @@ export const interactionAlerts = sqliteTable(
     // when snoozedUntil IS NULL or has already passed; snoozing sets it to a
     // future instant. `dismissed` is retained (unused) to avoid a destructive
     // column drop.
+    contextVersion: integer('context_version').notNull().default(0),
     snoozedUntil: text('snoozed_until'),
     // 006 — stable key for one interaction (sorted, lowercased med names), so a
     // re-check preserves an existing alert's snooze instead of wiping/recreating.
@@ -73,7 +74,7 @@ export const interactionAlerts = sqliteTable(
       .notNull(),
     dependentId: text('dependent_id').references(() => dependents.id, { onDelete: 'cascade' }),
   },
-  (t) => [index('idx_interaction_alerts_user').on(t.userId, t.dismissed, sql`${t.checkedAt} desc`)],
+  (t) => [index('idx_interaction_alerts_user').on(t.userId, t.dismissed, sql`${t.checkedAt} desc`)]
 );
 
 // 006 — one row per (user, dependent scope): the outcome of the most recent
@@ -87,10 +88,14 @@ export const interactionChecks = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     dependentId: text('dependent_id').references(() => dependents.id, { onDelete: 'cascade' }),
+    contextVersion: integer('context_version').notNull().default(0),
     hasInteractions: integer('has_interactions', { mode: 'boolean' }).notNull().default(false),
+    aiProvenance: text('ai_provenance', { mode: 'json' }).$type<
+      import('@/lib/ai/types').AiProvenance
+    >(),
     checkedAt: timestampNow('checked_at'),
   },
-  (t) => [index('idx_interaction_checks_user').on(t.userId, t.dependentId)],
+  (t) => [index('idx_interaction_checks_user').on(t.userId, t.dependentId)]
 );
 
 // 007 — invite-only registration. After the first (admin) account exists,
@@ -133,5 +138,5 @@ export const apiKeys = sqliteTable(
     // source was partial (WHERE revoked_at IS NULL); flattened per plan —
     // token_hash is UNIQUE anyway, this is a lookup helper only
     index('idx_api_keys_hash').on(t.tokenHash),
-  ],
+  ]
 );

@@ -25,7 +25,7 @@ describe('DailyTable', () => {
         row('resting_hr', 55, '2026-07-07T00:00:00Z'),
         row('sleep_score', 82, '2026-07-08T00:00:00Z'),
       ],
-      '2026-07-08',
+      '2026-07-08'
     );
     render(<DailyTable sections={sections} />);
 
@@ -42,11 +42,8 @@ describe('DailyTable', () => {
 
   it('labels sum-metric deltas against the 7d daily average', () => {
     const sections = buildDailySections(
-      [
-        row('steps', 10000, '2026-07-08T00:00:00Z'),
-        row('steps', 7000, '2026-07-07T00:00:00Z'),
-      ],
-      '2026-07-08',
+      [row('steps', 10000, '2026-07-08T00:00:00Z'), row('steps', 7000, '2026-07-07T00:00:00Z')],
+      '2026-07-08'
     );
     render(<DailyTable sections={sections} />);
     // baseline 7000/7 = 1000 → ▲ 9000 steps vs 7d daily avg
@@ -57,7 +54,7 @@ describe('DailyTable', () => {
     const local = (h: number) => new Date(2026, 6, 8, h, 15).toISOString();
     const sections = buildDailySections(
       [row('blood_glucose', 95, local(7)), row('blood_glucose', 140, local(18))],
-      '2026-07-08',
+      '2026-07-08'
     );
     render(<DailyTable sections={sections} />);
     expect(screen.getByText('95')).toBeInTheDocument();
@@ -66,10 +63,23 @@ describe('DailyTable', () => {
     expect(screen.getByText(formatLocalTime(local(18)))).toBeInTheDocument();
   });
 
+  it('formats intraday readings in the same instance timezone used to group the day', () => {
+    const instant = '2026-10-23T06:30:00Z';
+    const sections = buildDailySections(
+      [row('bp_systolic', 120, instant)],
+      '2026-10-22',
+      [],
+      'America/Phoenix'
+    );
+    render(<DailyTable sections={sections} timeZone="America/Phoenix" />);
+    expect(screen.getByText('120')).toBeInTheDocument();
+    expect(screen.getByText(formatLocalTime(instant, 'America/Phoenix'))).toBeInTheDocument();
+  });
+
   it('renders duration metrics as h/m without a unit suffix', () => {
     const sections = buildDailySections(
       [row('deep_sleep', 462, '2026-07-08T00:00:00Z')],
-      '2026-07-08',
+      '2026-07-08'
     );
     render(<DailyTable sections={sections} />);
     expect(screen.getByText('7h 42m')).toBeInTheDocument();
@@ -77,22 +87,16 @@ describe('DailyTable', () => {
   });
 
   it('renders ordinal readings as label text', () => {
-    const sections = buildDailySections(
-      [row('mood', 4, '2026-07-08T00:00:00Z')],
-      '2026-07-08',
-    );
+    const sections = buildDailySections([row('mood', 4, '2026-07-08T00:00:00Z')], '2026-07-08');
     render(<DailyTable sections={sections} />);
     expect(screen.getByText('good')).toBeInTheDocument();
   });
 
   it('tints maintain-goal drift with the warn color', () => {
     const sections = buildDailySections(
-      [
-        row('weight', 212, '2026-07-08T00:00:00Z'),
-        row('weight', 210, '2026-07-07T00:00:00Z'),
-      ],
+      [row('weight', 212, '2026-07-08T00:00:00Z'), row('weight', 210, '2026-07-07T00:00:00Z')],
       '2026-07-08',
-      [{ metricKey: 'weight', direction: 'maintain' }],
+      [{ metricKey: 'weight', direction: 'maintain' }]
     );
     render(<DailyTable sections={sections} />);
     const delta = screen.getByText(/2 lbs vs 7d avg/).closest('span[title]');

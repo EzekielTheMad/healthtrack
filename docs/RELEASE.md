@@ -2,13 +2,31 @@
 
 This document owns HealthTrack-specific container and release knowledge. It is
 not permission to publish an image, change package visibility, submit a CA
-listing or deploy an instance. For Rook's generic engineering workflow, use the
-[engineering SOP](obsidian://open?file=systems%2Fengineering-sops) (private
-operator vault entry); reusable procedures live in Rook's linked skills, not
-copies here. Other contributors follow the repository instructions and their
-maintainer's authorization.
+listing or deploy an instance. Contributors follow the repository instructions
+and their maintainer's authorization.
+
+## Current web-focused2.1.0 boundary
+
+[WEB-COMPLETION](WEB-COMPLETION.md) defines the current approved web extension.
+Physical Android acceptance remains deferred and unverified outside this web
+release; no public APK is included. The [candidate checklist](RELEASE-CHECKLIST.md)
+records current verification and its limits, including live provider coverage,
+Oura and the missing production post-revocation bearer check. Final corrected
+images still require exact review, runtime on every advertised architecture,
+isolated upgrade/compatible restore, and separate publication/deployment
+authorization. Earlier native-CI and private deployment evidence belongs to its
+recorded source and binary. See [release notes](RELEASE-NOTES-2.1.md) for changes
+and upgrade compatibility.
 
 ## Container implementation
+
+- The build runs `scripts/prepare-migration-artifacts.mjs` before compiling and
+  copies its separate output into the final image. The manifest pins the known
+  source and runtime SHA-256 for each migration/journal file. Only an exact known
+  source or already-pinned runtime input is accepted; the declared conversion
+  must reproduce the runtime digest. This does not edit source SQL or a database.
+  Added migrations or changed inputs require a deliberate manifest review.
+  CI and release builds use this same Dockerfile rule, without a private overlay.
 
 - [Dockerfile](../Dockerfile) builds dependencies with Python/make/g++, then
   Next.js standalone output and an esbuild-bundled migration runner. The runtime
@@ -43,6 +61,22 @@ release. If anonymous installation is intended, verify an unauthenticated pull;
 a workflow push does not prove package visibility. Visibility changes and
 release-tag pushes require separate publication authority.
 
+Before either platform digest reaches the manifest job, the release verifier
+pulls that exact digest on its native runner and checks the source, architecture,
+all pinned migration bytes, fresh startup, unchanged ledger after restart and
+anonymous `401` responses. The fixture has no network, published ports, accounts,
+sessions or API keys; it has bounded memory/CPU and removes its labeled container
+and fresh volume. Failure, including failed cleanup, blocks named manifest tags.
+The digest itself was already pushed: a failed run may leave registry content.
+There is no automatic registry deletion, tag reset or deployment rollback.
+This gate does not replace an applicable isolated upgrade/compatible restore
+rehearsal or prove a provider, phone or real-user workflow.
+
+The non-publishing CI container smoke job uses the same native AMD64 and ARM64
+runner types, verifies the running Node architecture, and can also be dispatched
+manually. A passing build on one architecture does not clear the other. Running
+this workflow remotely still requires authorization to push or dispatch it.
+
 ## Release evidence requirements
 
 These are retained project checks, **not a claim that the current release or a
@@ -70,13 +104,17 @@ do not test account creation or imports against production health records.
    internal exception details. Verify PAT hash-only storage, scopes, expiry and
    revocation, and encrypted OAuth token storage. These checks do not assert
    universal coverage across current routes.
-5. Check application-supplied headers and production Secure session cookies
-   behind the actual TLS-terminating proxy. [next.config.ts](../next.config.ts)
+5. Check application-supplied headers and session cookies at the intended
+   `APP_URL`. The supported LAN HTTP installation uses non-Secure session
+   cookies so browser authentication works at that HTTP origin. HTTPS origins
+   require Secure cookies, including behind a proxy forwarding plain HTTP
+   internally. [next.config.ts](../next.config.ts)
    defines CSP (including Next's inline-script/style allowances), DENY framing,
    `nosniff`, Referrer/Permissions policies and production HSTS **without**
    `includeSubDomains`/preload. [Auth configuration](../src/lib/auth/index.ts)
-   forces Secure cookies in production. Inspect observed responses rather than
-   inferring safety from a proxy configuration. Retain the qualifications in
+   selects Secure cookies from `APP_URL`'s scheme, not `NODE_ENV`. Inspect
+   sign-in responses and an authenticated reload at the browser-facing URL
+   rather than inferring behavior from proxy configuration. Retain the qualifications in
    [SECURITY.md](../SECURITY.md), including unverified-email sharing and signed
    Health Connect ingestion.
 6. Keep health/legal wording visible: signup consent, legal links in the app
@@ -92,13 +130,20 @@ do not test account creation or imports against production health records.
    `501` behavior, cache/refresh and repeat-query deduplication where applicable,
    and review-before-write with partial-extraction warnings. Do not infer that
    every AI endpoint implements caching from this requirement.
-8. Before authorized promotion, preserve a consistent stopped-container backup
+8. Follow the [upgrade and rollback preflight](UPGRADING.md). Before authorized
+   promotion, preserve a consistent stopped-container backup
    of `/data` and the effective configuration, plus the prior immutable image
    identity. Test restore in isolation. Because startup applies migrations,
    reverting an image alone may be unsafe; use a compatible image/data pair or
    restore the pre-upgrade snapshot under operator authority. After promotion
    read back the running identity, health and affected security behavior. A
    backup's existence is not a successful restore drill.
+
+For v2, also complete the timezone/ingestion preflight and patient-scoped
+import, correction and restore checks in [V2.md](V2.md). Historical Health
+Connect days were normalized in `America/Phoenix`; changing configured `TZ`
+does not automatically migrate those saved days. Confirm the intended historical
+calendar before ingestion or reprocessing.
 
 ## Historical lessons (July 2026; not current deployment state)
 

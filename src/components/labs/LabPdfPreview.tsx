@@ -6,9 +6,6 @@
  * streamed from GET /api/files/<storagePath>, which authorizes the request
  * against the owning lab visit (owner / accepted share / delegate).
  *
- * Note: this component was unreferenced even before the self-hosted
- * migration (the legacy bucket version had no call sites); it is kept
- * functional as the wiring point for lab PDF previews.
  */
 import React, { useState } from 'react';
 
@@ -29,15 +26,12 @@ export default function LabPdfPreview({ storagePath }: LabPdfPreviewProps) {
           border: '1px solid var(--border-card)',
         }}
       >
-        Unable to load PDF preview
+        Unable to load source document
       </div>
     );
   }
 
-  const url = `/api/files/${storagePath
-    .split('/')
-    .map(encodeURIComponent)
-    .join('/')}`;
+  const url = `/api/files/${storagePath.split('/').map(encodeURIComponent).join('/')}`;
 
   return (
     <div className="space-y-2">
@@ -60,20 +54,25 @@ export default function LabPdfPreview({ storagePath }: LabPdfPreviewProps) {
             clipRule="evenodd"
           />
         </svg>
-        {expanded ? 'Hide PDF Preview' : 'Show PDF Preview'}
+        {expanded ? 'Hide source document' : 'View source document'}
       </button>
 
       {expanded && (
-        <div
-          className="rounded-lg overflow-hidden border"
-          style={{ borderColor: 'var(--border-card)' }}
-        >
-          <iframe
-            src={url}
-            title="Lab PDF Preview"
-            className="w-full"
-            style={{ height: 500, backgroundColor: '#fff' }}
-          />
+        <div className="space-y-2">
+          <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm underline">
+            Open original document
+          </a>
+          <div
+            className="rounded-lg overflow-hidden border"
+            style={{ borderColor: 'var(--border-card)' }}
+          >
+            <iframe
+              src={url}
+              title="Original lab document"
+              className="w-full"
+              style={{ height: 500, backgroundColor: '#fff' }}
+            />
+          </div>
         </div>
       )}
     </div>

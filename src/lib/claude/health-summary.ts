@@ -1,5 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
-import { reasoningModel } from './model';
+import type { AiConfiguration } from '@/lib/ai/types';
 import { createMessage } from './call';
 import { aggregateVitals, formatAggregatesForPrompt } from '@/lib/metrics/aggregate';
 import {
@@ -11,7 +10,16 @@ import {
 import { attachLabProvenance } from './lab-warnings';
 
 export interface HealthSummaryInput {
-  medications: Array<{ name: string; dosage: string | null; frequency: string | null }>;
+  medications: Array<{
+    name: string;
+    dosage: string | null;
+    frequency: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+  }>;
+  nutritionContext?: string;
+  fidelityContext?: string;
+  contextMetadata?: import('@/lib/health-context-types').QueryContextMetadata;
   conditions: Array<{ name: string }>;
   recentLabFlags: Array<{
     test_name: string;
@@ -54,6 +62,7 @@ export interface HealthSummaryHighlight {
 }
 
 export interface HealthSummary {
+  contextMetadata?: import('@/lib/health-context-types').QueryContextMetadata;
   summary: string;
   highlights: HealthSummaryHighlight[];
 }
@@ -92,19 +101,31 @@ Rules:
  */
 export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): string {
   const parts: string[] = [];
+  if (input.contextMetadata)
+    parts.push(
+      `Coverage: ${JSON.stringify(input.contextMetadata.coverage)}. Missing days are unknown. Do not infer causation or combine competing sources.`
+    );
+  if (input.nutritionContext)
+    parts.push(`Nutrition (separate daily source snapshots): ${input.nutritionContext}`);
+  if (input.fidelityContext)
+    parts.push(
+      `Typed clinical and scan evidence: ${input.fidelityContext}. Preserve outcome comparators/raw units/date precision and source/device boundaries. Prescribed and actual use differ. Unconfirmed status is not current use; missing events are not missed doses. Conflicts require review. Scan muscle/water compartments overlap, and estimates are not measured tissue gains.`
+    );
 
   if (input.medications.length > 0) {
     parts.push(
-      `Active medications (${input.medications.length}): ${input.medications.map((m) => m.name).join(', ')}`,
+      `Active medications (${input.medications.length}): ${input.medications.map((m) => m.name).join(', ')}`
     );
   } else {
-    parts.push('No active medications recorded.');
+    parts.push(
+      input.fidelityContext
+        ? 'No active medications in the legacy projection; consult the typed clinical history and its status/uncertainty.'
+        : 'No active medications recorded.'
+    );
   }
 
   if (input.conditions.length > 0) {
-    parts.push(
-      `Conditions: ${input.conditions.map((c) => c.name).join(', ')}`,
-    );
+    parts.push(`Conditions: ${input.conditions.map((c) => c.name).join(', ')}`);
   }
 
   if (input.recentLabFlags.length > 0) {
@@ -113,9 +134,9 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
         input.recentLabFlags
           .map(
             (r) =>
-              `- ${r.test_name}: ${r.value} ${r.unit ?? ''} (${r.flag}${r.reference_range_low != null && r.reference_range_high != null ? `, ref: ${r.reference_range_low}-${r.reference_range_high}` : ''}) — drawn ${r.visit_date}`,
+              `- ${r.test_name}: ${r.value} ${r.unit ?? ''} (${r.flag}${r.reference_range_low != null && r.reference_range_high != null ? `, ref: ${r.reference_range_low}-${r.reference_range_high}` : ''}) — drawn ${r.visit_date}`
           )
-          .join('\n'),
+          .join('\n')
     );
   }
 
@@ -129,7 +150,7 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
         recordedAt: v.recorded_at,
         metadata: v.metadata,
       })),
-      now,
+      now
     );
     const block = formatAggregatesForPrompt(aggregates);
     if (block) {
@@ -140,7 +161,7 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
   if (input.interactionAlerts.length > 0) {
     parts.push(
       'Active medication alerts:\n' +
-        input.interactionAlerts.map((a) => `- [${a.severity}] ${a.alert_text}`).join('\n'),
+        input.interactionAlerts.map((a) => `- [${a.severity}] ${a.alert_text}`).join('\n')
     );
   }
 
@@ -151,7 +172,7 @@ export function buildHealthSnapshot(input: HealthSummaryInput, now?: Date): stri
   const trainingBlock = formatRecentTrainingForPrompt(
     input.recentWorkouts ?? [],
     input.goals ?? [],
-    now,
+    now
   );
   if (trainingBlock) parts.push(trainingBlock);
 
@@ -190,19 +211,11 @@ export function extractSummaryJson(responseText: string): HealthSummary | undefi
 
 export async function generateHealthSummary(
   input: HealthSummaryInput,
+  config: AiConfiguration
 ): Promise<HealthSummary> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured');
-  }
-
-  const client = new Anthropic({ apiKey });
-
   const userMessage = buildHealthSnapshot(input);
 
-  const message = await createMessage(client, {
-    model: reasoningModel(),
-    thinking: { type: 'disabled' },
+  const message = await createMessage(config, 'primary', {
     max_tokens: 1536,
     system: SYSTEM_PROMPT,
     messages: [
@@ -217,15 +230,11 @@ export async function generateHealthSummary(
   const responseText = textBlock?.type === 'text' ? textBlock.text : '';
 
   if (!responseText) {
-    throw new Error('No text response from Claude');
+    throw new Error('No text response from AI');
   }
 
   const parsed = extractSummaryJson(responseText);
   if (!parsed) {
-    console.error(
-      'Health summary parse failed. Raw response (first 800 chars):',
-      responseText.slice(0, 800),
-    );
     throw new Error('Failed to parse health summary response');
   }
 
@@ -239,7 +248,7 @@ export async function generateHealthSummary(
     ...parsed,
     highlights: attachLabProvenance(
       parsed.highlights,
-      input.recentLabFlags.map((f) => ({ testName: f.test_name, visitDate: f.visit_date })),
+      input.recentLabFlags.map((f) => ({ testName: f.test_name, visitDate: f.visit_date }))
     ),
   };
 }

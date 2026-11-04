@@ -19,6 +19,9 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Verify known migration inputs before compiling; keep source SQL untouched.
+# The separate output has the same pinned bytes for Git archives and checkouts.
+RUN node scripts/prepare-migration-artifacts.mjs /app/drizzle /migration-runtime
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 # Self-contained migration runner; better-sqlite3 stays external and resolves
@@ -31,6 +34,8 @@ RUN npx esbuild scripts/db-migrate.ts --bundle --platform=node --format=cjs \
 # entrypoint; wget serves the HEALTHCHECK.
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS runner
+ARG VCS_REF=development
+ENV BUILD_REVISION=$VCS_REF
 RUN apk add --no-cache su-exec wget
 WORKDIR /app
 
@@ -46,7 +51,7 @@ ENV NODE_ENV=production \
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
-COPY --from=build /app/drizzle ./drizzle
+COPY --from=build /migration-runtime ./drizzle
 COPY --from=build /app/db-migrate.js ./db-migrate.js
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import type { Medication, MedicationFrequency } from '@/lib/types';
+import type { Medication } from '@/lib/types';
+import { formatDateOnly } from '@/lib/dates';
 import AddMedForm, { type AddMedFormData } from './AddMedForm';
 
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -16,12 +17,6 @@ const FREQUENCY_LABELS: Record<string, string> = {
   as_needed: 'As Needed',
   other: 'Other',
 };
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
 
 interface MedCardProps {
   medication: Medication;
@@ -39,6 +34,7 @@ export default function MedCard({ medication, onUpdate }: MedCardProps) {
   if (editing) {
     return (
       <div
+        id={`record-${medication.id}`}
         className="rounded-xl border p-5"
         style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
         role="article"
@@ -55,13 +51,14 @@ export default function MedCard({ medication, onUpdate }: MedCardProps) {
           initialValues={{
             name: medication.name,
             dosage: medication.dosage ?? undefined,
-            frequency: (medication.frequency as MedicationFrequency) ?? 'once_daily',
+            frequency: medication.frequency ?? '',
             category: medication.category ?? undefined,
             prescriber_id: medication.prescriber_id,
-            start_date: medication.start_date ?? new Date().toISOString().slice(0, 10),
+            start_date: medication.start_date ?? '',
             end_date: medication.end_date ?? undefined,
             notes: medication.notes ?? undefined,
             active: medication.active,
+            rxcui: medication.rxcui ?? undefined,
           }}
         />
       </div>
@@ -70,6 +67,7 @@ export default function MedCard({ medication, onUpdate }: MedCardProps) {
 
   return (
     <div
+      id={`record-${medication.id}`}
       className="rounded-xl border p-5"
       style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
       role="article"
@@ -82,10 +80,17 @@ export default function MedCard({ medication, onUpdate }: MedCardProps) {
             {/* Status dot */}
             <span
               className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0"
-              style={{ backgroundColor: medication.active ? 'var(--color-sage)' : 'var(--color-text-muted)' }}
+              style={{
+                backgroundColor: medication.active
+                  ? 'var(--color-sage)'
+                  : 'var(--color-text-muted)',
+              }}
               aria-label={medication.active ? 'Active' : 'Inactive'}
             />
-            <h3 className="text-base font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
+            <h3
+              className="text-base font-semibold truncate"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               {medication.name}
             </h3>
           </div>
@@ -118,13 +123,12 @@ export default function MedCard({ medication, onUpdate }: MedCardProps) {
           )}
 
           {/* Dates */}
-          <div className="flex items-center gap-3 mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-            {medication.start_date && (
-              <span>Started {formatDate(medication.start_date)}</span>
-            )}
-            {medication.end_date && (
-              <span>Ended {formatDate(medication.end_date)}</span>
-            )}
+          <div
+            className="flex items-center gap-3 mt-2 text-xs"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
+            {medication.start_date && <span>Started {formatDateOnly(medication.start_date)}</span>}
+            {medication.end_date && <span>Ended {formatDateOnly(medication.end_date)}</span>}
           </div>
 
           {/* Prescriber placeholder (ID shown; full resolution would need a join) */}

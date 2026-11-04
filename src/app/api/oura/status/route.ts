@@ -20,6 +20,12 @@ export async function GET() {
     return NextResponse.json({
       status: source?.status ?? null,
       last_sync_at: source?.lastSyncAt ?? null,
+      last_attempt_at: source?.lastAttemptAt ?? null,
+      last_success_at: source?.lastSuccessAt ?? null,
+      last_outcome: source?.lastOutcome ?? null,
+      last_error_code: source?.lastErrorCode ?? null,
+      next_retry_at: source?.nextRetryAt ?? null,
+      retry_blocked: !!(source?.nextRetryAt && Date.parse(source.nextRetryAt) > Date.now()),
     });
   } catch (error) {
     return errorResponse(error);

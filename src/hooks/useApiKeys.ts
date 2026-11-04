@@ -44,62 +44,56 @@ export function useApiKeys() {
   }, []);
 
   useEffect(() => {
+    // Initialize the external key list; this reusable action also updates loading state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchKeys();
   }, [fetchKeys]);
 
-  const createKey = useCallback(
-    async (data: CreateKeyData): Promise<string | null> => {
-      setError(null);
-      try {
-        const res = await fetch('/api/api-keys', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
+  const createKey = useCallback(async (data: CreateKeyData): Promise<string | null> => {
+    setError(null);
+    try {
+      const res = await fetch('/api/api-keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || 'Failed to create API key');
-        }
-
-        const result: { key: ApiKey; token: string } = await res.json();
-        setKeys((prev) => [result.key, ...prev]);
-        return result.token;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Failed to create API key';
-        setError(msg);
-        return null;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to create API key');
       }
-    },
-    [],
-  );
 
-  const revokeKey = useCallback(
-    async (id: string): Promise<boolean> => {
-      setError(null);
-      try {
-        const res = await fetch(`/api/api-keys?id=${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-        });
+      const result: { key: ApiKey; token: string } = await res.json();
+      setKeys((prev) => [result.key, ...prev]);
+      return result.token;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create API key';
+      setError(msg);
+      return null;
+    }
+  }, []);
 
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || 'Failed to revoke API key');
-        }
+  const revokeKey = useCallback(async (id: string): Promise<boolean> => {
+    setError(null);
+    try {
+      const res = await fetch(`/api/api-keys?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
 
-        setKeys((prev) =>
-          prev.map((k) =>
-            k.id === id ? { ...k, revoked_at: new Date().toISOString() } : k,
-          ),
-        );
-        return true;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to revoke API key');
-        return false;
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to revoke API key');
       }
-    },
-    [],
-  );
+
+      setKeys((prev) =>
+        prev.map((k) => (k.id === id ? { ...k, revoked_at: new Date().toISOString() } : k))
+      );
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to revoke API key');
+      return false;
+    }
+  }, []);
 
   return {
     keys,

@@ -1,36 +1,45 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
-import { authClient } from '@/lib/auth/client';
+import { useEffect } from 'react';
+import { authClient, useSession } from '@/lib/auth/client';
+import { startIdleSession } from '@/lib/auth/idle-activity';
 
 interface AutoLogoutProps {
   timeoutMinutes: number;
 }
 
+/** Each login has one shared inactivity deadline across browser/TWA documents. */
 export function AutoLogout({ timeoutMinutes }: AutoLogoutProps) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const timeoutMs = timeoutMinutes * 60 * 1000;
-
-  const handleLogout = useCallback(async () => {
-    await authClient.signOut();
-    window.location.href = '/login?reason=timeout';
-  }, []);
-
-  const resetTimer = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(handleLogout, timeoutMs);
-  }, [handleLogout, timeoutMs]);
+  const { data, isPending } = useSession();
+  const sessionId = data?.session.id;
 
   useEffect(() => {
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'];
-    events.forEach((e) => window.addEventListener(e, resetTimer));
-    resetTimer();
-
-    return () => {
-      events.forEach((e) => window.removeEventListener(e, resetTimer));
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [resetTimer]);
+    if (isPending || !sessionId) return;
+    return startIdleSession({
+      sessionId,
+      timeoutMs: timeoutMinutes * 60 * 1000,
+      getCurrentSessionId: async () => {
+        const result = await authClient.getSession({
+          query: { disableCookieCache: true, disableRefresh: true },
+        });
+        if (result.error) throw new Error('Session check unavailable');
+        return result.data?.session.id ?? null;
+      },
+      signOut: async () => {
+        await authClient.signOut();
+      },
+      onSessionChanged: () => {
+        // Reauthorize a neutral page and discard the previous account/person state.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = '/health';
+      },
+      onTimeout: () => {
+        // A full navigation discards the expired record/person state.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+        window.location.href = '/login?reason=timeout';
+      },
+    });
+  }, [isPending, sessionId, timeoutMinutes]);
 
   return null;
 }

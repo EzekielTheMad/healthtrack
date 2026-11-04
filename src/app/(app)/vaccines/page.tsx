@@ -6,18 +6,28 @@ import { useCapabilities } from '@/hooks/useCapabilities';
 import VaccineCard from '@/components/vaccines/VaccineCard';
 import AddVaccineForm, { type AddVaccineFormData } from '@/components/vaccines/AddVaccineForm';
 import VaccineImport from '@/components/vaccines/VaccineImport';
-import VaccineImportReview from '@/components/vaccines/VaccineImportReview';
+import ImportBatchReview from '@/components/settings/ImportBatchReview';
 import EmptyState from '@/components/shared/EmptyState';
 import Skeleton from '@/components/shared/Skeleton';
-import type { ParsedVaccinePdfResult, ParsedVaccineRecord } from '@/lib/claude/parse-vaccine-pdf';
+import type { ParsedVaccinePdfResult } from '@/lib/claude/parse-vaccine-pdf';
+import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
+import { useSession } from '@/lib/auth/client';
 
 type ViewMode = 'list' | 'add' | 'import' | 'review';
 
 export default function VaccinesPage() {
+  const { dependentId, delegateOwnerId } = useActiveProfile();
+  const { data: session } = useSession();
+  return (
+    <PatientVaccinesPage key={JSON.stringify([session?.user.id, dependentId, delegateOwnerId])} />
+  );
+}
+function PatientVaccinesPage() {
   const { capabilities } = useCapabilities();
-  const { vaccines, loading, error, addVaccine, updateVaccine, deleteVaccine } = useVaccines();
+  const { vaccines, loading, error, addVaccine, updateVaccine, deleteVaccine, refetch } =
+    useVaccines();
   const [mode, setMode] = useState<ViewMode>('list');
-  const [parsedRecords, setParsedRecords] = useState<ParsedVaccineRecord[]>([]);
+  const [batchId, setBatchId] = useState<string | null>(null);
 
   const handleAdd = async (data: AddVaccineFormData) => {
     await addVaccine({
@@ -36,27 +46,9 @@ export default function VaccinesPage() {
   };
 
   const handleParsed = (results: ParsedVaccinePdfResult) => {
-    setParsedRecords(results.vaccines);
+    if (!results.import_batch_id) return;
+    setBatchId(results.import_batch_id);
     setMode('review');
-  };
-
-  const handleImportSave = async (records: ParsedVaccineRecord[]) => {
-    for (const rec of records) {
-      await addVaccine({
-        name: rec.name,
-        cvx_code: null,
-        vaccine_date: rec.vaccine_date ?? new Date().toISOString().slice(0, 10),
-        dose_number: rec.dose_number ?? null,
-        series_doses: rec.series_doses ?? null,
-        manufacturer: rec.manufacturer || null,
-        lot_number: rec.lot_number || null,
-        provider_id: null,
-        next_dose_date: null,
-        notes: rec.notes || null,
-      });
-    }
-    setParsedRecords([]);
-    setMode('list');
   };
 
   return (
@@ -69,18 +61,18 @@ export default function VaccinesPage() {
           <div className="flex gap-2">
             {/* PDF import runs through the AI parser — hidden when unconfigured */}
             {capabilities?.ai !== false && (
-            <button
-              type="button"
-              onClick={() => setMode('import')}
-              className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
-              style={{
-                backgroundColor: 'var(--bg-card)',
-                color: 'var(--color-sage)',
-                border: '1px solid var(--color-sage)',
-              }}
-            >
-              Import PDF
-            </button>
+              <button
+                type="button"
+                onClick={() => setMode('import')}
+                className="px-4 py-2 rounded-lg text-sm font-medium cursor-pointer"
+                style={{
+                  backgroundColor: 'var(--bg-card)',
+                  color: 'var(--color-sage)',
+                  border: '1px solid var(--color-sage)',
+                }}
+              >
+                Import PDF
+              </button>
             )}
             <button
               type="button"
@@ -110,17 +102,19 @@ export default function VaccinesPage() {
       )}
 
       {/* Review parsed records */}
-      {mode === 'review' && (
-        <div
-          className="rounded-xl border p-5"
-          style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
-        >
-          <VaccineImportReview
-            records={parsedRecords}
-            onSave={handleImportSave}
-            onCancel={() => setMode('list')}
-          />
-        </div>
+      {mode === 'review' && batchId && (
+        <ImportBatchReview
+          batchId={batchId}
+          onComplete={() => {
+            setBatchId(null);
+            setMode('list');
+            void refetch();
+          }}
+          onCancel={() => {
+            setBatchId(null);
+            setMode('list');
+          }}
+        />
       )}
 
       {/* Manual add form */}
@@ -129,10 +123,7 @@ export default function VaccinesPage() {
           className="rounded-xl border p-5"
           style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
         >
-          <h2
-            className="text-lg font-semibold mb-4"
-            style={{ color: 'var(--color-text-primary)' }}
-          >
+          <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>
             New Vaccine
           </h2>
           <AddVaccineForm onSubmit={handleAdd} onCancel={() => setMode('list')} />

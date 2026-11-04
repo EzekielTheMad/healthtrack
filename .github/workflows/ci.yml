@@ -4,6 +4,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -37,13 +38,24 @@ jobs:
         run: npm run build
 
   docker-smoke:
-    name: Docker build + container smoke test
-    runs-on: ubuntu-latest
+    name: Docker smoke (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            node_arch: x64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            node_arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v5
 
       - name: Build image
-        run: docker build -t healthtrack:ci .
+        run: docker build --platform=${{ matrix.platform }} --build-arg VCS_REF=${{ github.sha }} -t healthtrack:ci .
 
       - name: Start container
         run: |
@@ -71,6 +83,13 @@ jobs:
           done
           echo "::error::timed out waiting for container to become healthy"
           exit 1
+
+      - name: Verify actual runtime architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.node_arch }}
+        run: |
+          actual="$(docker exec healthtrack node -p 'process.arch')"
+          test "$actual" = "$EXPECTED_ARCH"
 
       - name: Smoke test HTTP surface
         run: |
@@ -133,3 +152,7 @@ jobs:
       - name: Container logs (on failure)
         if: failure()
         run: docker logs healthtrack || true
+
+      - name: Remove disposable container
+        if: always()
+        run: docker rm -f healthtrack || true

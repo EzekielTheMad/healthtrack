@@ -35,9 +35,10 @@ describe('getCapabilities', () => {
     });
   });
 
-  it('ai flips on with ANTHROPIC_API_KEY', () => {
+  it('AI is account-scoped and legacy environment keys never enable it', () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-    expect(getCapabilities().ai).toBe(true);
+    expect(getCapabilities().ai).toBe(false);
+    expect(getCapabilities(true).ai).toBe(true);
   });
 
   it('googleAuth requires BOTH client id and secret', () => {
@@ -67,6 +68,7 @@ describe('getCapabilities', () => {
   it('reads env at call time (no snapshot)', () => {
     expect(getCapabilities().ai).toBe(false);
     process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
-    expect(getCapabilities().ai).toBe(true);
+    expect(getCapabilities().ai).toBe(false);
+    expect(getCapabilities(true).ai).toBe(true);
   });
 });

@@ -7,27 +7,35 @@
  * whole story. If a lab_visits row references this path, the actor must pass
  * the labs 'read' check for THAT visit's scope (owner, accepted share with
  * exact dependent match, or delegate). If no row references the file (e.g. a
- * parse that was never saved as a visit), only the owner may fetch it.
+ * parse that was never saved as a visit), only the owner may fetch it. Complete
+ * medical-history source files are always owner-only, even if a lab references
+ * them: a labs-only share cannot expose other domains in the original PDF.
  * Denials and traversal probes are indistinguishable from missing files (404).
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { labVisits } from '@/db/schema';
+import { importBatches } from '@/db/schema/imports';
 import { requireUser } from '@/lib/auth/session';
 import { requireAuthz, NotFoundError } from '@/lib/authz';
 import { errorResponse } from '@/lib/api/respond';
 import { readUpload, UploadNotFoundError } from '@/lib/storage';
 
-export async function GET(
-  _request: NextRequest,
-  context: { params: Promise<{ path: string[] }> },
-) {
+export async function GET(_request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   try {
     const user = await requireUser();
     const { path: segments } = await context.params;
     if (!segments || segments.length < 2) throw new NotFoundError();
     const relPath = segments.join('/');
+    // Complete medical histories contain domains beyond labs. A labs share
+    // must never confer access to the original multi-domain source document.
+    const history = db
+      .select({ userId: importBatches.userId })
+      .from(importBatches)
+      .where(and(eq(importBatches.sourcePath, relPath), eq(importBatches.kind, 'medical_history')))
+      .get();
+    if (history && history.userId !== user.id) throw new NotFoundError();
 
     // Resolve the owning record: a lab visit referencing this path decides
     // the authz scope (its user_id + dependent_id).
@@ -42,7 +50,7 @@ export async function GET(
         user.id,
         { ownerId: visit.userId, dependentId: visit.dependentId },
         'labs',
-        'read',
+        'read'
       );
     } else if (segments[0] !== user.id) {
       // Unreferenced file: owner-only.

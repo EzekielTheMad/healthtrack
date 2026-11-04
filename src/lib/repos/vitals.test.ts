@@ -90,17 +90,13 @@ describe('vitals repo', () => {
         value: 62,
         source: 'manual',
         recordedAt: '2026-06-02T08:00:00.000Z',
-      },
+      }
     );
     expect(depRow.dependentId).toBe(depId);
 
     expect(await repo.listVitals(OWNER, ownScope)).toHaveLength(1);
-    expect(
-      await repo.listVitals(OWNER, { ownerId: OWNER, dependentId: depId }),
-    ).toHaveLength(1);
-    expect(
-      await repo.listVitals(OWNER, { ownerId: OWNER, dependentId: 'all' }),
-    ).toHaveLength(2);
+    expect(await repo.listVitals(OWNER, { ownerId: OWNER, dependentId: depId })).toHaveLength(1);
+    expect(await repo.listVitals(OWNER, { ownerId: OWNER, dependentId: 'all' })).toHaveLength(2);
   });
 
   it('share grants read with section vitals, exact scope, never write', async () => {
@@ -119,7 +115,7 @@ describe('vitals repo', () => {
 
     expect(await repo.listVitals(VIEWER, ownScope)).toHaveLength(1);
     await expect(
-      repo.listVitals(VIEWER, { ownerId: OWNER, dependentId: 'all' }),
+      repo.listVitals(VIEWER, { ownerId: OWNER, dependentId: 'all' })
     ).rejects.toMatchObject({ status: 404 });
     await expect(
       repo.createVital(VIEWER, ownScope, {
@@ -127,7 +123,7 @@ describe('vitals repo', () => {
         value: 1,
         source: 'manual',
         recordedAt: '2026-06-01T08:00:00.000Z',
-      }),
+      })
     ).rejects.toMatchObject({ status: 404 });
   });
 
@@ -151,12 +147,16 @@ describe('vitals repo', () => {
       permissionLevel: 'read_only',
     });
     await expect(
-      repo.createVital(STRANGER, { ownerId: VIEWER, dependentId: null }, {
-        metricKey: 'bp_systolic',
-        value: 120,
-        source: 'manual',
-        recordedAt: '2026-06-01T08:00:00.000Z',
-      }),
+      repo.createVital(
+        STRANGER,
+        { ownerId: VIEWER, dependentId: null },
+        {
+          metricKey: 'bp_systolic',
+          value: 120,
+          source: 'manual',
+          recordedAt: '2026-06-01T08:00:00.000Z',
+        }
+      )
     ).rejects.toMatchObject({ status: 404 });
   });
 
@@ -165,7 +165,7 @@ describe('vitals repo', () => {
       status: 404,
     });
     await expect(
-      repo.createVital(OWNER, ownScope, { metricKey: 'x', value: 'high' }),
+      repo.createVital(OWNER, ownScope, { metricKey: 'x', value: 'high' })
     ).rejects.toThrow();
 
     const row = await repo.createVital(OWNER, ownScope, {
@@ -193,9 +193,13 @@ describe('vitals repo', () => {
 
     it('owner scope: same (metric, day, source) updates in place', async () => {
       const first = await repo.createVital(OWNER, ownScope, entry(180));
-      const second = await repo.createVital(OWNER, ownScope, entry(181.5, {
-        recordedAt: '2026-07-08T21:00:00Z', // same day, later time
-      }));
+      const second = await repo.createVital(
+        OWNER,
+        ownScope,
+        entry(181.5, {
+          recordedAt: '2026-07-08T21:00:00Z', // same day, later time
+        })
+      );
 
       expect(second.value).toBe(181.5);
       expect(second.id).toBe(first.id); // same row, not a duplicate
@@ -263,9 +267,9 @@ describe('validateVitalWrite', () => {
   const base = { source: 'test', recordedAt: '2026-07-08T00:00:00Z' };
 
   it('rejects unknown metric keys, naming the key and pointing at the docs', () => {
-    expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'quantum_flux', value: 1 }),
-    ).toThrow(/quantum_flux[\s\S]*\/docs\/api/);
+    expect(() => repo.validateVitalWrite({ ...base, metricKey: 'quantum_flux', value: 1 })).toThrow(
+      /quantum_flux[\s\S]*\/docs\/api/
+    );
   });
 
   it('resolves ordinal labels to values and stamps metadata.label', () => {
@@ -289,23 +293,23 @@ describe('validateVitalWrite', () => {
   it('accepts ordinal numeric values within the label range, deriving the label', () => {
     const v = repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 4 });
     expect(v.metadata.label).toBe('strong');
-    expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 6 }),
-    ).toThrow(/between 1 and 5/);
-    expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 2.5 }),
-    ).toThrow(/integer/);
+    expect(() => repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 6 })).toThrow(
+      /between 1 and 5/
+    );
+    expect(() => repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 2.5 })).toThrow(
+      /integer/
+    );
   });
 
   it('rejects an unknown ordinal label, listing the valid ones', () => {
     expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'resilience', valueLabel: 'meh' }),
+      repo.validateVitalWrite({ ...base, metricKey: 'resilience', valueLabel: 'meh' })
     ).toThrow(/limited[\s\S]*exceptional/);
   });
 
   it('rejects value_label on non-ordinal metrics and conflicting value+label', () => {
     expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'steps', valueLabel: 'solid' }),
+      repo.validateVitalWrite({ ...base, metricKey: 'steps', valueLabel: 'solid' })
     ).toThrow(/value_label/);
     expect(() =>
       repo.validateVitalWrite({
@@ -313,26 +317,24 @@ describe('validateVitalWrite', () => {
         metricKey: 'resilience',
         value: 2,
         valueLabel: 'solid',
-      }),
+      })
     ).toThrow(/does not match/);
   });
 
   it('requires a value (or value_label for ordinals)', () => {
     expect(() => repo.validateVitalWrite({ ...base, metricKey: 'steps' })).toThrow(/value/);
-    expect(() => repo.validateVitalWrite({ ...base, metricKey: 'resilience' })).toThrow(
-      /value/,
-    );
+    expect(() => repo.validateVitalWrite({ ...base, metricKey: 'resilience' })).toThrow(/value/);
   });
 
   it('enforces the pain_level 0-10 range from the registry min/max', () => {
     expect(repo.validateVitalWrite({ ...base, metricKey: 'pain_level', value: 0 }).value).toBe(0);
     expect(repo.validateVitalWrite({ ...base, metricKey: 'pain_level', value: 10 }).value).toBe(10);
-    expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'pain_level', value: 11 }),
-    ).toThrow(/between 0 and 10/);
-    expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'pain_level', value: -1 }),
-    ).toThrow(/between 0 and 10/);
+    expect(() => repo.validateVitalWrite({ ...base, metricKey: 'pain_level', value: 11 })).toThrow(
+      /between 0 and 10/
+    );
+    expect(() => repo.validateVitalWrite({ ...base, metricKey: 'pain_level', value: -1 })).toThrow(
+      /between 0 and 10/
+    );
   });
 
   it('converts weight kg to lbs and always stores the canonical unit', () => {
@@ -389,23 +391,23 @@ describe('validateVitalWrite', () => {
 
   it('rejects units that differ from the registry canonical unit', () => {
     expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, unit: 'km' }),
+      repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, unit: 'km' })
     ).toThrow(/steps/);
     expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 1, unit: 'pts' }),
+      repo.validateVitalWrite({ ...base, metricKey: 'resilience', value: 1, unit: 'pts' })
     ).toThrow(/unit/);
     // Circumferences fail closed on anything but in/cm, and the message names
     // what IS accepted.
     expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'waist', value: 96.8, unit: 'mm' }),
+      repo.validateVitalWrite({ ...base, metricKey: 'waist', value: 96.8, unit: 'mm' })
     ).toThrow(/Accepted units: in, cm/);
   });
 
   it('rejects unknown circumference-shaped keys — the registry stays closed', () => {
     for (const metricKey of ['left_waist', 'bicep_left', 'wrist']) {
-      expect(() =>
-        repo.validateVitalWrite({ ...base, metricKey, value: 12 }),
-      ).toThrow(/Unknown metric key/);
+      expect(() => repo.validateVitalWrite({ ...base, metricKey, value: 12 })).toThrow(
+        /Unknown metric key/
+      );
     }
   });
 
@@ -437,7 +439,7 @@ describe('validateVitalWrite', () => {
 
   it('rejects an unparseable recorded_at', () => {
     expect(() =>
-      repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: 'yesterday' }),
+      repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: 'yesterday' })
     ).toThrow(/recorded_at/);
   });
 
@@ -450,7 +452,7 @@ describe('validateVitalWrite', () => {
           metricKey: 'steps',
           value: 1,
           source: 'x'.repeat(65),
-        }),
+        })
       ).toThrow(/source[\s\S]*64/);
       const ok = repo.validateVitalWrite({
         ...base,
@@ -474,7 +476,7 @@ describe('validateVitalWrite', () => {
       expect(message.length).toBeLessThan(500);
       // a 64-char unknown key still gets the registry error
       expect(() =>
-        repo.validateVitalWrite({ ...base, metricKey: 'z'.repeat(64), value: 1 }),
+        repo.validateVitalWrite({ ...base, metricKey: 'z'.repeat(64), value: 1 })
       ).toThrow(/registry is closed/);
     });
 
@@ -485,7 +487,7 @@ describe('validateVitalWrite', () => {
       expect(JSON.stringify(atLimit)).toHaveLength(4096);
 
       expect(() =>
-        repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, metadata: overLimit }),
+        repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, metadata: overLimit })
       ).toThrow(/metadata[\s\S]*4096/);
       const ok = repo.validateVitalWrite({
         ...base,
@@ -506,24 +508,24 @@ describe('validateVitalWrite', () => {
           metricKey: 'steps',
           value: 1,
           recordedAt: '+099999-01-01',
-        }),
+        })
       ).toThrow(/1900[\s\S]*2100/);
     });
 
     it('rejects years before 1900 and after 2100; boundary years pass', () => {
       expect(() =>
-        repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: '1899-12-31' }),
+        repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: '1899-12-31' })
       ).toThrow(/1900[\s\S]*2100/);
       expect(() =>
-        repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: '2101-01-01' }),
+        repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: '2101-01-01' })
       ).toThrow(/1900[\s\S]*2100/);
       expect(
         repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: '1900-01-01' })
-          .recordedAt,
+          .recordedAt
       ).toBe('1900-01-01T00:00:00Z');
       expect(
         repo.validateVitalWrite({ ...base, metricKey: 'steps', value: 1, recordedAt: '2100-12-31' })
-          .recordedAt,
+          .recordedAt
       ).toBe('2100-12-31T00:00:00Z');
     });
   });
@@ -535,6 +537,36 @@ describe('validateVitalWrite', () => {
 // ---------------------------------------------------------------------------
 
 describe('upsertOwnVital', () => {
+  it('records server receipt time on re-push while preserving identity and observation time', () => {
+    const input = {
+      metricKey: 'ahi',
+      value: 0,
+      source: 'bridge',
+      recordedAt: '2026-07-08',
+      lastReceivedAt: '2099-01-01T00:00:00Z',
+    };
+    repo.upsertOwnVital(db, OWNER, input);
+    const first = repo.findOwnVital(db, OWNER, {
+      metricKey: 'ahi',
+      source: 'bridge',
+      recordedAt: '2026-07-08T00:00:00Z',
+    })!;
+    expect(first.lastReceivedAt).toBeTruthy();
+    expect(first.lastReceivedAt).not.toBe(input.lastReceivedAt);
+    repo.upsertOwnVital(db, OWNER, { ...input, value: 1 });
+    const second = repo.findOwnVital(db, OWNER, {
+      metricKey: 'ahi',
+      source: 'bridge',
+      recordedAt: '2026-07-08T00:00:00Z',
+    })!;
+    expect(second.id).toBe(first.id);
+    expect(second.createdAt).toBe(first.createdAt);
+    expect(second.recordedAt).toBe(first.recordedAt);
+    expect(Date.parse(second.lastReceivedAt!)).toBeGreaterThanOrEqual(
+      Date.parse(first.lastReceivedAt!)
+    );
+  });
+
   it('inserts, then updates on re-push of the same (metric, day, source) tuple', () => {
     const first = repo.upsertOwnVital(db, OWNER, {
       metricKey: 'steps',
@@ -654,7 +686,7 @@ describe('upsertOwnVital', () => {
         value: 1,
         source: 'x',
         recordedAt: '2026-07-08',
-      }),
+      })
     ).toThrow(repo.VitalWriteError);
     const count = ctx.sqlite.prepare('select count(*) as n from vitals').get() as { n: number };
     expect(count.n).toBe(0);

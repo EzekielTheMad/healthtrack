@@ -131,6 +131,8 @@ export interface FrequencyGoalProgressWire {
 
 /** GET /api/weeks/{weekStart} — deep-snake of WeekRollup (rollup.ts). */
 export interface WeekRollupWire {
+  nutrition?: ImportedNutritionSummary[];
+  nutrition_unavailable?: boolean;
   week_start: string;
   week_end: string;
   timezone: string;
@@ -168,6 +170,20 @@ export interface WeekRollupWire {
     sleep_duration_avg: number | null;
     sessions_total: number | null;
   };
+}
+
+export interface ImportedNutritionSummary {
+  source_package: string;
+  days_recorded: number;
+  calories_avg: number | null;
+  protein_grams_avg: number | null;
+  carbs_grams_avg: number | null;
+  fat_grams_avg: number | null;
+  fiber_grams_avg: number | null;
+  numeric_samples: Record<
+    'calories' | 'protein_grams' | 'carbs_grams' | 'fat_grams' | 'fiber_grams',
+    number
+  >;
 }
 
 export interface GoalWire {

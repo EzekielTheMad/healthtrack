@@ -1,4 +1,4 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -17,7 +17,9 @@ const contentSecurityPolicy = [
   "img-src 'self' data: blob:",
   "font-src 'self'",
   "connect-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
+  // The bundled PDF renderer uses Yoga's WebAssembly layout engine. This
+  // permits WASM compilation without enabling JavaScript eval/new Function.
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
 ].join('; ');
 
@@ -33,14 +35,17 @@ const securityHeaders = [
   // HSTS only in production. Deliberately no includeSubDomains/preload: many
   // self-hosters run other services on sibling subdomains that may be plain
   // HTTP, and we must not force HTTPS onto those from this app.
-  ...(isProd
-    ? [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }]
-    : []),
+  ...(isProd ? [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }] : []),
 ];
 
 const nextConfig: NextConfig = {
   // Self-contained server bundle for the Docker image (.next/standalone).
   output: 'standalone',
+  // Filesystem-based runtime paths must not pull local databases, uploads,
+  // credentials, or agent checkouts into a distributable standalone build.
+  outputFileTracingExcludes: {
+    '**/*': ['data/**/*', 'tmpdata/**/*', '.env*', '.claude/**/*', '.git/**/*', 'CLAUDE.local.md'],
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

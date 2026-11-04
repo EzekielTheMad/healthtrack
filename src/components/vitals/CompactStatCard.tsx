@@ -29,6 +29,7 @@ interface CompactStatCardProps {
   value: number;
   unit: string;
   source: string;
+  sourceMetadata?: Record<string, unknown> | null;
   timestamp: string;
   /** Registry key — drives date/value formatting and trend direction. */
   metricKey: string;
@@ -133,6 +134,7 @@ export default function CompactStatCard({
   value,
   unit,
   source,
+  sourceMetadata,
   timestamp,
   metricKey,
   goalDirection,
@@ -190,7 +192,7 @@ export default function CompactStatCard({
         <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
           {label}
         </span>
-        <SourceBadge source={source} />
+        <SourceBadge source={source} metadata={sourceMetadata} />
       </div>
 
       {/* Value + sparkline row */}

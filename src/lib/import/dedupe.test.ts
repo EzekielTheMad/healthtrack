@@ -55,17 +55,17 @@ describe('normalizeDate', () => {
 describe('dedupeByName', () => {
   const index = buildNameIndex(['Lisinopril', '  Peanut   Allergy ', 'Asthma']);
 
-  it('marks an exact name match as duplicate', () => {
-    expect(dedupeByName('Asthma', index)).toBe('duplicate');
+  it('marks an exact name match as possible', () => {
+    expect(dedupeByName('Asthma', index)).toBe('possible');
   });
 
   it('matches case-insensitively', () => {
-    expect(dedupeByName('LISINOPRIL', index)).toBe('duplicate');
+    expect(dedupeByName('LISINOPRIL', index)).toBe('possible');
   });
 
   it('matches with differing whitespace', () => {
-    expect(dedupeByName('peanut allergy', index)).toBe('duplicate');
-    expect(dedupeByName('Peanut\tAllergy', index)).toBe('duplicate');
+    expect(dedupeByName('peanut allergy', index)).toBe('possible');
+    expect(dedupeByName('Peanut\tAllergy', index)).toBe('possible');
   });
 
   it('marks an unseen name as new', () => {
@@ -92,20 +92,20 @@ describe('dedupeByNameDate', () => {
     { name: 'MMR', date: '2021-03-02' },
   ]);
 
-  it('marks exact name + date match as duplicate', () => {
-    expect(dedupeByNameDate('Tonsillectomy', '2023-06-01', index)).toBe('duplicate');
+  it('marks exact name + date match as possible', () => {
+    expect(dedupeByNameDate('Tonsillectomy', '2023-06-01', index)).toBe('possible');
   });
 
   it('matches names case- and whitespace-insensitively', () => {
-    expect(dedupeByNameDate('  tonsillectomy ', '2023-06-01', index)).toBe('duplicate');
+    expect(dedupeByNameDate('  tonsillectomy ', '2023-06-01', index)).toBe('possible');
   });
 
   it('trims item dates before comparing', () => {
-    expect(dedupeByNameDate('MMR', ' 2020-09-15 ', index)).toBe('duplicate');
+    expect(dedupeByNameDate('MMR', ' 2020-09-15 ', index)).toBe('possible');
   });
 
   it('matches any of several dated rows with the same name', () => {
-    expect(dedupeByNameDate('mmr', '2021-03-02', index)).toBe('duplicate');
+    expect(dedupeByNameDate('mmr', '2021-03-02', index)).toBe('possible');
   });
 
   it('marks a name match with a different date as possible', () => {
@@ -137,7 +137,7 @@ describe('dedupeByNameDate', () => {
     const batch = buildNameDateIndex([]);
     expect(dedupeByNameDate('Tdap', '2024-05-05', batch)).toBe('new');
     addNameDate(batch, 'Tdap', '2024-05-05');
-    expect(dedupeByNameDate('Tdap', '2024-05-05', batch)).toBe('duplicate');
+    expect(dedupeByNameDate('Tdap', '2024-05-05', batch)).toBe('possible');
     expect(dedupeByNameDate('Tdap', '2025-05-05', batch)).toBe('possible');
   });
 
@@ -159,16 +159,16 @@ describe('dedupeLabResult', () => {
     { visitDate: '2023-11-01', testName: 'Hemoglobin' },
   ]);
 
-  it('marks a visit_date + test_name match as duplicate', () => {
-    expect(dedupeLabResult('2024-02-10', 'Hemoglobin', index)).toBe('duplicate');
+  it('marks a visit_date + test_name match as possible', () => {
+    expect(dedupeLabResult('2024-02-10', 'Hemoglobin', index)).toBe('possible');
   });
 
   it('matches test names case- and whitespace-insensitively', () => {
-    expect(dedupeLabResult('2024-02-10', '  wbc count ', index)).toBe('duplicate');
+    expect(dedupeLabResult('2024-02-10', '  wbc count ', index)).toBe('possible');
   });
 
   it('trims the visit date before comparing', () => {
-    expect(dedupeLabResult(' 2023-11-01 ', 'hemoglobin', index)).toBe('duplicate');
+    expect(dedupeLabResult(' 2023-11-01 ', 'hemoglobin', index)).toBe('possible');
   });
 
   it('marks the same test on a different date as new', () => {
@@ -193,6 +193,6 @@ describe('dedupeLabResult', () => {
     const batch = buildLabResultIndex([]);
     expect(dedupeLabResult('2024-02-10', 'Glucose', batch)).toBe('new');
     batch.add(labResultKey('2024-02-10', 'Glucose'));
-    expect(dedupeLabResult('2024-02-10', 'glucose', batch)).toBe('duplicate');
+    expect(dedupeLabResult('2024-02-10', 'glucose', batch)).toBe('possible');
   });
 });

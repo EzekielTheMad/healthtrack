@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatDateOnly } from '@/lib/dates';
 import type { ParsedVaccineRecord } from '@/lib/claude/parse-vaccine-pdf';
 
 interface VaccineImportReviewProps {
@@ -14,9 +15,7 @@ export default function VaccineImportReview({
   onSave,
   onCancel,
 }: VaccineImportReviewProps) {
-  const [selected, setSelected] = useState<Set<number>>(
-    () => new Set(records.map((_, i) => i)),
-  );
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(records.map((_, i) => i)));
   const [saving, setSaving] = useState(false);
 
   const toggle = (idx: number) => {
@@ -63,17 +62,21 @@ export default function VaccineImportReview({
             disabled={saving || selected.size === 0}
             className="px-4 py-1.5 rounded-lg text-sm font-medium cursor-pointer disabled:opacity-50"
             style={{
-              background: 'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
+              background:
+                'linear-gradient(135deg, var(--color-terracotta), var(--color-terracotta-light))',
               color: 'white',
             }}
           >
-            {saving ? 'Saving...' : `Save ${selected.size} vaccine${selected.size !== 1 ? 's' : ''}`}
+            {saving
+              ? 'Saving...'
+              : `Save ${selected.size} vaccine${selected.size !== 1 ? 's' : ''}`}
           </button>
         </div>
       </div>
 
       <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-        Uncheck any records you don&apos;t want to import. Duplicates of existing records will be skipped.
+        Uncheck any records you don&apos;t want to import. Duplicates of existing records will be
+        skipped.
       </p>
 
       <div className="space-y-2">
@@ -100,7 +103,7 @@ export default function VaccineImportReview({
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                 {rec.vaccine_date && (
                   <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                    {new Date(rec.vaccine_date + 'T00:00:00').toLocaleDateString()}
+                    {formatDateOnly(rec.vaccine_date)}
                   </span>
                 )}
                 {rec.dose_number && (

@@ -11,8 +11,8 @@
  * Week windows:
  *  - Sessions carry real timestamps; week membership resolves via the owner's
  *    IANA timezone (weeks.ts). The app has no per-user timezone column, so
- *    OWNER_TZ pins the spec's owner convention (America/Phoenix, MST, no DST)
- *    as the default — callers can override per call when that ever changes.
+ *    OWNER_TZ uses the configured instance timezone (TZ, falling back to UTC);
+ *    callers can override it for a specific reporting window.
  *  - Vitals are day-normalized (`recorded_at = <day>T00:00:00Z`, see
  *    src/lib/dates.ts): their UTC date IS the intended local day, so the
  *    vitals window is simply the seven `YYYY-MM-DD` keys of the week.
@@ -27,9 +27,14 @@ import { shiftDayKey } from '@/lib/dates';
 import { validateWeekStart } from '@/lib/repos/_fitness';
 import type { WeeklyCheckinRow } from '@/lib/repos/checkins';
 import { dayKeyInTz, priorWeekStart, weekStartOfDayKey } from './weeks';
+import { getHealthTrackTimeZone } from '@/lib/oura/timezone';
+import { listVitalSourcePreferences } from '@/lib/repos/vitals';
+import { selectVitalSources } from '@/lib/metrics/source-selection';
+import { listNutritionDaily } from '@/lib/repos/nutrition';
+import { summarizeNutrition } from '@/lib/nutrition/summary';
 
 /** Owner timezone convention (spec §Timezone). Not stored per user yet. */
-export const OWNER_TZ = 'America/Phoenix';
+export const OWNER_TZ = getHealthTrackTimeZone();
 
 // ---------------------------------------------------------------------------
 // Shape
@@ -97,6 +102,8 @@ export type WeekDeltas = {
 };
 
 export interface WeekRollup {
+  nutrition?: ReturnType<typeof summarizeNutrition>;
+  nutritionUnavailable?: boolean;
   weekStart: string;
   /** Sunday of the same week (inclusive). */
   weekEnd: string;
@@ -180,7 +187,7 @@ interface WeekComputation {
 
 function emptyByType(): Record<SessionType, SessionTypeRollup> {
   return Object.fromEntries(
-    SESSION_TYPES.map((t) => [t, { count: 0, labels: [] as string[] }]),
+    SESSION_TYPES.map((t) => [t, { count: 0, labels: [] as string[] }])
   ) as Record<SessionType, SessionTypeRollup>;
 }
 
@@ -196,17 +203,20 @@ async function sessionsInWeek(userId: string, weekStart: string, tz: string) {
         eq(workoutSessions.userId, userId),
         isNull(workoutSessions.dependentId),
         gte(workoutSessions.startedAt, shiftDayKey(weekStart, -1)),
-        lt(workoutSessions.startedAt, shiftDayKey(weekStart, 8)),
-      ),
+        lt(workoutSessions.startedAt, shiftDayKey(weekStart, 8))
+      )
     )
     .orderBy(workoutSessions.startedAt);
-  return rows.filter(
-    (s) => weekStartOfDayKey(dayKeyInTz(new Date(s.startedAt), tz)) === weekStart,
-  );
+  return rows.filter((s) => weekStartOfDayKey(dayKeyInTz(new Date(s.startedAt), tz)) === weekStart);
 }
 
 /** One week's numeric aggregates + per-type session rollup. */
-async function computeWeek(userId: string, weekStart: string, tz: string): Promise<WeekComputation> {
+async function computeWeek(
+  userId: string,
+  weekStart: string,
+  tz: string,
+  preferences: Record<string, string>
+): Promise<WeekComputation> {
   const nextMonday = shiftDayKey(weekStart, 7);
 
   const sessions = await sessionsInWeek(userId, weekStart, tz);
@@ -221,18 +231,23 @@ async function computeWeek(userId: string, weekStart: string, tz: string): Promi
   // Vitals for the week — one query, split by metric. Day-normalized rows
   // sort as `<day>T00:00:00Z`, so [weekStart, nextMonday) string bounds hold.
   const vitalRows = await db
-    .select({ metricKey: vitals.metricKey, recordedAt: vitals.recordedAt, value: vitals.value })
+    .select({
+      metricKey: vitals.metricKey,
+      recordedAt: vitals.recordedAt,
+      value: vitals.value,
+      source: vitals.source,
+    })
     .from(vitals)
     .where(
       and(
         eq(vitals.userId, userId),
         isNull(vitals.dependentId),
         gte(vitals.recordedAt, weekStart),
-        lt(vitals.recordedAt, nextMonday),
-      ),
+        lt(vitals.recordedAt, nextMonday)
+      )
     );
   const byMetric = new Map<string, { recordedAt: string; value: number }[]>();
-  for (const r of vitalRows) {
+  for (const r of selectVitalSources(vitalRows, preferences)) {
     if (!(AVG_METRICS as readonly string[]).includes(r.metricKey)) continue;
     const group = byMetric.get(r.metricKey) ?? [];
     group.push(r);
@@ -249,9 +264,7 @@ async function computeWeek(userId: string, weekStart: string, tz: string): Promi
     byType,
     numeric: {
       weightAvg: mean([...weightDays.values()]),
-      weightMin: weightRows.length
-        ? round2(Math.min(...weightRows.map((r) => r.value)))
-        : null,
+      weightMin: weightRows.length ? round2(Math.min(...weightRows.map((r) => r.value))) : null,
       daysWeighed: weightDays.size,
       bodyFatPctAvg: avgOf('body_fat_pct'),
       fatFreeMassAvg: avgOf('fat_free_mass'),
@@ -276,6 +289,7 @@ async function computeWeek(userId: string, weekStart: string, tz: string): Promi
 async function latestBodyMeasurements(
   userId: string,
   beforeDay: string,
+  preferences: Record<string, string>
 ): Promise<LatestBodyMeasurements> {
   const rows = await db
     .select({
@@ -291,20 +305,18 @@ async function latestBodyMeasurements(
         eq(vitals.userId, userId),
         isNull(vitals.dependentId),
         inArray(vitals.metricKey, [...BODY_MEASUREMENT_KEYS]),
-        lt(vitals.recordedAt, beforeDay),
-      ),
+        lt(vitals.recordedAt, beforeDay)
+      )
     )
     .orderBy(desc(vitals.recordedAt), asc(vitals.source));
 
   const out: LatestBodyMeasurements = {};
-  for (const { metricKey, ...reading } of rows) {
+  for (const { metricKey, ...reading } of selectVitalSources(rows, preferences)) {
     if (metricKey in out) continue; // newest-first: first hit is the latest
     out[metricKey] = reading;
   }
   // Emit in registry order so clients and the UI render a stable sequence.
-  return Object.fromEntries(
-    BODY_MEASUREMENT_KEYS.filter((k) => k in out).map((k) => [k, out[k]]),
-  );
+  return Object.fromEntries(BODY_MEASUREMENT_KEYS.filter((k) => k in out).map((k) => [k, out[k]]));
 }
 
 /** The pre-existing neck/waist wire shape: no `unit`, key order unchanged. */
@@ -338,7 +350,7 @@ export async function getWeekRollup(
   actorId: string,
   ownerId: string,
   weekStart: string,
-  tz: string = OWNER_TZ,
+  tz: string = OWNER_TZ
 ): Promise<WeekRollup> {
   await requireAuthz(actorId, { ownerId, dependentId: null }, 'fitness', 'read');
   validateWeekStart(weekStart);
@@ -346,24 +358,37 @@ export async function getWeekRollup(
   const prevStart = priorWeekStart(weekStart);
   const nextMonday = shiftDayKey(weekStart, 7);
 
-  const [current, prior, measurementsLatest, activeFrequencyGoals, checkinRows] =
-    await Promise.all([
-      computeWeek(ownerId, weekStart, tz),
-      computeWeek(ownerId, prevStart, tz),
-      latestBodyMeasurements(ownerId, nextMonday),
+  const preferences =
+    actorId === ownerId
+      ? Object.fromEntries(
+          (await listVitalSourcePreferences(actorId)).map((p) => [p.metricKey, p.preferredSource])
+        )
+      : {};
+  const nutritionRows =
+    actorId === ownerId
+      ? await listNutritionDaily(actorId, {
+          startDate: weekStart,
+          endDate: shiftDayKey(weekStart, 6),
+        })
+      : [];
+
+  const [current, prior, measurementsLatest, activeFrequencyGoals, checkinRows] = await Promise.all(
+    [
+      computeWeek(ownerId, weekStart, tz, preferences),
+      computeWeek(ownerId, prevStart, tz, preferences),
+      latestBodyMeasurements(ownerId, nextMonday, preferences),
       db
         .select()
         .from(goals)
-        .where(
-          and(eq(goals.userId, ownerId), eq(goals.kind, 'frequency'), eq(goals.active, true)),
-        )
+        .where(and(eq(goals.userId, ownerId), eq(goals.kind, 'frequency'), eq(goals.active, true)))
         .orderBy(goals.createdAt),
       db
         .select()
         .from(weeklyCheckins)
         .where(and(eq(weeklyCheckins.userId, ownerId), eq(weeklyCheckins.weekStart, weekStart)))
         .limit(1),
-    ]);
+    ]
+  );
 
   const frequencyGoals: FrequencyGoalProgress[] = activeFrequencyGoals
     // sessionType/perWeek are non-null for frequency rows written through the
@@ -384,6 +409,8 @@ export async function getWeekRollup(
 
   return {
     weekStart,
+    nutrition: summarizeNutrition(nutritionRows),
+    nutritionUnavailable: actorId !== ownerId,
     weekEnd: shiftDayKey(weekStart, 6),
     timezone: tz,
     sessions: { total: sessionsTotal, byType: current.byType },

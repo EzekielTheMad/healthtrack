@@ -17,7 +17,7 @@
  */
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { db, type DB } from '@/db';
+import { db, getSqlite, type DB } from '@/db';
 import {
   healthConnectIngestRuns,
   healthConnectIntegrations,
@@ -36,11 +36,12 @@ import { encrypt } from '@/lib/crypto/encrypt';
 import { decrypt } from '@/lib/crypto/decrypt';
 import { generateHmacSecret } from '@/lib/integrations/health-connect/signature';
 import {
-  NORMALIZABLE_TYPES,
+  CONFIGURABLE_NORMALIZABLE_TYPES as NORMALIZABLE_TYPES,
   getRecordType,
 } from '@/lib/integrations/health-connect/schema';
 import { dayKeyInTz } from '@/lib/fitness/weeks';
 import { OWNER_TZ } from '@/lib/fitness/rollup';
+import { NATIVE_RECORD_TYPES } from '@/lib/integrations/health-connect/native-schema';
 
 export type HealthConnectIntegrationRow = typeof healthConnectIntegrations.$inferSelect;
 export type HealthConnectRawRecordRow = typeof healthConnectRawRecords.$inferSelect;
@@ -765,7 +766,6 @@ export async function getApiInventory(
     )
     .orderBy(healthConnectRawRecords.recordType, healthConnectRawRecords.sourcePackage);
 
-  const approvedNutrition = new Set(integration?.allowedSources?.nutrition ?? []);
   const enabled = new Set(integration?.enabledTypes ?? []);
 
   const out: ApiInventoryEntry[] = [];
@@ -775,7 +775,9 @@ export async function getApiInventory(
       integrationId: g.integrationId ?? integration?.id ?? null,
       integrationStatus: integration?.status ?? null,
       populatedFields: await observedFields(actorId, g.recordType, g.sourcePackage),
-      ...canonicalPolicyFor(g.recordType, g.sourcePackage, enabled, approvedNutrition, integration?.status),
+      ...canonicalPolicyFor(g.recordType, g.sourcePackage, enabled,
+        new Set(integration?.allowedSources?.[g.recordType] ?? []), integration?.status,
+        !!getSqlite().prepare(`SELECT 1 FROM health_connect_native_records WHERE user_id=? AND record_type=? AND source_package=? AND deleted_at IS NULL LIMIT 1`).get(actorId,g.recordType,g.sourcePackage)),
       lastReceivedAt: integration?.lastReceivedAt ?? null,
       lastNormalizedAt: integration?.lastNormalizedAt ?? null,
     });
@@ -821,11 +823,13 @@ function canonicalPolicyFor(
   recordType: string,
   sourcePackage: string,
   enabledTypes: Set<string>,
-  approvedNutrition: Set<string>,
+  approvedPackages: Set<string>,
   status: HealthConnectStatus | undefined,
+  native = false,
 ): { canonicalPolicy: 'normalized' | 'raw_only'; canonicalPolicyReason: string } {
   const def = getRecordType(recordType);
-  if (!def?.normalized) {
+  const nativeSupported = native && (NATIVE_RECORD_TYPES as readonly string[]).includes(recordType);
+  if (!def?.normalized && !nativeSupported) {
     return {
       canonicalPolicy: 'raw_only',
       canonicalPolicyReason:
@@ -838,10 +842,10 @@ function canonicalPolicyFor(
       canonicalPolicyReason: `Canonical writes for '${recordType}' are not enabled in Settings.`,
     };
   }
-  if (recordType === 'nutrition' && !approvedNutrition.has(sourcePackage)) {
+  if (recordType !== 'daily_totals' && !approvedPackages.has(sourcePackage)) {
     return {
       canonicalPolicy: 'raw_only',
-      canonicalPolicyReason: `Package '${sourcePackage}' is not on the exact approved list for nutrition.`,
+      canonicalPolicyReason: `Package '${sourcePackage}' is not on the exact approved list for ${recordType}.`,
     };
   }
   if (status !== 'active') {
@@ -852,7 +856,7 @@ function canonicalPolicyFor(
   }
   return {
     canonicalPolicy: 'normalized',
-    canonicalPolicyReason: def.note ?? 'Written to canonical tables.',
+    canonicalPolicyReason: nativeSupported ? 'Approved native records are projected into canonical tables; legacy relay records retain their existing policy.' : def?.note ?? 'Written to canonical tables.',
   };
 }
 

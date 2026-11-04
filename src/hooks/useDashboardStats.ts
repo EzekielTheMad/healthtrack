@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api/client';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
-import { DEVICE_DEFAULTS, MANUAL_DEFAULTS, getMetricDefinition } from '@/lib/dashboard-metrics';
+import { DEVICE_DEFAULTS, MANUAL_DEFAULTS } from '@/lib/dashboard-metrics';
 import type { DashboardStatPreference, DashboardWidgetType } from '@/lib/types';
 
 interface AvailableLabTest {
@@ -36,12 +36,20 @@ export function useDashboardStats() {
   const [error, setError] = useState<string | null>(null);
   const [hasCustomized, setHasCustomized] = useState(false);
   const [availableLabTests, setAvailableLabTests] = useState<AvailableLabTest[]>([]);
-  const { dependentId } = useActiveProfile();
+  const { dependentId, delegateOwnerId } = useActiveProfile();
+  const subject = `${delegateOwnerId ?? 'self'}:${dependentId ?? 'self'}`;
+  const [loadedSubject, setLoadedSubject] = useState<string | null>(null);
+  const activeSubject = useRef(subject);
+  const isCurrentSubject = useCallback(() => activeSubject.current === subject, [subject]);
 
   // Determine default metric keys based on whether the user has connected sources
   const [defaultKeys, setDefaultKeys] = useState<string[]>(MANUAL_DEFAULTS);
 
   useEffect(() => {
+    activeSubject.current = subject;
+    // Dashboard preferences and lab extras belong to the signed-in owner.
+    // Delegated records use generic cards without requesting the actor's data.
+    if (delegateOwnerId) return;
     let cancelled = false;
 
     async function fetchStats() {
@@ -69,8 +77,9 @@ export function useDashboardStats() {
             unit: t.unit,
             latestValue: t.latest_value,
             flag: t.flag,
-          })),
+          }))
         );
+        setLoadedSubject(subject);
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to load dashboard stats');
@@ -80,30 +89,35 @@ export function useDashboardStats() {
     }
 
     fetchStats();
-    return () => { cancelled = true; };
-  }, [dependentId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [dependentId, delegateOwnerId, subject]);
 
   /** Get the effective stat list — saved prefs or defaults */
-  const effectiveStats = hasCustomized
-    ? stats
-    : defaultKeys.map((key, i) => {
-        const def = getMetricDefinition(key);
-        return {
-          id: `default-${key}`,
-          user_id: '',
-          dependent_id: dependentId,
-          widget_type: 'vital' as DashboardWidgetType,
-          metric_key: key,
-          position: i,
-          pinned: false,
-          visible: true,
-          created_at: '',
-          updated_at: '',
-        } satisfies DashboardStatPreference;
-      });
+  const hasLoadedSubject = !delegateOwnerId && loadedSubject === subject;
+  const effectiveDefaultKeys = hasLoadedSubject ? defaultKeys : MANUAL_DEFAULTS;
+  const effectiveStats =
+    hasLoadedSubject && hasCustomized
+      ? stats
+      : effectiveDefaultKeys.map((key, i) => {
+          return {
+            id: `default-${key}`,
+            user_id: '',
+            dependent_id: dependentId,
+            widget_type: 'vital' as DashboardWidgetType,
+            metric_key: key,
+            position: i,
+            pinned: false,
+            visible: true,
+            created_at: '',
+            updated_at: '',
+          } satisfies DashboardStatPreference;
+        });
 
   const initializeStats = useCallback(
     async (metricKeys: string[]) => {
+      if (delegateOwnerId || !isCurrentSubject()) return;
       setError(null);
       try {
         const rows = await apiFetch<DashboardStatPreference[]>('/api/dashboard-stats', {
@@ -119,21 +133,22 @@ export function useDashboardStats() {
             })),
           }),
         });
+        if (!isCurrentSubject()) return;
         setStats(rows);
         setHasCustomized(true);
       } catch (err) {
+        if (!isCurrentSubject()) return;
         setError(err instanceof Error ? err.message : 'Failed to save dashboard stats');
       }
     },
-    [dependentId],
+    [dependentId, delegateOwnerId, isCurrentSubject]
   );
 
   const addStat = useCallback(
     async (widgetType: DashboardWidgetType, metricKey: string) => {
+      if (delegateOwnerId || !isCurrentSubject()) return;
       setError(null);
-      const maxPos = stats.length > 0
-        ? Math.max(...stats.map((s) => s.position))
-        : -1;
+      const maxPos = stats.length > 0 ? Math.max(...stats.map((s) => s.position)) : -1;
 
       try {
         const rows = await apiFetch<DashboardStatPreference[]>('/api/dashboard-stats', {
@@ -151,71 +166,82 @@ export function useDashboardStats() {
             ],
           }),
         });
+        if (!isCurrentSubject()) return;
         setStats((prev) => [...prev, ...rows]);
         setHasCustomized(true);
       } catch (err) {
+        if (!isCurrentSubject()) return;
         setError(err instanceof Error ? err.message : 'Failed to add stat');
       }
     },
-    [dependentId, stats],
+    [dependentId, delegateOwnerId, isCurrentSubject, stats]
   );
 
-  const removeStat = useCallback(async (id: string) => {
-    setError(null);
-    try {
-      await apiFetch<void>(`/api/dashboard-stats/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      });
-      setStats((prev) => prev.filter((s) => s.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove stat');
-    }
-  }, []);
+  const removeStat = useCallback(
+    async (id: string) => {
+      if (delegateOwnerId || !isCurrentSubject()) return;
+      setError(null);
+      try {
+        await apiFetch<void>(`/api/dashboard-stats/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        });
+        if (!isCurrentSubject()) return;
+        setStats((prev) => prev.filter((s) => s.id !== id));
+      } catch (err) {
+        if (!isCurrentSubject()) return;
+        setError(err instanceof Error ? err.message : 'Failed to remove stat');
+      }
+    },
+    [delegateOwnerId, isCurrentSubject]
+  );
 
   const toggleVisibility = useCallback(
     async (id: string) => {
+      if (delegateOwnerId || !isCurrentSubject()) return;
       const stat = stats.find((s) => s.id === id);
       if (!stat) return;
 
       const newVisible = !stat.visible;
       try {
-        await apiFetch<DashboardStatPreference>(
-          `/api/dashboard-stats/${encodeURIComponent(id)}`,
-          { method: 'PATCH', body: JSON.stringify({ visible: newVisible }) },
-        );
-        setStats((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, visible: newVisible } : s)),
-        );
+        await apiFetch<DashboardStatPreference>(`/api/dashboard-stats/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ visible: newVisible }),
+        });
+        if (!isCurrentSubject()) return;
+        setStats((prev) => prev.map((s) => (s.id === id ? { ...s, visible: newVisible } : s)));
       } catch (err) {
+        if (!isCurrentSubject()) return;
         setError(err instanceof Error ? err.message : 'Failed to update stat');
       }
     },
-    [stats],
+    [delegateOwnerId, isCurrentSubject, stats]
   );
 
   const togglePinned = useCallback(
     async (id: string) => {
+      if (delegateOwnerId || !isCurrentSubject()) return;
       const stat = stats.find((s) => s.id === id);
       if (!stat) return;
 
       const newPinned = !stat.pinned;
       try {
-        await apiFetch<DashboardStatPreference>(
-          `/api/dashboard-stats/${encodeURIComponent(id)}`,
-          { method: 'PATCH', body: JSON.stringify({ pinned: newPinned }) },
-        );
-        setStats((prev) =>
-          prev.map((s) => (s.id === id ? { ...s, pinned: newPinned } : s)),
-        );
+        await apiFetch<DashboardStatPreference>(`/api/dashboard-stats/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ pinned: newPinned }),
+        });
+        if (!isCurrentSubject()) return;
+        setStats((prev) => prev.map((s) => (s.id === id ? { ...s, pinned: newPinned } : s)));
       } catch (err) {
+        if (!isCurrentSubject()) return;
         setError(err instanceof Error ? err.message : 'Failed to update stat');
       }
     },
-    [stats],
+    [delegateOwnerId, isCurrentSubject, stats]
   );
 
   const reorder = useCallback(
     async (id: string, direction: 'up' | 'down') => {
+      if (delegateOwnerId || !isCurrentSubject()) return;
       const sorted = [...stats].sort((a, b) => a.position - b.position);
       const idx = sorted.findIndex((s) => s.id === id);
       if (idx < 0) return;
@@ -231,36 +257,39 @@ export function useDashboardStats() {
 
       try {
         await Promise.all([
-          apiFetch<DashboardStatPreference>(
-            `/api/dashboard-stats/${encodeURIComponent(a.id)}`,
-            { method: 'PATCH', body: JSON.stringify({ position: posB }) },
-          ),
-          apiFetch<DashboardStatPreference>(
-            `/api/dashboard-stats/${encodeURIComponent(b.id)}`,
-            { method: 'PATCH', body: JSON.stringify({ position: posA }) },
-          ),
+          apiFetch<DashboardStatPreference>(`/api/dashboard-stats/${encodeURIComponent(a.id)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ position: posB }),
+          }),
+          apiFetch<DashboardStatPreference>(`/api/dashboard-stats/${encodeURIComponent(b.id)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ position: posA }),
+          }),
         ]);
+        if (!isCurrentSubject()) return;
         setStats((prev) =>
           prev.map((s) => {
             if (s.id === a.id) return { ...s, position: posB };
             if (s.id === b.id) return { ...s, position: posA };
             return s;
-          }),
+          })
         );
       } catch (err) {
+        if (!isCurrentSubject()) return;
         setError(err instanceof Error ? err.message : 'Failed to reorder stats');
       }
     },
-    [stats],
+    [delegateOwnerId, isCurrentSubject, stats]
   );
 
   return {
     stats: effectiveStats,
-    loading,
-    error,
-    hasCustomized,
-    defaultKeys,
-    availableLabTests,
+    loading: !delegateOwnerId && loading,
+    error: hasLoadedSubject ? error : null,
+    hasCustomized: hasLoadedSubject && hasCustomized,
+    defaultKeys: effectiveDefaultKeys,
+    availableLabTests: hasLoadedSubject ? availableLabTests : [],
+    canCustomize: !delegateOwnerId,
     initializeStats,
     addStat,
     removeStat,

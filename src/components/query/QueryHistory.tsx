@@ -1,8 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { useSession } from '@/lib/auth/client';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { QueryHistoryEntry } from '@/lib/types';
+import AiAnswerProvenance from '@/components/shared/AiAnswerProvenance';
 
 interface QueryHistoryProps {
   history: QueryHistoryEntry[];
@@ -20,8 +23,12 @@ const MARKDOWN_COMPONENTS: Components = {
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
-  h1: ({ children }) => <h3 className="text-base font-semibold mt-3 mb-1.5 first:mt-0">{children}</h3>,
-  h2: ({ children }) => <h3 className="text-base font-semibold mt-3 mb-1.5 first:mt-0">{children}</h3>,
+  h1: ({ children }) => (
+    <h3 className="text-base font-semibold mt-3 mb-1.5 first:mt-0">{children}</h3>
+  ),
+  h2: ({ children }) => (
+    <h3 className="text-base font-semibold mt-3 mb-1.5 first:mt-0">{children}</h3>
+  ),
   h3: ({ children }) => <h4 className="text-sm font-semibold mt-3 mb-1 first:mt-0">{children}</h4>,
   a: ({ href, children }) => (
     <a
@@ -58,7 +65,10 @@ const MARKDOWN_COMPONENTS: Components = {
     </div>
   ),
   th: ({ children }) => (
-    <th className="border px-2 py-1 text-left font-semibold" style={{ borderColor: 'var(--border-card)' }}>
+    <th
+      className="border px-2 py-1 text-left font-semibold"
+      style={{ borderColor: 'var(--border-card)' }}
+    >
       {children}
     </th>
   ),
@@ -86,6 +96,27 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 export default function QueryHistory({ history, loading }: QueryHistoryProps) {
+  const { data: session } = useSession();
+  const userId = session?.user.id;
+  const [settings, setSettings] = useState<{ userId: string; revision: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/ai/settings', { cache: 'no-store' });
+        if (!res.ok) return;
+        const value = await res.json();
+        if (!cancelled && userId) setSettings({ userId, revision: value.revision });
+      } catch {}
+    };
+    void load();
+    window.addEventListener('healthtrack:ai-settings', load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('healthtrack:ai-settings', load);
+    };
+  }, [userId]);
+
   if (loading) {
     return (
       <div
@@ -157,6 +188,52 @@ export default function QueryHistory({ history, loading }: QueryHistoryProps) {
           <div className="mb-3" style={{ borderTop: '1px solid var(--border-card)' }} />
 
           {/* Response */}
+          <AiAnswerProvenance
+            evidence={entry.context_metadata?.ai}
+            currentRevision={settings?.userId === userId ? settings?.revision : undefined}
+          />
+          {entry.context_metadata ? (
+            <details className="mb-3 text-xs">
+              <summary className="cursor-pointer">
+                Sources and coverage — {entry.context_metadata.subject_name},{' '}
+                {entry.context_metadata.coverage.start_date} to{' '}
+                {entry.context_metadata.coverage.end_date}
+              </summary>
+              <p className="mt-2">
+                Saved answer as of {new Date(entry.created_at).toLocaleString()}. Timezone:{' '}
+                {entry.context_metadata.coverage.timezone}.
+              </p>
+              {entry.context_metadata.coverage.warnings.map((warning) => (
+                <p key={warning} className="mt-1">
+                  {warning}
+                </p>
+              ))}
+              {entry.context_metadata.coverage.unavailable_domains.length > 0 && (
+                <p>
+                  Unavailable for this profile:{' '}
+                  {entry.context_metadata.coverage.unavailable_domains.join(', ')}.
+                </p>
+              )}
+              <ul className="mt-2 max-h-48 overflow-auto space-y-1">
+                {entry.context_metadata.evidence.slice(0, 50).map((source) => (
+                  <li key={source.key}>
+                    <a href={source.href} className="underline">
+                      {source.domain}
+                    </a>{' '}
+                    · {source.date?.slice(0, 10) ?? 'date unknown'}
+                    {source.source ? ` · ${source.source}` : ''}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                {entry.context_metadata.evidence.length} source records included
+                {entry.context_metadata.evidence.length > 50 ? '; first 50 shown' : ''}. Sources
+                describe the supplied context; review the answer against your records.
+              </p>
+            </details>
+          ) : (
+            <p className="mb-2 text-xs">Historical answer — source coverage unavailable.</p>
+          )}
           <div className="text-sm leading-relaxed" style={{ color: 'var(--color-text-primary)' }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
               {entry.response_text}

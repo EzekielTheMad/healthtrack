@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const dependentId = request.nextUrl.searchParams.get('dependent_id');
     const [preferences, extras] = await Promise.all([
       listDashboardPrefs(user.id, dependentId),
-      getDashboardExtras(user.id),
+      getDashboardExtras(user.id, dependentId),
     ]);
     return NextResponse.json({
       preferences: rowsToSnake(preferences),

@@ -5,7 +5,13 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describeGoal, GoalForm, GoalList, UnreviewedExercisesCard } from './GoalsView';
+import {
+  describeGoal,
+  GoalForm,
+  GoalList,
+  UnreviewedExercisesCard,
+  ExerciseCatalogCard,
+} from './GoalsView';
 import type { ExerciseWire, GoalWire } from '@/lib/fitness/api-types';
 
 function makeGoal(overrides: Partial<GoalWire> = {}): GoalWire {
@@ -41,8 +47,8 @@ describe('describeGoal', () => {
           target_date: null,
           session_type: 'strength',
           per_week: 3,
-        }),
-      ),
+        })
+      )
     ).toBe('3× strength per week');
   });
 });
@@ -97,7 +103,9 @@ describe('GoalList', () => {
   it('toggles active state and surfaces conflicts inline per row', async () => {
     const onToggle = vi
       .fn()
-      .mockRejectedValue(new Error('An active frequency goal for strength sessions already exists'));
+      .mockRejectedValue(
+        new Error('An active frequency goal for strength sessions already exists')
+      );
     render(
       <GoalList
         goals={[
@@ -114,7 +122,7 @@ describe('GoalList', () => {
           }),
         ]}
         onToggle={onToggle}
-      />,
+      />
     );
     fireEvent.click(screen.getByRole('button', { name: 'Activate' }));
     await waitFor(() => expect(onToggle).toHaveBeenCalledWith('goal-2', true));
@@ -175,5 +183,55 @@ describe('UnreviewedExercisesCard', () => {
     render(<UnreviewedExercisesCard exercises={[unreviewed]} onConfirm={onConfirm} />);
     fireEvent.click(screen.getByRole('button', { name: 'Save & confirm' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('collides');
+  });
+});
+
+describe('exercise catalog search and confirmed editing', () => {
+  const exercises: ExerciseWire[] = [
+    {
+      id: 'ex-1',
+      user_id: 'owner',
+      name: 'Leg press',
+      variant: 'Machine',
+      mode: 'weight',
+      aliases: ['LP'],
+      review_status: 'confirmed',
+    },
+    {
+      id: 'ex-2',
+      user_id: 'owner',
+      name: 'Cable row',
+      variant: null,
+      mode: 'weight',
+      aliases: [],
+      review_status: 'unreviewed',
+    },
+  ];
+
+  it('filters all statuses and searches aliases, then edits an existing confirmed record', async () => {
+    const onConfirm = vi.fn().mockResolvedValue(undefined);
+    render(<ExerciseCatalogCard exercises={exercises} onConfirm={onConfirm} />);
+    expect(screen.getByRole('status')).toHaveTextContent('1 matching exercise');
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'all' } });
+    expect(screen.getByRole('status')).toHaveTextContent('2 matching exercises');
+    fireEvent.change(screen.getByLabelText('Search exercises'), { target: { value: 'LP' } });
+    expect(screen.getByRole('status')).toHaveTextContent('1 matching exercise');
+    fireEvent.click(screen.getByText(/Leg press · Machine/));
+    fireEvent.change(screen.getByLabelText('Rename Leg press'), {
+      target: { value: 'Seated leg press' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save exercise' }));
+    await waitFor(() =>
+      expect(onConfirm).toHaveBeenCalledWith(
+        'ex-1',
+        expect.objectContaining({
+          name: 'Seated leg press',
+          review_status: 'confirmed',
+          aliases: ['LP'],
+        })
+      )
+    );
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'unreviewed' } });
+    expect(screen.getByText('No exercises match this search and status.')).toBeInTheDocument();
   });
 });

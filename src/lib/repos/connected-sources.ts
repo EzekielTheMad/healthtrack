@@ -54,6 +54,11 @@ export async function upsertConnectedSource(
     tokenExpiresAt: tokens.tokenExpiresAt,
     status: 'active',
     lastSyncAt: null,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    lastOutcome: null,
+    lastErrorCode: null,
+    nextRetryAt: null,
   };
   if (existing) {
     const [row] = await db
@@ -109,5 +114,28 @@ export async function touchLastSync(actorId: string, sourceName: string): Promis
   await db
     .update(connectedSources)
     .set({ lastSyncAt: new Date().toISOString() })
+    .where(and(eq(connectedSources.userId, actorId), eq(connectedSources.sourceName, sourceName)));
+}
+
+/** Persist safe operational metadata; never store provider bodies or credentials. */
+export async function recordConnectedSourceSync(
+  actorId: string,
+  sourceName: string,
+  result: {
+    attemptedAt: string;
+    outcome: 'running' | 'success' | 'partial' | 'failed';
+    errorCode?: string | null;
+    nextRetryAt?: string | null;
+  }
+): Promise<void> {
+  await db
+    .update(connectedSources)
+    .set({
+      lastAttemptAt: result.attemptedAt,
+      lastOutcome: result.outcome,
+      lastErrorCode: result.errorCode ?? null,
+      nextRetryAt: result.nextRetryAt ?? null,
+      ...(result.outcome === 'success' ? { lastSuccessAt: new Date().toISOString() } : {}),
+    })
     .where(and(eq(connectedSources.userId, actorId), eq(connectedSources.sourceName, sourceName)));
 }

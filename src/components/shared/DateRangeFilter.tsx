@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useSyncExternalStore } from 'react';
 
 interface DateRange {
   from: Date;
@@ -10,6 +10,7 @@ interface DateRange {
 interface DateRangeFilterProps {
   value: DateRange;
   onChange: (range: DateRange) => void;
+  timeZone?: string;
 }
 
 type Preset = '7D' | '1M' | '3M' | '6M' | '1Y' | 'All';
@@ -44,8 +45,13 @@ function getPresetRange(preset: Preset): DateRange {
   return { from, to };
 }
 
-function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+function formatDate(date: Date, timeZone: string): string {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone,
+  });
 }
 
 function toInputValue(date: Date): string {
@@ -66,7 +72,17 @@ function detectActivePreset(value: DateRange): Preset | null {
   return null;
 }
 
-export default function DateRangeFilter({ value, onChange }: DateRangeFilterProps) {
+const subscribeToHydration = () => () => {};
+export default function DateRangeFilter({
+  value,
+  onChange,
+  timeZone = 'Etc/UTC',
+}: DateRangeFilterProps) {
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false
+  );
   const [showCustom, setShowCustom] = useState(false);
   const activePreset = useMemo(() => detectActivePreset(value), [value]);
 
@@ -75,7 +91,7 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
       setShowCustom(false);
       onChange(getPresetRange(preset));
     },
-    [onChange],
+    [onChange]
   );
 
   const handleCustomFrom = useCallback(
@@ -85,7 +101,7 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
         onChange({ from: date, to: value.to });
       }
     },
-    [onChange, value.to],
+    [onChange, value.to]
   );
 
   const handleCustomTo = useCallback(
@@ -95,13 +111,17 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
         onChange({ from: value.from, to: date });
       }
     },
-    [onChange, value.from],
+    [onChange, value.from]
   );
 
   return (
     <div
       className="sticky top-0 z-10 px-4 py-3 rounded-xl"
-      style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)', borderWidth: 1 }}
+      style={{
+        backgroundColor: 'var(--bg-card)',
+        borderColor: 'var(--border-card)',
+        borderWidth: 1,
+      }}
     >
       <div className="flex flex-wrap items-center gap-2">
         {presets.map((preset) => {
@@ -115,9 +135,7 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
                 // Sage tint convention (see FocusView verdict badges).
                 backgroundColor: isActive ? 'rgba(129, 178, 154, 0.15)' : 'transparent',
                 color: isActive ? 'var(--color-sage)' : 'var(--color-text-muted)',
-                border: isActive
-                  ? '1px solid var(--color-sage)'
-                  : '1px solid var(--border-card)',
+                border: isActive ? '1px solid var(--color-sage)' : '1px solid var(--border-card)',
               }}
             >
               {preset}
@@ -131,9 +149,7 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
           style={{
             backgroundColor: showCustom ? 'rgba(129, 178, 154, 0.15)' : 'transparent',
             color: showCustom ? 'var(--color-sage)' : 'var(--color-text-muted)',
-            border: showCustom
-              ? '1px solid var(--color-sage)'
-              : '1px solid var(--border-card)',
+            border: showCustom ? '1px solid var(--color-sage)' : '1px solid var(--border-card)',
           }}
         >
           Custom
@@ -142,7 +158,10 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
 
       {showCustom && (
         <div className="flex flex-wrap items-center gap-3 mt-3">
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          <label
+            className="flex items-center gap-2 text-xs"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
             From
             <input
               type="date"
@@ -156,7 +175,10 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
               }}
             />
           </label>
-          <label className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          <label
+            className="flex items-center gap-2 text-xs"
+            style={{ color: 'var(--color-text-muted)' }}
+          >
             To
             <input
               type="date"
@@ -174,7 +196,9 @@ export default function DateRangeFilter({ value, onChange }: DateRangeFilterProp
       )}
 
       <p className="mt-2 text-[11px] font-mono" style={{ color: 'var(--color-text-muted)' }}>
-        {formatDate(value.from)} &mdash; {formatDate(value.to)}
+        {hydrated
+          ? `${formatDate(value.from, timeZone)} — ${formatDate(value.to, timeZone)} · ${timeZone}`
+          : 'Loading date range…'}
       </p>
     </div>
   );

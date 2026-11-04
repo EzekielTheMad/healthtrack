@@ -5,6 +5,7 @@ import {
   setConnectedSourceStatus,
   updateConnectedSourceTokens,
 } from '@/lib/repos/connected-sources';
+import { fetchOura, responseError, OuraApiError } from './errors';
 
 const refreshLocks = new Map<string, Promise<string>>();
 
@@ -14,13 +15,6 @@ interface OuraRefreshResponse {
   expires_in?: unknown;
   error?: unknown;
   error_description?: unknown;
-}
-
-function errorDetail(data: OuraRefreshResponse, status: number): string {
-  const code = typeof data.error === 'string' ? data.error : undefined;
-  const description =
-    typeof data.error_description === 'string' ? data.error_description : undefined;
-  return [code, description].filter(Boolean).join(': ') || `HTTP ${status}`;
 }
 
 async function refresh(
@@ -33,15 +27,15 @@ async function refresh(
   const work = (async () => {
     if (!source.refreshTokenEncrypted) {
       await setConnectedSourceStatus(userId, 'oura', 'expired');
-      throw new Error('Oura token expired and no refresh token is available');
+      throw new OuraApiError(401, 'auth_required');
     }
     const clientId = process.env.OURA_CLIENT_ID;
     const clientSecret = process.env.OURA_CLIENT_SECRET;
     if (!clientId || !clientSecret) {
-      throw new Error('Oura OAuth client credentials are not configured');
+      throw new OuraApiError(0, 'not_configured');
     }
     const currentRefreshToken = decrypt(source.refreshTokenEncrypted);
-    const response = await fetch('https://api.ouraring.com/oauth/token', {
+    const response = await fetchOura('https://api.ouraring.com/oauth/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -58,8 +52,16 @@ async function refresh(
       // must leave the connection active for the next scheduler attempt.
       if (data.error === 'invalid_grant') {
         await setConnectedSourceStatus(userId, 'oura', 'expired');
+        throw new OuraApiError(401, 'invalid_grant');
       }
-      throw new Error(`Failed to refresh Oura token: ${errorDetail(data, response.status)}`);
+      if (
+        data.error === 'invalid_client' ||
+        data.error === 'unauthorized_client' ||
+        data.error === 'invalid_scope'
+      ) {
+        throw new OuraApiError(0, 'not_configured');
+      }
+      throw responseError(response);
     }
     if (
       typeof data.access_token !== 'string' ||
@@ -68,7 +70,7 @@ async function refresh(
       !Number.isFinite(data.expires_in) ||
       data.expires_in <= 0
     ) {
-      throw new Error('Oura token refresh returned an invalid response');
+      throw new OuraApiError(0, 'invalid_response');
     }
     const rotatedRefreshToken =
       typeof data.refresh_token === 'string' && data.refresh_token
@@ -91,13 +93,20 @@ async function refresh(
 }
 
 /** Return a usable access token, refreshing it once under a per-user lock. */
-export async function getOuraAccessToken(userId: string): Promise<string> {
+export async function getOuraAccessToken(
+  userId: string,
+  forceRefresh = false,
+  rejectedAccessToken?: string
+): Promise<string> {
   const source = await getConnectedSource(userId, 'oura');
   if (!source || source.status !== 'active' || !source.accessTokenEncrypted) {
-    throw new Error('Oura Ring is not connected');
+    throw new OuraApiError(401, 'auth_required');
   }
   const accessToken = decrypt(source.accessTokenEncrypted);
   const expiresAt = source.tokenExpiresAt ? Date.parse(source.tokenExpiresAt) : 0;
-  if (!expiresAt || Date.now() < expiresAt - 60_000) return accessToken;
+  // Another collection may already have rotated this token while a 401 was in flight.
+  if (forceRefresh && rejectedAccessToken && accessToken !== rejectedAccessToken)
+    return accessToken;
+  if (!forceRefresh && (!expiresAt || Date.now() < expiresAt - 60_000)) return accessToken;
   return refresh(userId, source);
 }

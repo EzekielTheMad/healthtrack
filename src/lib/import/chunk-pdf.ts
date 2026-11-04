@@ -38,7 +38,7 @@ export interface PdfChunks {
  */
 export async function splitPdfIntoChunks(
   buffer: Buffer,
-  pagesPerChunk: number = DEFAULT_PAGES_PER_CHUNK,
+  pagesPerChunk: number = DEFAULT_PAGES_PER_CHUNK
 ): Promise<PdfChunks> {
   if (!Number.isInteger(pagesPerChunk) || pagesPerChunk < 1) {
     throw new Error(`pagesPerChunk must be a positive integer, got ${pagesPerChunk}`);

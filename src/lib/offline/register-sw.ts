@@ -7,7 +7,7 @@ export async function registerServiceWorker(): Promise<void> {
   }
 
   try {
-    const reg = await navigator.serviceWorker.register('/sw.js');
+    const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
 
     // If there is already a waiting worker, prompt user to refresh
     if (reg.waiting) {

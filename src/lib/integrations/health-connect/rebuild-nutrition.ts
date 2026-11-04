@@ -289,6 +289,15 @@ export async function updateIntegrationSettings(
   const before = await getOwnedIntegration(actorId, id);
   const after = await updateIntegration(actorId, id, patch);
 
+  // The native protocol can project more types than the legacy relay. Its
+  // explicit approval must apply to already-inventoried records too. Dynamic
+  // import avoids the ingestion/rebuild module dependency cycle.
+  if (after.status === 'active' && (patch.allowedSources !== undefined ||
+      patch.enabledTypes !== undefined || patch.status === 'active' || patch.nutritionStrategy !== undefined)) {
+    const { reprocessNativeProjections } = await import('./native-ingest');
+    reprocessNativeProjections(actorId,id);
+  }
+
   if (!nutritionRebuildTriggered(before, after)) {
     return { integration: after, rebuild: null };
   }

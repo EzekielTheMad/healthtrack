@@ -38,6 +38,7 @@ import {
 } from '@/lib/integrations/health-connect/signature';
 import { findIntegrationRow, integrationSecret } from '@/lib/repos/health-connect';
 import { db } from '@/db';
+import { assertLegacyDelivery, MobileDeviceError, mobileErrorResponse } from '@/lib/mobile/devices';
 
 const SCOPE = 'write:health_connect';
 
@@ -80,6 +81,7 @@ export async function POST(request: NextRequest) {
   const ctx = await validateApiKey(request.headers.get('Authorization'));
   if (!ctx) return unauthorized();
   if (!hasScope(ctx, SCOPE)) return forbidden(SCOPE);
+  try { assertLegacyDelivery(ctx.userId); } catch (error) { return mobileErrorResponse(error); }
 
   // 4. Rate limit, keyed by token AND user (one bucket per PAT, plus a
   // per-user ceiling so extra tokens do not multiply the budget).
@@ -142,6 +144,7 @@ export async function POST(request: NextRequest) {
           bodySha256: digest,
         });
   } catch (error) {
+    if (error instanceof MobileDeviceError) return mobileErrorResponse(error);
     if (error instanceof EnvelopeError) {
       return json({ error: error.message }, 400);
     }

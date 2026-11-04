@@ -1,95 +1,62 @@
 'use client';
 
 import { Suspense, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import AiSettings from '@/components/settings/AiSettings';
 import { ProfileForm } from '@/components/settings/ProfileForm';
 import { ProviderManagement } from '@/components/settings/ProviderManagement';
 import DataExportSection from '@/components/settings/DataExportSection';
 import PdfExportSection from '@/components/export/PdfExportSection';
-import { OuraConnectCard } from '@/components/settings/OuraConnectCard';
 import HealthShareManager from '@/components/settings/HealthShareManager';
 import DependentManager from '@/components/settings/DependentManager';
 import MedicalHistoryImport from '@/components/settings/MedicalHistoryImport';
 import DelegateManager from '@/components/settings/DelegateManager';
 import ApiKeyManager from '@/components/settings/ApiKeyManager';
-import HealthConnectManager from '@/components/settings/HealthConnectManager';
 import InviteManager from '@/components/settings/InviteManager';
+import IntegrationOverview from '@/components/settings/IntegrationOverview';
+import BuildIdentity from '@/components/settings/BuildIdentity';
+import SettingsGroups from '@/components/settings/SettingsGroups';
 import { useCapabilities } from '@/hooks/useCapabilities';
 import { useSession } from '@/lib/auth/client';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
-// ---------------------------------------------------------------------------
-// Chevron icon
-// ---------------------------------------------------------------------------
-function ChevronIcon({ rotated }: { rotated: boolean }) {
-  return (
-    <svg
-      width="20"
-      height="20"
-      viewBox="0 0 20 20"
-      fill="none"
-      style={{
-        transform: rotated ? 'rotate(180deg)' : 'rotate(0deg)',
-        transition: 'transform 200ms ease',
-        flexShrink: 0,
-      }}
-    >
-      <path
-        d="M5 7.5L10 12.5L15 7.5"
-        stroke="var(--color-text-muted)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Collapsible section wrapper
-// ---------------------------------------------------------------------------
+// Native disclosures keep their forms mounted when closed and expose their
+// expanded state to keyboard and screen-reader users without a second state.
 function SettingsSection({
+  id,
   title,
   description,
   defaultOpen = false,
   borderColor,
   children,
 }: {
+  id: string;
   title: string;
   description: string;
   defaultOpen?: boolean;
   borderColor?: string;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-
   return (
-    <div
-      className="rounded-xl border"
+    <details
+      id={id}
+      open={defaultOpen}
+      className="rounded-xl border scroll-mt-6"
       style={{
         backgroundColor: 'var(--bg-card)',
         borderColor: borderColor ?? 'var(--border-card)',
       }}
     >
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full p-6 flex justify-between items-center text-left cursor-pointer"
-        type="button"
-      >
-        <div>
-          <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
-            {title}
-          </h2>
-          {!open && (
-            <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
-              {description}
-            </p>
-          )}
-        </div>
-        <ChevronIcon rotated={open} />
-      </button>
-      {open && <div className="px-6 pb-6">{children}</div>}
-    </div>
+      <summary className="min-h-11 cursor-pointer rounded-xl p-4 sm:p-5 focus-visible:outline-2 focus-visible:outline-offset-2">
+        <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+          {title}
+        </span>
+        <span className="mt-1 block text-sm" style={{ color: 'var(--color-text-muted)' }}>
+          {description}
+        </span>
+      </summary>
+      <div className="px-4 pb-4 sm:px-5 sm:pb-5">{children}</div>
+    </details>
   );
 }
 
@@ -119,9 +86,7 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
       // Server already destroyed the session and expired the cookie.
       router.push('/login');
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to delete account',
-      );
+      setError(err instanceof Error ? err.message : 'Failed to delete account');
       setDeleting(false);
     }
   }
@@ -139,9 +104,8 @@ function DeleteAccountModal({ onClose }: { onClose: () => void }) {
           Delete Account
         </h3>
         <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-          This will permanently delete your account and all associated health
-          data. This action <strong style={{ color: 'var(--color-terracotta)' }}>cannot</strong>{' '}
-          be undone.
+          This will permanently delete your account and all associated health data. This action{' '}
+          <strong style={{ color: 'var(--color-terracotta)' }}>cannot</strong> be undone.
         </p>
         <p className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
           Type <strong>DELETE</strong> to confirm:
@@ -207,152 +171,147 @@ function SettingsContent() {
   const { capabilities } = useCapabilities();
   const { data: session } = useSession();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const searchParams = useSearchParams();
-  const hasOuraParam = searchParams.has('oura');
-  // `role` is a server-side additional field; the client session type doesn't
-  // narrow it, hence the cast. Non-admins simply don't see the section (the
-  // API enforces 403 regardless).
+  // Visibility is a convenience; the invite API also enforces the admin role.
   const isAdmin = (session?.user as { role?: string } | undefined)?.role === 'admin';
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
         Settings
       </h1>
-
-      {/* Profile */}
-      <SettingsSection
-        title="Profile"
-        description="Manage your personal information, date of birth, and biological details."
-        defaultOpen
-      >
-        <ProfileForm />
-      </SettingsSection>
-
-      {/* Providers */}
-      <SettingsSection
-        title="Providers"
-        description="Manage your healthcare providers and their contact information."
-      >
-        <ProviderManagement />
-      </SettingsSection>
-
-      {/* Family & Dependents */}
-      <SettingsSection
-        title="Family & Dependents"
-        description="Manage family members and dependents whose health data you track."
-      >
-        <DependentManager />
-      </SettingsSection>
-
-      {/* Import Medical History — hidden when the instance has no AI configured */}
-      {capabilities?.ai !== false && (
-        <SettingsSection
-          title="Import Medical History"
-          description="Upload a doctor-provided medical-history PDF to extract and import records for you or a dependent."
-        >
-          <MedicalHistoryImport />
-        </SettingsSection>
-      )}
-
-      {/* Connected Sources — hidden when the instance has no Oura app configured */}
-      {capabilities?.oura !== false && (
-        <SettingsSection
-          title="Connected Sources"
-          description="Manage wearable and health data integrations like Oura Ring."
-          defaultOpen={hasOuraParam}
-        >
-          <OuraConnectCard />
-        </SettingsSection>
-      )}
-
-      {/* Invites — admin only (registration is invite-only by default) */}
-      {isAdmin && (
-        <SettingsSection
-          title="Invites"
-          description="Create single-use invite links so family members can register on this instance."
-        >
-          <InviteManager />
-        </SettingsSection>
-      )}
-
-      {/* Delegate Access */}
-      <SettingsSection
-        title="Delegate Access"
-        description="Grant other adults account-level access to view or manage your health data."
-      >
-        <DelegateManager />
-      </SettingsSection>
-
-      {/* API Access */}
-      <SettingsSection
-        title="API Access"
-        description="Generate tokens to access your health data from external apps and scripts."
-      >
-        <ApiKeyManager />
-      </SettingsSection>
-
-      {/* Health Connect (Android phone relay) */}
-      <SettingsSection
-        title="Health Connect"
-        description="Receive Health Connect data from the Life Dashboard Android app — activity totals and nutrition."
-      >
-        <HealthConnectManager />
-      </SettingsSection>
-
-      {/* Health Sharing */}
-      <SettingsSection
-        title="Health Sharing"
-        description="Share your health data with family members, caregivers, or providers."
-      >
-        <HealthShareManager />
-      </SettingsSection>
-
-      {/* Data Export */}
-      <SettingsSection
-        title="Data Export"
-        description="Export your health data as a JSON file for personal backup."
-      >
-        <DataExportSection />
-      </SettingsSection>
-
-      {/* PDF Export */}
-      <SettingsSection
-        title="PDF Health Summary"
-        description="Download a formatted PDF health summary to share with doctors offline."
-      >
-        <PdfExportSection />
-      </SettingsSection>
-
-      {/* Danger Zone */}
-      <SettingsSection
-        title="Danger Zone"
-        description="Permanently delete your account and all associated health data."
-        borderColor="#991B1B"
-      >
-        <div className="space-y-4">
-          <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Once you delete your account, all of your data will be permanently
-            removed. This action cannot be undone.
-          </p>
-          <button
-            onClick={() => setShowDeleteModal(true)}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer hover:bg-red-900/80"
-            style={{
-              backgroundColor: 'rgba(127,29,29,0.5)',
-              color: 'var(--color-terracotta)',
-              border: '1px solid #991B1B',
-            }}
-            type="button"
-          >
-            Delete Account
-          </button>
-        </div>
-      </SettingsSection>
-
-      {showDeleteModal && (
-        <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />
-      )}
+      <SettingsGroups
+        panels={{
+          profile: (
+            <SettingsSection
+              id="profile"
+              title="Personal information"
+              description="Manage your personal information, date of birth, and biological details."
+              defaultOpen
+            >
+              <ProfileForm />
+            </SettingsSection>
+          ),
+          integrations: (
+            <>
+              <Link
+                href="/mobile/devices"
+                className="inline-flex min-h-11 items-center underline mb-3"
+              >
+                Phone & sync
+              </Link>
+              <IntegrationOverview />
+            </>
+          ),
+          ai: <AiSettings />,
+          people: (
+            <>
+              <SettingsSection
+                id="providers"
+                title="Providers"
+                description="Manage your healthcare providers and their contact information."
+              >
+                <ProviderManagement />
+              </SettingsSection>
+              <SettingsSection
+                id="dependents-section"
+                title="Family & Dependents"
+                description="Manage family members and dependents whose health data you track."
+              >
+                <DependentManager />
+              </SettingsSection>
+              <SettingsSection
+                id="delegates"
+                title="Delegate Access"
+                description="Grant other adults account-level access to view or manage your health data."
+              >
+                <DelegateManager />
+              </SettingsSection>
+              <SettingsSection
+                id="health-sharing"
+                title="Health Sharing"
+                description="Share your health data with family members, caregivers, or providers."
+              >
+                <HealthShareManager />
+              </SettingsSection>
+              {isAdmin && (
+                <SettingsSection
+                  id="invites"
+                  title="Invites"
+                  description="Create single-use invite links so family members can register on this instance."
+                >
+                  <InviteManager />
+                </SettingsSection>
+              )}
+            </>
+          ),
+          data: (
+            <>
+              <SettingsSection
+                id="medical-history"
+                title="Import Medical History"
+                description="Review saved document imports, or extract a medical history for you or a dependent."
+              >
+                <MedicalHistoryImport extractionEnabled={capabilities?.ai === true} />
+              </SettingsSection>
+              <SettingsSection
+                id="data-export"
+                title="Data Export"
+                description="Export your health data as a JSON file for personal backup."
+              >
+                <DataExportSection />
+              </SettingsSection>
+              <SettingsSection
+                id="pdf-summary"
+                title="PDF Health Summary"
+                description="Download a formatted PDF health summary to share with doctors offline."
+              >
+                <PdfExportSection />
+              </SettingsSection>
+            </>
+          ),
+          advanced: (
+            <>
+              <SettingsSection
+                id="api-access"
+                title="API access"
+                description="Generate tokens for Hermes, device bridges, and other external apps or scripts."
+              >
+                <ApiKeyManager />
+              </SettingsSection>
+              <div id="build" className="scroll-mt-6">
+                <h3 className="mb-2 font-semibold">About this instance</h3>
+                <BuildIdentity />
+              </div>
+              <SettingsSection
+                id="danger-zone"
+                title="Danger Zone"
+                description="Permanently delete your account and all associated health data."
+                borderColor="#991B1B"
+              >
+                <div className="space-y-4">
+                  <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                    Once you delete your account, all of your data will be permanently removed. This
+                    action cannot be undone.
+                  </p>
+                  <button
+                    onClick={() => setShowDeleteModal(true)}
+                    className="min-h-11 rounded-lg px-4 py-2 text-sm font-medium transition-colors cursor-pointer hover:bg-red-900/80"
+                    style={{
+                      backgroundColor: 'rgba(127,29,29,0.5)',
+                      color: 'var(--color-terracotta)',
+                      border: '1px solid #991B1B',
+                    }}
+                    type="button"
+                  >
+                    Delete Account
+                  </button>
+                </div>
+              </SettingsSection>
+            </>
+          ),
+        }}
+      />
+      {showDeleteModal && <DeleteAccountModal onClose={() => setShowDeleteModal(false)} />}
     </div>
   );
 }

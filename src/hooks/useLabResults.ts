@@ -5,9 +5,31 @@ import { apiFetch } from '@/lib/api/client';
 import { useActiveProfile } from '@/components/shared/ActiveProfileProvider';
 import type { LabVisit, LabResult } from '@/lib/types';
 import type { ParsedLabResult } from '@/lib/claude/parse-lab';
+import { isValidDayKey } from '@/lib/dates';
 
 export interface LabVisitWithResults extends LabVisit {
   lab_results: LabResult[];
+}
+
+export interface LabVisitUpdates {
+  visit_date?: string;
+  notes?: string | null;
+  reason?: string;
+  results?: Array<
+    Partial<
+      Pick<
+        LabResult,
+        | 'panel_name'
+        | 'test_name'
+        | 'value'
+        | 'unit'
+        | 'reference_range_low'
+        | 'reference_range_high'
+        | 'reference_range_text'
+        | 'flag'
+      >
+    > & { id: string }
+  >;
 }
 
 function listUrl(dependentId: string | null, delegateOwnerId: string | null): string {
@@ -32,9 +54,7 @@ export function useLabResults() {
     setError(null);
 
     try {
-      const data = await apiFetch<LabVisitWithResults[]>(
-        listUrl(dependentId, delegateOwnerId),
-      );
+      const data = await apiFetch<LabVisitWithResults[]>(listUrl(dependentId, delegateOwnerId));
       setLabVisits(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load lab results');
@@ -51,9 +71,7 @@ export function useLabResults() {
       setError(null);
 
       try {
-        const data = await apiFetch<LabVisitWithResults[]>(
-          listUrl(dependentId, delegateOwnerId),
-        );
+        const data = await apiFetch<LabVisitWithResults[]>(listUrl(dependentId, delegateOwnerId));
         if (cancelled) return;
         setLabVisits(data);
       } catch (err) {
@@ -65,13 +83,18 @@ export function useLabResults() {
     }
 
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [dependentId, delegateOwnerId]);
 
   const saveLabVisit = useCallback(
     async (parsedData: ParsedLabResult, storagePath: string) => {
+      if (!parsedData.visit_date || !isValidDayKey(parsedData.visit_date)) {
+        throw new Error('Enter the collection / visit date from the report before saving.');
+      }
       const payload: Record<string, unknown> = {
-        visit_date: parsedData.visit_date ?? new Date().toISOString().split('T')[0],
+        visit_date: parsedData.visit_date,
         source_pdf_path: storagePath,
         notes: parsedData.provider_name
           ? `Imported from ${parsedData.provider_name}`
@@ -98,8 +121,16 @@ export function useLabResults() {
       // Refetch to update state
       await fetchLabResults();
     },
-    [fetchLabResults, dependentId, delegateOwnerId],
+    [fetchLabResults, dependentId, delegateOwnerId]
   );
 
-  return { labVisits, loading, error, saveLabVisit, refetch: fetchLabResults };
+  const updateLabVisit = useCallback(async (id: string, updates: LabVisitUpdates) => {
+    const updated = await apiFetch<LabVisitWithResults>(`/api/labs/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+    setLabVisits((previous) => previous.map((visit) => (visit.id === id ? updated : visit)));
+  }, []);
+
+  return { labVisits, loading, error, saveLabVisit, updateLabVisit, refetch: fetchLabResults };
 }

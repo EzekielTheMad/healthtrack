@@ -2,6 +2,127 @@
 
 All notable changes to HealthTrack are documented here for GitHub releases.
 
+## 2.1.0 — web completion candidate (unpublished)
+
+This candidate combines the unshipped 2.0.0 work and the fidelity changes below
+with the remaining approved web workflows. It has not been publicly released.
+
+- Add ordinary and typed-JSON entry for encounters, diagnostic sleep studies,
+  aggregate PAP reports, instrument-specific screenings, procedure events,
+  condition certainty/activity/history, explicit allergy reviews and qualitative
+  genetic reports. Preserve dates, original text, zero, unknown and provenance.
+- Encounter heart rate and historical height stay separate from resting heart
+  rate and profile height. Same-day repeats survive. PAP windows remain aggregate
+  reports; overlapping windows are never summed or expanded into daily readings.
+- Add all ten regional lean/fat values and source-reported specialized scan
+  measurements, definitions, vendor scores/body age/reference bands and archived
+  recommendations. Compatible same-scan derived ratios remain separate from
+  reported values; vendor advice never changes targets.
+- Expose timezone, exact workout timestamp, authorized supplement links and source
+  document/page controls in normal forms. Comparisons reject incompatible units,
+  source/device/method, protocols and collection conditions.
+- Share the same scoped evidence across history, doctor PDFs, exports and app/API
+  context. Preserve selected corrections, prior values and conflict evidence.
+  New report-write grants are explicit; historical tokens gain no new mutations.
+- Refresh the person picker immediately after successful family-member changes;
+  keep failed edits and late responses from replacing current person lists.
+- Reject malformed explicit API-key expiry values before generating or storing a
+  key. Authentication also rejects malformed stored non-null expiries. Parseable
+  legacy dates and intentional null/no-expiry keys retain their existing behavior;
+  no stored dates are rewritten and no keys are rotated automatically.
+- Verify known migration source/runtime checksums during the Docker build and
+  produce a separate pinned runtime copy. Git archives and different checkout
+  newline conventions now yield the same migration bytes; source SQL, migration
+  logic and applied database ledgers are unchanged. Unknown inputs stop the build.
+- Migration `0018_web_clinical_records` widens typed history constraints while
+  preserving existing row IDs, source values and references. It does not backfill
+  certainty or clinical dates. Keep the matching pre-upgrade image/data/config/key
+  pair and reconcile later writes before any rollback.
+
+Android and all seven physical-phone acceptance groups remain **deferred and
+unverified**, outside this web release. No public APK is included. Existing generic
+lab PDF/image ingestion is retained; vendor-specific scan/history parsers and
+automatic clinical interpretation remain excluded. Provider, Oura, exact-candidate
+runtime/recovery and publication gates retain their own evidence requirements.
+See [web scope](docs/WEB-COMPLETION.md) and [release gates](docs/RELEASE.md).
+See the [release notes](docs/RELEASE-NOTES-2.1.md) for upgrade compatibility and
+the [candidate checklist](docs/RELEASE-CHECKLIST.md) for verification limits.
+
+## 2.1.0-alpha.1 — next-release fidelity candidate (unpublished)
+
+- Typed numeric, qualitative, censored and canceled labs retain source units,
+  comparators, reference evidence, printed/derived flags and honest date precision.
+- Structured medication/supplement courses separate strength, amount, prescribed
+  directions, reported use and explicitly reported administration/missed/skip events.
+- New clinical API intake stages an exact preview for owner approval in the app;
+  corrections retain prior source values and audits. New grants are explicit;
+  historical wildcard/device tokens cannot silently gain these write capabilities.
+- Identified body scans retain same-day repeats, raw units, source/device/method
+  and known conditions. Seven core mass/water/area metrics, manual/JSON entry,
+  bounded typed metadata and source-aware comparisons preserve estimate labels.
+- Context, doctor PDF inputs and owned exports retain typed evidence. Current
+  numeric projections omit explicitly superseded legacy values with coverage
+  warnings; changed records prevent stale cached/in-flight answers.
+- Additive migration `0017_fidelity_contracts` preserves legacy records. Restore
+  requires the matching pre-upgrade image/data/keys/configuration pair; preserve
+  subsequent writes before rollback. See [next-release notes](docs/NEXT-RELEASE.md).
+
+This is a local development candidate. Full-app/recovery/review evidence and
+separate publication/deployment authorization are required; v2 gates remain open.
+
+## 2.0.0 — release candidate (unpublished)
+
+### Added
+
+- Account-owned AI settings for direct Anthropic, OpenAI and Gemini APIs:
+  encrypted write-only keys, model discovery, primary/document selections,
+  explicit fictional connection tests, immediate settings changes and removal.
+- Saved document review with patient-scoped hashes, observation reconciliation,
+  explicit skip/add/link/correct choices, retained originals/provenance,
+  honest partial dates and transactional retry protection. Standalone vaccine
+  uploads use the same saved review instead of inventing missing dates.
+- Doctor Essentials, collection-dated lab summaries and audited corrections;
+  dedicated body measurements, aligned two-metric comparisons, guided mobile
+  weekly reviews, nutrition coverage and exercise catalog/alias access.
+- Consolidated integration status, Oura reconnect/sync actions and truthful
+  partial/backoff/delivery freshness; shared dated app/PAT health context.
+- Private Android website-first companion with optional native Health Connect
+  delivery and offline essentials. APK/store publication is not part of v2.
+
+### Fixed
+
+- Editable medication dates preserve calendar days, unknown dates and identifiers.
+  Profiles convert entered units before canonical validation; supported LAN HTTP
+  and HTTPS sign-in retain their correct cookie behavior.
+- Patient and AI configuration isolation, stale request fencing, strict
+  interaction-output validation and withholding legacy potentially pooled AI
+  results. Old clinical facts and source documents remain retained.
+- Actual PDF/PNG/JPEG content determines extraction format. Overlapping activity
+  totals are selected instead of added; missing CPAP nights remain unknown and
+  recorded zeros remain zero. Instance timezone governs reporting windows.
+- Active browser pages share the existing 15-minute inactivity deadline.
+- Doctor PDF section headings use orphan protection while large rows can span pages. README screenshots
+  use a newly generated fictional account; native AMD64/ARM64 CI smoke checks
+  can run before publication.
+- Next.js remains on 16.4.3; Better Auth is patched to 1.7.7. See release evidence
+  for the remaining moderate development-tool advisories and their limits.
+
+### Upgrade and verification
+
+Back up the complete matching image/configuration and `/data` volume, including
+keys and uploads. Startup applies additive migrations through
+`0016_trusted_ai_context`. Stop old writers; do not mix versions. Configure AI
+per account; environment keys no longer activate it silently. Legacy admin
+migration is explicit. Rerun interaction checks after upgrading, and complete
+the timezone/source preflight before ingestion or reprocessing.
+
+See [v2 scope/evidence](docs/V2.md), [upgrade and rollback](docs/UPGRADING.md),
+[AI setup](docs/AI.md), [candidate checkpoint](docs/RELEASE-CANDIDATE.md) and [release gates](docs/RELEASE.md). Real-provider
+text/document acceptance, full physical-phone/background/offline acceptance,
+advertised container architecture execution and publication must be recorded
+for the exact candidate before a public release is claimed. This entry is a
+release draft, not an announcement that those gates passed.
+
 ## 0.8.1 - 2026-09-03
 
 ### Fixed

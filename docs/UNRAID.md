@@ -12,7 +12,7 @@ uploaded PDFs, auto-generated secrets) lives in one volume — back up
    `http://192.168.1.50:3000` (or your reverse-proxy HTTPS URL).
 4. Apply. Open the WebUI and register — the **first account becomes the
    instance admin**. After that, registration is invite-only by default — add
-   family via single-use links from **Settings → Invites** (or set
+   family via single-use links from **Settings → People & sharing → Invites** (or set
    `SIGNUPS_ENABLED=true` to open registration to anyone).
 
 ## Option 2 — Manual template URL (before/without CA listing)
@@ -112,7 +112,8 @@ value and its default rather than assuming a blank value is enough. Do not
 blindly reconstruct desired configuration from `docker inspect`: that captures
 existing drift too. Never put secret values in a commit, issue or release report.
 After an authorized update, verify health and the intended registration behavior;
-see [release evidence and rollback](RELEASE.md#release-evidence-requirements).
+see [release evidence](RELEASE.md#release-evidence-requirements) and the
+[upgrade/rollback runbook](UPGRADING.md).
 This guidance does not authorize host/template changes.
 
 ## Submitting the template to Community Applications (repo owner)

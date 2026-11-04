@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { formatDateOnly } from '@/lib/dates';
 import type { Allergy } from '@/lib/types';
 import AddAllergyForm, { type AddAllergyFormData } from './AddAllergyForm';
 
@@ -20,7 +21,7 @@ const SEVERITY_LABELS: Record<string, string> = {
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '';
-  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return formatDateOnly(dateStr);
 }
 
 interface AllergyCardProps {
@@ -49,8 +50,14 @@ export default function AllergyCard({ allergy, onUpdate, onDelete }: AllergyCard
 
   if (editing) {
     return (
-      <div className="rounded-xl border p-5" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}>
-        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>Edit Allergy</h3>
+      <div
+        id={`record-${allergy.id}`}
+        className="rounded-xl border p-5"
+        style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+      >
+        <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text-primary)' }}>
+          Edit Allergy
+        </h3>
         <AddAllergyForm
           onSubmit={handleUpdate}
           onCancel={() => setEditing(false)}
@@ -69,11 +76,18 @@ export default function AllergyCard({ allergy, onUpdate, onDelete }: AllergyCard
   }
 
   return (
-    <div className="rounded-xl border p-5" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}>
+    <div
+      id={`record-${allergy.id}`}
+      className="rounded-xl border p-5"
+      style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-card)' }}
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <h3 className="text-base font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
+            <h3
+              className="text-base font-semibold truncate"
+              style={{ color: 'var(--color-text-primary)' }}
+            >
               {allergy.name}
             </h3>
             <span
@@ -84,13 +98,20 @@ export default function AllergyCard({ allergy, onUpdate, onDelete }: AllergyCard
             </span>
           </div>
           {allergy.reaction && (
-            <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>Reaction: {allergy.reaction}</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
+              Reaction: {allergy.reaction}
+            </p>
           )}
           {allergy.diagnosed_date && (
-            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>Diagnosed {formatDate(allergy.diagnosed_date)}</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+              Diagnosed {formatDate(allergy.diagnosed_date)}
+            </p>
           )}
           {allergy.rxcui && (
-            <span className="text-xs px-2 py-0.5 rounded-full mt-2 inline-block" style={{ backgroundColor: 'var(--color-cream)', color: 'var(--color-sage)' }}>
+            <span
+              className="text-xs px-2 py-0.5 rounded-full mt-2 inline-block"
+              style={{ backgroundColor: 'var(--color-cream)', color: 'var(--color-sage)' }}
+            >
               RxCUI: {allergy.rxcui}
             </span>
           )}
@@ -128,7 +149,11 @@ export default function AllergyCard({ allergy, onUpdate, onDelete }: AllergyCard
               type="button"
               onClick={() => setConfirmDelete(true)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
-              style={{ backgroundColor: 'transparent', color: 'var(--color-terracotta)', border: '1px solid #F87171' }}
+              style={{
+                backgroundColor: 'transparent',
+                color: 'var(--color-terracotta)',
+                border: '1px solid #F87171',
+              }}
             >
               Delete
             </button>

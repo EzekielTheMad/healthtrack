@@ -1,0 +1,8 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="website_settings" android:enabled="true" android:icon="@drawable/ic_healthtrack" android:shortcutShortLabel="@string/website_settings">
+        <intent android:action="com.omnihealthtracker.app.OPEN_SETUP" android:targetPackage="com.omnihealthtracker.app" android:targetClass="com.omnihealthtracker.app.NativeToolsActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="saved_doctor" android:enabled="true" android:icon="@drawable/ic_healthtrack" android:shortcutShortLabel="@string/saved_doctor_shortcut">
+        <intent android:action="android.intent.action.VIEW" android:data="healthtrack://doctor" android:targetPackage="com.omnihealthtracker.app" android:targetClass="com.omnihealthtracker.app.NativeToolsActivity" />
+    </shortcut>
+</shortcuts>

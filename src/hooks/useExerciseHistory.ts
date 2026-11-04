@@ -22,9 +22,6 @@ export function useExerciseHistory(exerciseId: string | null) {
 
   useEffect(() => {
     if (exerciseId === null) {
-      setItems(NO_ITEMS);
-      setLoading(false);
-      setError(null);
       return;
     }
 
@@ -35,7 +32,7 @@ export function useExerciseHistory(exerciseId: string | null) {
       setError(null);
       try {
         const rows = await apiFetch<ExerciseHistoryItemWire[]>(
-          `/api/exercises/${exerciseId}/history?limit=${HISTORY_LIMIT}`,
+          `/api/exercises/${exerciseId}/history?limit=${HISTORY_LIMIT}`
         );
         if (!cancelled) setItems(rows);
       } catch (err) {
@@ -53,5 +50,9 @@ export function useExerciseHistory(exerciseId: string | null) {
     };
   }, [exerciseId]);
 
-  return { items, loading, error };
+  return {
+    items: exerciseId === null ? NO_ITEMS : items,
+    loading: exerciseId !== null && loading,
+    error: exerciseId === null ? null : error,
+  };
 }

@@ -65,8 +65,8 @@ export interface ApneaNight {
   dayKey: string;
   /** Nightly AHI (same-day mean), null when not recorded. */
   ahi: number | null;
-  /** False = night without CPAP use — rendered as a gray bar. */
-  used: boolean;
+  /** null = no report; false is reserved for an explicit zero-usage report. */
+  used: boolean | null;
 }
 
 export type FocusPanelId = 'apnea' | 'recovery' | 'body' | 'activity';
@@ -98,7 +98,7 @@ export interface FocusGoalContext {
   frequencyGoals?: readonly FocusFrequencyGoal[];
   /** Recent workout sessions; only the current week's are counted. */
   weekSessions?: readonly FocusWeekSession[];
-  /** IANA timezone for Monday-anchored weeks (viewer-local; default UTC). */
+  /** Instance IANA timezone for reporting days and Monday weeks (default UTC). */
   timeZone?: string;
 }
 
@@ -161,7 +161,7 @@ function dailyValuesInWindow(
   metricKey: string,
   todayKey: string,
   days: number,
-  excludeDay?: string,
+  excludeDay?: string
 ): number[] {
   const cut = shiftDayKey(todayKey, -(days - 1));
   const out: number[] = [];
@@ -175,7 +175,7 @@ function dailyValuesInWindow(
 function dailyMeans(
   rows: FocusVitalRow[],
   metricKey: string,
-  todayKey: string,
+  todayKey: string
 ): Map<string, number> {
   const byDay = new Map<string, number[]>();
   for (const r of rows) {
@@ -192,15 +192,7 @@ function dailyMeans(
 
 /** Whole days between two YYYY-MM-DD day keys (b − a). */
 function diffDays(a: string, b: string): number {
-  return Math.round(
-    (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS,
-  );
-}
-
-/** UTC day key of `now` (day-normalized row convention). */
-function utcDayKey(now: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}`;
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS);
 }
 
 /**
@@ -208,10 +200,7 @@ function utcDayKey(now: Date): string {
  * (amber warn), not a failure — the app's warn tone is the vocabulary for
  * "off the maintenance band" (spec §goals maintain semantics).
  */
-function goalStatTone(
-  tone: DeltaTone,
-  direction: EffectiveGoalDirection | undefined,
-): StatTone {
+function goalStatTone(tone: DeltaTone, direction: EffectiveGoalDirection | undefined): StatTone {
   return tone === 'bad' && direction === 'maintain' ? 'warn' : tone;
 }
 
@@ -226,7 +215,7 @@ function deltaSub(
   delta: number,
   decimals: number,
   direction: EffectiveGoalDirection | undefined,
-  suffix: string,
+  suffix: string
 ): { sub: string; tone: StatTone } {
   const band = 0.5 * 10 ** -decimals;
   const tone = goalStatTone(deltaTone(delta, direction, band), direction);
@@ -242,7 +231,7 @@ function pctDeltaSub(
   latest: number,
   baseline: number,
   direction: EffectiveGoalDirection | undefined,
-  suffix: string,
+  suffix: string
 ): { sub: string; tone: StatTone } {
   const pct = Math.round(((latest - baseline) / Math.abs(baseline)) * 100);
   const tone = goalStatTone(deltaTone(pct, direction, 1), direction);
@@ -257,7 +246,7 @@ function pctDeltaSub(
  */
 function statDirection(
   key: string,
-  metricGoals: readonly FocusMetricGoal[],
+  metricGoals: readonly FocusMetricGoal[]
 ): EffectiveGoalDirection {
   return resolveGoalDirection(key, getMetric(key)?.goalDirection, metricGoals) ?? 'higher';
 }
@@ -286,7 +275,7 @@ export function apneaVerdict(avgAhi: number | null, usedNights: number): Verdict
 export function recoveryVerdict(
   readiness: number | null,
   hrvLatest: number | null,
-  hrvMean30: number | null,
+  hrvMean30: number | null
 ): Verdict {
   if (readiness !== null) {
     if (readiness >= 85) return { label: 'Primed', tone: 'success' };
@@ -317,7 +306,7 @@ const WEIGHT_RATE_BAND = 0.2;
  */
 export function bodyVerdict(
   ratePerWeek: number | null,
-  direction: ActiveMetricGoal['direction'] = 'decrease',
+  direction: ActiveMetricGoal['direction'] = 'decrease'
 ): Verdict {
   if (ratePerWeek === null) return NOT_ENOUGH_DATA;
   const down = ratePerWeek <= -WEIGHT_RATE_BAND;
@@ -363,7 +352,7 @@ export function frequencyVerdict(
   frequencyGoals: readonly FocusFrequencyGoal[],
   weekSessions: readonly FocusWeekSession[],
   now: Date,
-  timeZone: string,
+  timeZone: string
 ): Verdict | null {
   if (frequencyGoals.length === 0) return null;
 
@@ -381,20 +370,20 @@ export function frequencyVerdict(
   const ordered = [...frequencyGoals].sort(
     (a, b) =>
       SESSION_TYPE_ORDER.indexOf(a.sessionType as (typeof SESSION_TYPE_ORDER)[number]) -
-      SESSION_TYPE_ORDER.indexOf(b.sessionType as (typeof SESSION_TYPE_ORDER)[number]),
+      SESSION_TYPE_ORDER.indexOf(b.sessionType as (typeof SESSION_TYPE_ORDER)[number])
   );
   const label = `${ordered
     .map(
       (g) =>
         `${counts.get(g.sessionType) ?? 0}/${g.perWeek} ${
           SESSION_TYPE_NOUNS[g.sessionType] ?? g.sessionType
-        }`,
+        }`
     )
     .join(' · ')} this week`;
 
   const daysLeftInclToday = 7 - diffDays(weekStart, todayKey); // Mon → 7 … Sun → 1
   const onPace = ordered.every(
-    (g) => Math.max(0, g.perWeek - (counts.get(g.sessionType) ?? 0)) <= daysLeftInclToday,
+    (g) => Math.max(0, g.perWeek - (counts.get(g.sessionType) ?? 0)) <= daysLeftInclToday
   );
   return { label, tone: onPace ? 'success' : 'warning' };
 }
@@ -416,10 +405,12 @@ export interface CpapAdherence {
   /** Nights from the first cpap record (capped 90d back) through yesterday —
       today only counts once tonight has a record. */
   totalNights: number;
+  reportedNights: number;
+  missingNights: number;
   /** Mean nightly hours over used nights, null when none were used. */
   avgHours: number | null;
   /** Standard compliance framing: ≥70% of nights at ≥4h. */
-  compliant: boolean;
+  compliant: boolean | null;
 }
 
 /**
@@ -427,14 +418,19 @@ export interface CpapAdherence {
  * back), through YESTERDAY — tonight can't be missing before it happens, so
  * today only joins the denominator once it has a record. A night counts as
  * used at the clinical compliance threshold: daily usage (same-day mean) of
- * 4 hours or more; shorter, recorded-zero, and missing nights are unused.
+ * 4 hours or more. Missing reports are unknown and excluded from the recorded-night
+ * percentage. A compliance judgement is withheld while any night is missing.
  * Null without any cpap_usage rows.
  */
-export function cpapAdherence(rows: FocusVitalRow[], now: Date): CpapAdherence | null {
+export function cpapAdherence(
+  rows: FocusVitalRow[],
+  now: Date,
+  timeZone = 'Etc/UTC'
+): CpapAdherence | null {
   const usage = rowsFor(rows, 'cpap_usage');
   if (usage.length === 0) return null;
 
-  const todayKey = utcDayKey(now);
+  const todayKey = dayKeyInTz(now, timeZone);
   const daily = dailyMeans(usage, 'cpap_usage', todayKey);
   if (daily.size === 0) return null; // only future-dated rows
 
@@ -452,13 +448,17 @@ export function cpapAdherence(rows: FocusVitalRow[], now: Date): CpapAdherence |
     if (k >= start && hours >= CPAP_COMPLIANT_HOURS) usedHours.push(hours);
   }
   const usedNights = usedHours.length;
+  const reportedNights = [...daily.keys()].filter((key) => key >= start && key <= end).length;
+  const missingNights = totalNights - reportedNights;
 
   return {
-    pct: Math.round((usedNights / totalNights) * 100),
+    pct: Math.round((usedNights / reportedNights) * 100),
     usedNights,
     totalNights,
+    reportedNights,
+    missingNights,
     avgHours: usedNights > 0 ? mean(usedHours) : null,
-    compliant: usedNights / totalNights >= CPAP_COMPLIANT_RATIO,
+    compliant: missingNights > 0 ? null : usedNights / totalNights >= CPAP_COMPLIANT_RATIO,
   };
 }
 
@@ -477,8 +477,8 @@ export interface WeightTrend {
  * 7d rolling weight average and its weekly rate, on UTC day keys (weight rows
  * are day-normalized). Multiple same-day readings average into one daily value.
  */
-export function weightTrend(rows: FocusVitalRow[], now: Date): WeightTrend {
-  const todayKey = utcDayKey(now);
+export function weightTrend(rows: FocusVitalRow[], now: Date, timeZone = 'Etc/UTC'): WeightTrend {
+  const todayKey = dayKeyInTz(now, timeZone);
   const daily = dailyMeans(rowsFor(rows, 'weight'), 'weight', todayKey);
 
   const w1Start = shiftDayKey(todayKey, -6); // last 7 days inclusive of today
@@ -509,12 +509,12 @@ function chartMetricsWithData(rows: FocusVitalRow[], keys: string[]): string[] {
   return keys.filter((k) => present.has(k));
 }
 
-function buildApneaPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
+function buildApneaPanel(rows: FocusVitalRow[], now: Date, timeZone: string): FocusPanel | null {
   const ahiRows = rowsFor(rows, 'ahi');
   const usageRows = rowsFor(rows, 'cpap_usage');
   if (ahiRows.length === 0 && usageRows.length === 0) return null;
 
-  const todayKey = utcDayKey(now);
+  const todayKey = dayKeyInTz(now, timeZone);
   const cut30 = shiftDayKey(todayKey, -29);
   const ahiDaily = dailyMeans(ahiRows, 'ahi', todayKey);
   const usageDaily = dailyMeans(usageRows, 'cpap_usage', todayKey);
@@ -549,19 +549,18 @@ function buildApneaPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
       value: avgAhi !== null ? fmtNum(avgAhi, 1) : '—',
       unit: 'events/hr',
       sub: 'goal <5',
-      tone:
-        avgAhi === null ? 'neutral' : avgAhi < 5 ? 'good' : avgAhi <= 15 ? 'warn' : 'bad',
+      tone: avgAhi === null ? 'neutral' : avgAhi < 5 ? 'good' : avgAhi <= 15 ? 'warn' : 'bad',
     });
   }
-  const adherence = cpapAdherence(rows, now);
+  const adherence = cpapAdherence(rows, now, timeZone);
   if (adherence !== null) {
     stats.push({
       key: 'adherence',
-      label: 'Adherence',
+      label: 'Recorded nights ≥4h',
       value: `${adherence.pct}%`,
       unit: null,
-      sub: `${adherence.usedNights}/${adherence.totalNights} nights ≥4h`,
-      tone: adherence.compliant ? 'good' : 'warn',
+      sub: `${adherence.usedNights}/${adherence.reportedNights} reported nights ≥4h · ${adherence.reportedNights}/${adherence.totalNights} nights reported${adherence.missingNights ? ` · ${adherence.missingNights} missing` : ''}`,
+      tone: adherence.compliant === null ? 'neutral' : adherence.compliant ? 'good' : 'warn',
     });
   }
   const leakDaily = dailyMeans(rowsFor(rows, 'mask_leak'), 'mask_leak', todayKey);
@@ -588,7 +587,13 @@ function buildApneaPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
     nights.push({
       dayKey: k,
       ahi,
-      used: hasUsage ? (usageDaily.get(k) ?? 0) > 0 : ahi !== null,
+      used: hasUsage
+        ? usageDaily.has(k)
+          ? usageDaily.get(k)! > 0
+          : null
+        : ahi !== null
+          ? true
+          : null,
     });
   }
 
@@ -597,7 +602,8 @@ function buildApneaPanel(rows: FocusVitalRow[], now: Date): FocusPanel | null {
     title: 'Sleep apnea therapy',
     verdict,
     stats,
-    caption: 'Last 14 nights — bar height is nightly AHI; gray means no CPAP use.',
+    caption:
+      'Last 14 nights — bar height is nightly AHI. Gray marks reported zero use; outlined marks no report. Missing reports are excluded from the recorded-night percentage.',
     nights,
     chartMetrics: chartMetricsWithData(rows, ['ahi', 'cpap_usage', 'mask_leak']),
   };
@@ -607,12 +613,13 @@ function buildRecoveryPanel(
   rows: FocusVitalRow[],
   now: Date,
   metricGoals: readonly FocusMetricGoal[],
+  timeZone: string
 ): FocusPanel | null {
   const readinessRows = rowsFor(rows, 'readiness_score');
   const hrvRows = rowsFor(rows, 'hrv_rmssd');
   if (readinessRows.length === 0 && hrvRows.length === 0) return null;
 
-  const todayKey = utcDayKey(now);
+  const todayKey = dayKeyInTz(now, timeZone);
 
   const readinessLatest = readinessRows.length > 0 ? latestOf(readinessRows).value : null;
   const hrvLatestRow = hrvRows.length > 0 ? latestOf(hrvRows) : null;
@@ -628,8 +635,8 @@ function buildRecoveryPanel(
             'hrv_rmssd',
             todayKey,
             30,
-            getVitalDayKey(hrvLatestRow.recorded_at, 'hrv_rmssd'),
-          ),
+            getVitalDayKey(hrvLatestRow.recorded_at, 'hrv_rmssd')
+          )
         )
       : null;
   const verdict = recoveryVerdict(readinessLatest, hrvLatest, hrvMean30);
@@ -650,7 +657,7 @@ function buildRecoveryPanel(
     metricRows: FocusVitalRow[],
     unit: string | null,
     decimals: number,
-    percent: boolean,
+    percent: boolean
   ) => {
     if (metricRows.length === 0) return;
     const direction = statDirection(key, metricGoals);
@@ -679,7 +686,7 @@ function buildRecoveryPanel(
     sleepRows,
     'hrs',
     1,
-    false,
+    false
   );
 
   // The verdict reads as "today" — when the reading behind it is older than
@@ -696,11 +703,7 @@ function buildRecoveryPanel(
         ? 'Verdict derived from HRV vs its 30-day norm (±10%).'
         : null,
     nights: null,
-    chartMetrics: chartMetricsWithData(rows, [
-      'readiness_score',
-      'hrv_rmssd',
-      'resting_hr',
-    ]),
+    chartMetrics: chartMetricsWithData(rows, ['readiness_score', 'hrv_rmssd', 'resting_hr']),
   };
 }
 
@@ -708,11 +711,12 @@ function buildBodyPanel(
   rows: FocusVitalRow[],
   now: Date,
   metricGoals: readonly FocusMetricGoal[],
+  timeZone: string
 ): FocusPanel | null {
   const weightRows = rowsFor(rows, 'weight');
   if (weightRows.length === 0) return null;
 
-  const { avg7, ratePerWeek } = weightTrend(rows, now);
+  const { avg7, ratePerWeek } = weightTrend(rows, now, timeZone);
   // The active weight goal drives the verdict; without one the pre-goals
   // weight-loss framing (decrease) applies unchanged.
   const weightGoal = metricGoals.find((g) => g.metricKey === 'weight');
@@ -786,7 +790,7 @@ function buildBodyPanel(
         latest.value - prev.value,
         1,
         statDirection('body_fat_pct', metricGoals), // registry: lower
-        'vs prior reading',
+        'vs prior reading'
       );
       sub = d.sub;
       tone = d.tone;
@@ -820,7 +824,7 @@ function buildBodyPanel(
         tone =
           direction === 'maintain'
             ? 'warn'
-            : (diff > 0) === (direction === 'higher')
+            : diff > 0 === (direction === 'higher')
               ? 'good'
               : 'bad';
       }
@@ -849,20 +853,20 @@ function buildBodyPanel(
 function buildActivityPanel(
   rows: FocusVitalRow[],
   now: Date,
-  goals: FocusGoalContext,
+  goals: FocusGoalContext
 ): FocusPanel | null {
   const stepsRows = rowsFor(rows, 'steps');
   if (stepsRows.length === 0) return null;
 
   const metricGoals = goals.metricGoals ?? NO_GOALS;
 
-  const todayKey = utcDayKey(now);
+  const todayKey = dayKeyInTz(now, goals.timeZone ?? 'Etc/UTC');
   const stats: FocusStat[] = [];
   const pushDailyAvg = (
     key: string,
     label: string,
     metricRows: FocusVitalRow[],
-    unit: string | null,
+    unit: string | null
   ) => {
     if (metricRows.length === 0) return;
     const daily = dailyMeans(metricRows, key, todayKey);
@@ -894,18 +898,17 @@ function buildActivityPanel(
     'active_calories',
     'Active calories (7d daily avg)',
     rowsFor(rows, 'active_calories'),
-    'kcal',
+    'kcal'
   );
 
   // Frequency-goal week progress replaces the static badge when active
   // frequency goals exist; otherwise the pre-goals neutral badge stays.
-  const verdict =
-    frequencyVerdict(
-      goals.frequencyGoals ?? [],
-      goals.weekSessions ?? [],
-      now,
-      goals.timeZone ?? 'UTC',
-    ) ?? { label: 'This week', tone: 'neutral' };
+  const verdict = frequencyVerdict(
+    goals.frequencyGoals ?? [],
+    goals.weekSessions ?? [],
+    now,
+    goals.timeZone ?? 'UTC'
+  ) ?? { label: 'This week', tone: 'neutral' };
 
   return {
     id: 'activity',
@@ -928,7 +931,7 @@ function buildActivityPanel(
 export function buildFocusPanels(
   rows: FocusVitalRow[],
   now: Date = new Date(),
-  goals: FocusGoalContext = {},
+  goals: FocusGoalContext = {}
 ): FocusPanel[] {
   const numeric = rows.filter((r) => {
     const metric = getMetric(r.metric_key);
@@ -937,9 +940,9 @@ export function buildFocusPanels(
 
   const metricGoals = goals.metricGoals ?? NO_GOALS;
   const panels = [
-    buildApneaPanel(numeric, now),
-    buildRecoveryPanel(numeric, now, metricGoals),
-    buildBodyPanel(numeric, now, metricGoals),
+    buildApneaPanel(numeric, now, goals.timeZone ?? 'Etc/UTC'),
+    buildRecoveryPanel(numeric, now, metricGoals, goals.timeZone ?? 'Etc/UTC'),
+    buildBodyPanel(numeric, now, metricGoals, goals.timeZone ?? 'Etc/UTC'),
     buildActivityPanel(numeric, now, goals),
   ];
   return panels.filter((p): p is FocusPanel => p !== null);

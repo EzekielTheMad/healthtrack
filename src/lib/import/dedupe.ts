@@ -4,10 +4,9 @@
  * Extracted items are matched against the target profile's existing rows and
  * marked with a {@link DedupeStatus}:
  *
- *   - medications / conditions / allergies: normalized-name match → 'duplicate'
- *   - procedures / vaccines: name + date exact → 'duplicate';
- *     name-only match → 'possible'
- *   - lab results: visit_date + test_name match → 'duplicate'
+ * These legacy indexes carry only names/dates, so matches are POSSIBLE, never
+ * confirmed duplicates. Full reconciliation in reconcile.ts compares clinical
+ * content and source identity. Name/date-only matching cannot discard a claim.
  *
  * Everything here is pure (no DB, no I/O) so the same logic runs in the parse
  * route (annotating the review payload) and the import route (authoritative
@@ -42,12 +41,9 @@ export function buildNameIndex(names: Iterable<string>): Set<string> {
   return index;
 }
 
-/** Name match → 'duplicate'; otherwise 'new'. */
-export function dedupeByName(
-  name: string,
-  index: ReadonlySet<string>,
-): DedupeStatus {
-  return index.has(normalizeName(name)) ? 'duplicate' : 'new';
+/** Name match → 'possible'; otherwise 'new'. */
+export function dedupeByName(name: string, index: ReadonlySet<string>): DedupeStatus {
+  return index.has(normalizeName(name)) ? 'possible' : 'new';
 }
 
 // ---------------------------------------------------------------------------
@@ -66,7 +62,7 @@ function nameDateKey(name: string, date: string): string {
 }
 
 export function buildNameDateIndex(
-  rows: Iterable<{ name: string; date: string | null | undefined }>,
+  rows: Iterable<{ name: string; date: string | null | undefined }>
 ): NameDateIndex {
   const index: NameDateIndex = { nameDates: new Set(), names: new Set() };
   for (const row of rows) addNameDate(index, row.name, row.date);
@@ -77,7 +73,7 @@ export function buildNameDateIndex(
 export function addNameDate(
   index: NameDateIndex,
   name: string,
-  date: string | null | undefined,
+  date: string | null | undefined
 ): void {
   index.names.add(normalizeName(name));
   const normalizedDate = normalizeDate(date);
@@ -87,17 +83,16 @@ export function addNameDate(
 }
 
 /**
- * Exact name + date match → 'duplicate'; name-only match (including items
- * with no date) → 'possible'; otherwise 'new'.
+ * Name/date or name-only matches are possible; otherwise new.
  */
 export function dedupeByNameDate(
   name: string,
   date: string | null | undefined,
-  index: NameDateIndex,
+  index: NameDateIndex
 ): DedupeStatus {
   const normalizedDate = normalizeDate(date);
   if (normalizedDate !== null && index.nameDates.has(nameDateKey(name, normalizedDate))) {
-    return 'duplicate';
+    return 'possible';
   }
   return index.names.has(normalizeName(name)) ? 'possible' : 'new';
 }
@@ -112,20 +107,20 @@ export function labResultKey(visitDate: string, testName: string): string {
 }
 
 export function buildLabResultIndex(
-  rows: Iterable<{ visitDate: string; testName: string }>,
+  rows: Iterable<{ visitDate: string; testName: string }>
 ): Set<string> {
   const index = new Set<string>();
   for (const row of rows) index.add(labResultKey(row.visitDate, row.testName));
   return index;
 }
 
-/** visit_date + test_name match → 'duplicate'; otherwise 'new'. */
+/** visit_date + test_name match → 'possible'; otherwise 'new'. */
 export function dedupeLabResult(
   visitDate: string | null | undefined,
   testName: string,
-  index: ReadonlySet<string>,
+  index: ReadonlySet<string>
 ): DedupeStatus {
   const normalizedDate = normalizeDate(visitDate);
   if (normalizedDate === null) return 'new';
-  return index.has(labResultKey(normalizedDate, testName)) ? 'duplicate' : 'new';
+  return index.has(labResultKey(normalizedDate, testName)) ? 'possible' : 'new';
 }

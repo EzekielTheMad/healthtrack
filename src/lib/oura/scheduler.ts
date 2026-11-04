@@ -4,14 +4,22 @@ const DEFAULT_INTERVAL_HOURS = 4;
 type SchedulerState = {
   running: boolean;
   timer?: ReturnType<typeof setInterval>;
+  nextRunAt?: string;
 };
 const globalState = globalThis as typeof globalThis & {
   __healthtrackOuraScheduler?: SchedulerState;
 };
 
-function intervalMs() {
+export function ouraSyncIntervalMs() {
   const hours = Number(process.env.OURA_SYNC_INTERVAL_HOURS ?? DEFAULT_INTERVAL_HOURS);
   return (Number.isFinite(hours) && hours > 0 ? hours : DEFAULT_INTERVAL_HOURS) * 60 * 60 * 1000;
+}
+
+export function getOuraSchedulerStatus() {
+  return {
+    scheduled: !!globalState.__healthtrackOuraScheduler?.timer,
+    nextRunAt: globalState.__healthtrackOuraScheduler?.nextRunAt ?? null,
+  };
 }
 
 /** Run one non-overlapping scheduler pass; null means an existing pass is active. */
@@ -46,7 +54,15 @@ export function registerOuraScheduler(): void {
   globalState.__healthtrackOuraScheduler ??= { running: false };
   if (globalState.__healthtrackOuraScheduler.timer) return;
   void runOuraSyncOnce();
-  const timer = setInterval(() => void runOuraSyncOnce(), intervalMs());
+  globalState.__healthtrackOuraScheduler.nextRunAt = new Date(
+    Date.now() + ouraSyncIntervalMs()
+  ).toISOString();
+  const timer = setInterval(() => {
+    globalState.__healthtrackOuraScheduler!.nextRunAt = new Date(
+      Date.now() + ouraSyncIntervalMs()
+    ).toISOString();
+    void runOuraSyncOnce();
+  }, ouraSyncIntervalMs());
   timer.unref?.();
   globalState.__healthtrackOuraScheduler.timer = timer;
 }
